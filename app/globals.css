@@ -1,0 +1,423 @@
+/* アプリ全体で再利用する色 */
+:root {
+  color-scheme: dark;
+  --background: #0b0d0c;
+  --surface: #141715;
+  --border: #2c312d;
+  --text: #f4f6f3;
+  --muted: #9da69f;
+  --accent: #b6f24b;
+}
+
+* { box-sizing: border-box; }
+
+/* ページ全体の基本デザイン */
+body {
+  margin: 0;
+  padding-bottom: 96px;
+  background: var(--background);
+  color: var(--text);
+  font-family: Arial, "Noto Sans JP", sans-serif;
+}
+
+/* トップ画面と機能カード全体の配置 */
+main { width: min(1120px, calc(100% - 32px)); margin: 0 auto; padding: 72px 0; }
+.hero { margin-bottom: 48px; }
+.eyebrow, .featureNumber { color: var(--accent); font-weight: 700; letter-spacing: .12em; }
+h1 { margin: 8px 0; font-size: clamp(42px, 8vw, 88px); line-height: .95; }
+.hero > p:last-child, .featureCard > p { color: var(--muted); }
+.sectionGrid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+.singleFeaturePage, .appFeaturePage { width: min(720px, 100%); margin: 0 auto; }
+.featureCard { min-height: 220px; padding: 28px; border: 1px solid var(--border); border-radius: 20px; background: var(--surface); }
+.featureCard h2 { margin: 8px 0; }
+.featureContent { margin-top: 28px; padding-top: 18px; border-top: 1px solid var(--border); color: var(--muted); }
+
+@media (max-width: 720px) {
+  main { padding: 40px 0; }
+  .sectionGrid { grid-template-columns: 1fr; }
+}
+/* 4種類の体型カードを2列に並べる */
+.bodyTypeButtons {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.bodyTypeButton {
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.bodyTypeImage {
+  display: block;
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  object-fit: cover;
+}
+
+.bodyTypeName {
+  display: block;
+  padding: 12px 12px 4px;
+  font-weight: 700;
+}
+
+.bodyTypeDescription {
+  display: block;
+  padding: 0 12px 12px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.bodyTypeButton.selected .bodyTypeDescription {
+  color: var(--background);
+}
+
+.bodyTypeButton.selected {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--background);
+}
+/* 利用者が選んだ参考画像のプレビュー */
+.referenceImagePreview {
+  display: block;
+  width: 100%;
+  max-width: 320px;
+  height: 320px;
+  margin-top: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--background);
+  object-fit: contain;
+}
+/* チャットの会話履歴を縦方向に並べる */
+.chatMessages {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.chatMessage {
+  max-width: 85%;
+  padding: 10px 12px;
+  border-radius: 12px;
+}
+
+.chatMessage p {
+  margin: 0;
+  line-height: 1.5;
+}
+
+/* 利用者のメッセージを右側へ表示する */
+.chatMessage.user {
+  align-self: flex-end;
+  background: var(--accent);
+  color: var(--background);
+}
+
+/* AIのメッセージを左側へ表示する */
+.chatMessage.assistant {
+  align-self: flex-start;
+  border: 1px solid var(--border);
+  background: var(--background);
+  color: var(--text);
+}
+
+/* チャット入力欄と送信ボタンを横並びにする */
+.chatForm {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: end;
+}
+
+.chatLabel {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.chatInput {
+  width: 100%;
+  min-height: 44px;
+  max-height: 120px;
+  padding: 11px 16px;
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  outline: none;
+  background: var(--background);
+  color: var(--text);
+  font: inherit;
+  line-height: 1.4;
+  resize: none;
+}
+
+.chatInput:focus {
+  border-color: var(--accent);
+}
+
+.chatInput::placeholder {
+  color: var(--muted);
+}
+
+.chatSendButton {
+  min-height: 44px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 22px;
+  background: var(--accent);
+  color: var(--background);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.chatSendButton:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* トップページからAIチャット専用ページへ移動するリンク */
+.chatOpenLink {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  padding: 0 18px;
+  border-radius: 22px;
+  background: var(--accent);
+  color: var(--background);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+/* AIチャット専用ページの幅と上下の配置 */
+.chatPage {
+  display: flex;
+  min-height: 100vh;
+  flex-direction: column;
+}
+
+.chatPageHeader {
+  margin-bottom: 24px;
+}
+
+.chatPageHeader h1 {
+  font-size: clamp(36px, 7vw, 64px);
+}
+
+.chatPageHeader > p:last-child {
+  color: var(--muted);
+}
+
+.chatBackLink {
+  display: inline-block;
+  margin-bottom: 32px;
+  color: var(--text);
+  text-decoration: none;
+}
+
+/* 会話履歴と入力欄を一つのチャット画面として囲む */
+.chatPanel {
+  display: flex;
+  min-height: 520px;
+  flex: 1;
+  flex-direction: column;
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: var(--surface);
+}
+
+.chatPageMessages {
+  min-height: 360px;
+  flex: 1;
+}
+
+.chatEmptyMessage {
+  margin: auto;
+  color: var(--muted);
+  text-align: center;
+}
+
+/* AIが回答を作成している間の状態を表示する */
+.chatStatus {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* AI通信に失敗した場合のエラーを表示する */
+.chatError {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid #e35d6a;
+  border-radius: 10px;
+  color: #ff8d98;
+  font-size: 13px;
+}
+
+/* 主要な6機能を全画面の下部へ固定して横並びにする */
+.bottomNavigation {
+  position: fixed;
+  z-index: 100;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  border-top: 1px solid var(--border);
+  background: rgba(20, 23, 21, 0.96);
+  backdrop-filter: blur(14px);
+}
+
+.bottomNavigationInner {
+  display: grid;
+  width: min(760px, 100%);
+  min-height: 76px;
+  margin: 0 auto;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+.bottomNavigationLink {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.bottomNavigationLink.active {
+  color: var(--accent);
+}
+
+.bottomNavigationIcon {
+  font-size: 24px;
+  line-height: 1;
+}
+
+@media (max-width: 520px) {
+  .bottomNavigationInner {
+    min-height: 68px;
+  }
+
+  .bottomNavigationLink {
+    font-size: 10px;
+  }
+
+  .bottomNavigationIcon {
+    font-size: 20px;
+  }
+}
+/* トレーニング記録の部位ボタンを横並びにする */
+.trainingLogPanel {
+  width: 100%;
+}
+
+.bodyPartSelector {
+  margin-bottom: 28px;
+}
+
+.trainingFieldLabel {
+  margin: 0 0 10px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.bodyPartTabs {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 8px;
+  scrollbar-width: none;
+}
+
+.bodyPartTabs::-webkit-scrollbar {
+  display: none;
+}
+
+.bodyPartTab {
+  min-width: 64px;
+  min-height: 44px;
+  flex: 0 0 auto;
+  padding: 0 16px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.bodyPartTab.active {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--background);
+}
+/* 詳細部位ごとの種目をカード形式で表示する */
+.exerciseGroupList {
+  display: grid;
+  gap: 16px;
+}
+
+.exerciseGroupCard {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--surface);
+}
+
+.exerciseGroupCard h3 {
+  margin: 0;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  font-size: 18px;
+}
+
+.exercisePreviewList {
+  display: flex;
+  flex-direction: column;
+}
+
+.exerciseListButton {
+  display: flex;
+  width: 100%;
+  min-height: 52px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 18px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.exerciseListButton span:last-child {
+  color: var(--accent);
+  font-size: 24px;
+}
+
+.exerciseMoreButton {
+  width: 100%;
+  min-height: 44px;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
