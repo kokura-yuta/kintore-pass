@@ -46,9 +46,11 @@ export default function ChatPage() {
       const response = await fetch("/api/chat", {
         
           method: "POST",
+          //JSONを送ることを伝える部分です。
           headers: {
             "Content-Type": "application/json",
           },
+          //送るデータです。
           body: JSON.stringify({
             message: trimmedMessage,
             userData: {
@@ -95,9 +97,6 @@ export default function ChatPage() {
     <main className="chatPage">
       {/* トップページへ戻るリンクと、チャット画面の見出し */}
       <header className="chatPageHeader">
-        <Link className="chatBackLink" href="/">
-          ← トップへ戻る
-        </Link>
         <p className="eyebrow">AI TRAINING PARTNER</p>
         <h1>AIチャット</h1>
         <p>トレーニングの悩みや、今日やることを相談できます。</p>
