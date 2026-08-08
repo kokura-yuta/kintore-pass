@@ -2382,6 +2382,54 @@ try {
 
 # 12. PostgreSQLバックエンド
 
+## 現在の担当分担
+
+| 担当 | 作る範囲 |
+| --- | --- |
+| 友達 | React画面・ボタン・入力フォーム・カード・スマホ向けCSSなどのUI |
+| 自分 | バックエンドAPI・Neon PostgreSQL・認証・入力値チェック・AI・フロントエンドとAPIの接続 |
+
+友達が作った画面から入力値を受け取り、APIへ接続する`fetch()`も自分の担当です。
+
+```text
+友達が作る画面UI
+        ↓
+自分がfetch()でAPIへ接続
+        ↓ JSON
+自分が作るapp/api内のバックエンド
+        ↓
+Neon PostgreSQL・OpenAI API
+```
+
+友達は`.env.local`の秘密情報やNeonへ直接アクセスせず、画面側で必要な値と操作を用意します。
+
+## バックエンドで使う言語・ライブラリ・形式の違い
+
+| 分類 | 名前 | このプロジェクトでの役割 |
+| --- | --- | --- |
+| プログラミング言語 | TypeScript | `route.ts`・`schema.ts`などのバックエンド処理を型付きで書く |
+| プログラミング言語 | JavaScript | 一部の既存APIやフロントエンド処理を書く |
+| UIの書き方 | JSX | Reactで画面の要素を書く |
+| DB操作ライブラリ | Drizzle ORM | TypeScriptからPostgreSQLを検索・登録・更新する |
+| 通信データ形式 | JSON | フロントエンドとバックエンドの間で値を送受信する |
+| DB用言語 | SQL | PostgreSQLへテーブル作成やデータ操作を命令する |
+| データベース | PostgreSQL | ユーザー情報・記録・会話を保存する |
+| DB提供サービス | Neon | PostgreSQLをインターネット上で利用できるようにする |
+
+`app/api/users/goal/route.ts`で直接書いている言語はTypeScriptです。
+
+```text
+TypeScriptでAPI処理を書く
+        ↓
+Drizzle ORMを使ってDB操作を表す
+        ↓
+内部でSQLとしてPostgreSQLへ送られる
+        ↓
+結果をJSON形式でフロントエンドへ返す
+```
+
+Drizzle ORM・JSON・PostgreSQL・Neonは、すべてTypeScriptとは役割が違います。
+
 ## 12-1. バックエンドで使用している技術
 
 | 技術 | 何をするものか | 現在の状態 |
@@ -2389,14 +2437,14 @@ try {
 | Next.js Route Handler | `app/api`内へGET・POSTなどのAPIを作る | AIチャットAPIで使用中 |
 | Vinext | Next.js形式のアプリをVite・Cloudflare Workers環境で動かす | 使用中 |
 | TypeScript | DB設定やテーブル定義を型付きで書く | `db`と設定ファイルで使用中 |
-| Neon PostgreSQL | ユーザー情報・記録・会話を永続保存するデータベース | 接続設定とusersテーブル設計まで完了 |
+| Neon PostgreSQL | ユーザー情報・記録・会話を永続保存するデータベース | 接続済み・usersテーブル作成済み |
 | Drizzle ORM | TypeScriptからPostgreSQLの保存・取得・更新・削除を行う | DB接続とusersテーブル定義まで実装済み |
-| Drizzle Kit | テーブル設計からマイグレーションファイルを作り、DBへ適用する | PostgreSQL用設定済み・マイグレーションは未生成 |
+| Drizzle Kit | テーブル設計からマイグレーションファイルを作り、DBへ適用する | usersテーブルのマイグレーション適用済み |
 | `@neondatabase/serverless` | Cloudflare WorkersなどからNeonへHTTP接続するドライバー | インストール済み |
 | `dotenv` | マイグレーションコマンドから`.env.local`を読み込む | インストール済み |
 | OpenAI SDK | 質問やユーザーデータをOpenAI APIへ送り、AI回答を受け取る | 基本チャットで使用中 |
 | JSON | フロントエンドとバックエンド間でデータを送受信する形式 | チャットAPIで使用中 |
-| ChatGPT認証ヘルパー | 認証済み利用者のメールアドレスと表示名を取得する | ファイルは存在するが各APIへ未接続 |
+| ChatGPT認証ヘルパー | 認証済み利用者のメールアドレスと表示名を取得する | ユーザー初期化APIと理想体型保存APIで使用中 |
 | Cloudflare Workers | デプロイ後にAPIやサーバー処理を実行する環境 | プロジェクトの実行基盤 |
 
 ### PostgreSQL・Neon・Drizzleの違い
@@ -2476,9 +2524,9 @@ drizzle.config.ts
 
 | 機能 | バックエンドの役割 | 現在の状態 |
 | --- | --- | --- |
-| 初回起動判定 | 初回設定が完了しているか返す | 保存項目の設計まで完了・APIは未実装 |
-| ユーザー管理 | 認証情報とアプリ内ユーザーIDを結び付ける | usersテーブル設計まで完了・APIは未実装 |
-| 理想体型 | 選択した目標体型をユーザーごとに保存・取得する | 保存項目の設計まで完了・APIは未実装 |
+| 初回起動判定 | 初回設定が完了しているか返す | 初期化API実装済み・Neon接続テスト成功 |
+| ユーザー管理 | 認証情報とアプリ内ユーザーIDを結び付ける | 検索・新規登録API実装済み・Neon接続テスト成功 |
+| 理想体型 | 選択した目標体型をユーザーごとに保存・取得する | 保存API実装済み・Neon接続テスト成功 |
 | プロフィール | 身長・体重・体脂肪率・可能時間などを保存する | 未実装 |
 | 身体分析 | 身体データと分析結果を日付付きで保存する | 未実装 |
 | トレーニング記録 | 種目・重量・回数・セット・時間・調子・メモを保存する | 未実装 |
@@ -2733,6 +2781,983 @@ updatedAt: timestamp("updated_at", {
 | `.defaultNow()` | 新しいデータへ現在日時を自動で入れる |
 | `withTimezone` | 日時とタイムゾーンを一緒に扱えるようにする設定 |
 
+## 12-7. usersテーブルのマイグレーション
+
+担当ファイルは`drizzle-postgres/0000_create_users.sql`です。
+
+マイグレーションは、`db/schema.ts`の設計を実際のPostgreSQLへ反映するためのSQLとして記録した変更履歴です。
+
+```text
+db/schema.ts
+    ↓ Drizzle Kitで変換
+drizzle-postgres/0000_create_users.sql
+    ↓ 次の作業でNeonへ適用
+Neon PostgreSQLのusersテーブル
+```
+
+次のコマンドで生成しました。
+
+```bash
+npm run db:generate -- --name=create_users
+```
+
+- `npm run db:generate`：`package.json`に登録したDrizzle Kitの生成処理を実行する
+- `--name=create_users`：変更履歴へ`create_users`という目的が分かる名前を付ける
+- このコマンドはSQLをローカルへ生成するだけで、Neonのデータベースは変更しない
+
+生成されたファイルは次の3種類です。
+
+| ファイル | 目的 |
+| --- | --- |
+| `drizzle-postgres/0000_create_users.sql` | PostgreSQLが実行するテーブル作成命令 |
+| `drizzle-postgres/meta/0000_snapshot.json` | 生成時点のテーブル設計をDrizzleが比較に使う記録 |
+| `drizzle-postgres/meta/_journal.json` | マイグレーションの順番と名前をDrizzleが管理する記録 |
+
+`users`というテーブルを作り始めます。
+
+```sql
+CREATE TABLE "users" (
+```
+
+ユーザー固有のUUIDを主キーとして自動生成します。
+
+```sql
+"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+```
+
+必須のメールアドレスを文字列で保存します。
+
+```sql
+"email" text NOT NULL,
+```
+
+表示名は未設定を許可する文字列として保存します。
+
+```sql
+"display_name" text,
+```
+
+初回セットアップの完了状態を、初期値`false`で保存します。
+
+```sql
+"onboarding_completed" boolean DEFAULT false NOT NULL,
+```
+
+現在選んでいる理想体型を文字列で保存します。
+
+```sql
+"goal_body_type" text,
+```
+
+身体情報入力と初回分析の完了状態を、初期値`false`で保存します。
+
+```sql
+"profile_completed" boolean DEFAULT false NOT NULL,
+"initial_analysis_completed" boolean DEFAULT false NOT NULL,
+```
+
+作成日時と更新日時には、登録時の現在日時を自動保存します。
+
+```sql
+"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+```
+
+同じメールアドレスのユーザーを重複登録できないようにします。
+
+```sql
+CONSTRAINT "users_email_unique" UNIQUE("email")
+```
+
+テーブル定義を閉じます。
+
+```sql
+);
+```
+
+生成されたSQLと`meta`ファイルはDrizzleが管理する変更履歴なので、通常は手作業で変更しません。設計を変更するときは`db/schema.ts`を直して、新しいマイグレーションを生成します。
+
+### Neonへマイグレーションを適用する
+
+次のコマンドで、まだ適用されていないマイグレーションをNeonへ反映しました。
+
+```bash
+npx drizzle-kit migrate --config drizzle.config.ts
+```
+
+- `npx`：プロジェクトへインストールされているコマンドを実行する
+- `drizzle-kit migrate`：未適用のマイグレーションをDBへ順番に適用する
+- `--config drizzle.config.ts`：使用するDrizzle設定ファイルを指定する
+
+Drizzleは適用済みのマイグレーションをNeon内の履歴テーブルへ記録します。そのため、同じコマンドをもう一度実行しても、適用済みの`0000_create_users.sql`を重複実行しません。
+
+適用後にNeonを読み取り専用で確認し、`users`テーブルと次の9項目が作成済みであることを確認しました。
+
+```text
+id
+email
+display_name
+onboarding_completed
+goal_body_type
+profile_completed
+initial_analysis_completed
+created_at
+updated_at
+```
+
+### 今回追加されたSQL単語
+
+| 単語 | 意味 |
+| --- | --- |
+| `CREATE TABLE` | 新しいテーブルを作成する |
+| `PRIMARY KEY` | 各データを識別する中心の列にする |
+| `DEFAULT` | 値が指定されなかった場合の初期値を決める |
+| `NOT NULL` | 空の値を禁止する |
+| `CONSTRAINT` | データを保存するときの制約に名前を付ける |
+| `UNIQUE` | 同じ値の重複を禁止する |
+| `gen_random_uuid()` | 重複しにくいUUIDを自動生成する |
+| `now()` | 現在の日付と時刻を取得する |
+
+## 12-8. ユーザー初期化API
+
+担当ファイルは`app/api/users/bootstrap/route.ts`です。
+
+このAPIは、ログイン中の利用者をNeon PostgreSQLの`users`テーブルへ登録または取得し、初回設定の状態を返す場所です。
+
+`bootstrap`は、アプリを使い始めるために必要なデータを準備するという意味です。
+
+```text
+アプリから初期化APIを呼ぶ
+        ↓
+ログイン中のメールアドレスを取得
+        ↓
+usersテーブルを検索
+        ↓
+未登録なら新規作成
+登録済みなら現在の情報を取得
+        ↓
+初回設定の状態をJSONで返す
+```
+
+メールアドレスが一致するユーザーを検索する機能を読み込みます。
+
+```ts
+import { eq } from "drizzle-orm";
+```
+
+`eq`はequalの略で、2つの値が等しいという検索条件を作ります。
+
+今後、次のような意味の検索で使用します。
+
+```text
+users.email = ログイン中のメールアドレス
+```
+
+現在ログインしているユーザー情報を取得する機能を読み込みます。
+
+```ts
+import { getChatGPTUser } from "@/app/chatgpt-auth";
+```
+
+この処理は、ブラウザから送られたメールアドレスを信用せず、サーバー側へ渡された認証情報を読み取ります。
+
+Neon PostgreSQLへの共通接続関数を読み込みます。
+
+```ts
+import { getDb } from "@/db";
+```
+
+各APIへ接続文字列やDrizzle設定を繰り返し書かず、`getDb()`を呼び出して同じ接続設定を利用します。
+
+`users`テーブルの設計を読み込みます。
+
+```ts
+import { users } from "@/db/schema";
+```
+
+この`users`を使い、どのテーブルのどの項目を検索・登録するか指定します。
+
+### `@/`の意味
+
+`@/`はプロジェクトの一番上を表す省略記号です。
+
+```text
+@/db
+↓
+プロジェクト直下のdbフォルダ
+```
+
+`../../../db`のように現在位置から何階層戻るか数えなくても、同じ場所を分かりやすく指定できます。
+
+### POST通信とログイン確認
+
+このURLへPOST通信が来たときに実行する関数を定義します。
+
+```ts
+export async function POST() {
+```
+
+- `export`：Next.jsがAPIとして利用できるように関数を公開する
+- `async`：完了まで時間がかかる処理で`await`を使えるようにする
+- `function POST()`：POST通信を受け取る関数を定義する
+
+ログイン中のユーザー情報を取得します。
+
+```ts
+const authenticatedUser = await getChatGPTUser();
+```
+
+- `const authenticatedUser`：取得結果を後から変更しない変数へ保存する
+- `await`：認証情報の取得が終わるまで、次の行へ進まず待つ
+- `getChatGPTUser()`：サーバーへ渡された認証済みユーザー情報を読み取る
+
+認証情報を取得できなかった場合だけ、中の処理を実行します。
+
+```ts
+if (!authenticatedUser) {
+```
+
+`!authenticatedUser`は、値が`null`など「ユーザー情報なし」の状態か確認する条件です。
+
+認証されていないことをJSONで返し、API処理を終了します。
+
+```ts
+return Response.json(
+  { error: "ログインが必要です。" },
+  { status: 401 },
+);
+```
+
+- `return`：結果を返して、これより下の処理へ進まないようにする
+- `Response.json()`：JavaScriptの値をJSON形式のHTTPレスポンスへ変換する
+- `{ error: "ログインが必要です。" }`：フロントエンドへ返すエラー内容
+- `{ status: 401 }`：未認証を表すHTTPステータスを設定する
+
+現在できている処理の流れです。
+
+```text
+POST通信を受信
+        ↓
+ログイン情報を取得
+        ↓
+情報なし → 401とエラーJSONを返して終了
+情報あり → 次に追加するDB検索へ進む
+```
+
+### メールアドレスで登録済みユーザーを検索する
+
+Neon PostgreSQLを操作するための共通接続を取得します。
+
+```ts
+const db = getDb();
+```
+
+`getDb()`が返したDB操作用オブジェクトを、後から変更しない`db`という変数へ保存します。
+
+検索結果が返るまで待ち、結果の配列を`existingUsers`へ保存します。
+
+```ts
+const existingUsers = await db
+```
+
+DrizzleのDB検索は複数件を返せるため、1件だけの場合でも結果は配列になります。
+
+DBからデータを取得する検索を開始します。
+
+```ts
+.select()
+```
+
+検索する対象を`users`テーブルへ指定します。
+
+```ts
+.from(users)
+```
+
+ログイン中のメールアドレスと同じユーザーだけに絞ります。
+
+```ts
+.where(eq(users.email, authenticatedUser.email))
+```
+
+- `users.email`：DBに保存されているメールアドレスの列
+- `authenticatedUser.email`：現在ログインしているユーザーのメールアドレス
+- `eq(左, 右)`：左と右が等しいデータだけを検索する条件
+- `.where(...)`：指定した条件に合うデータへ絞る
+
+取得するデータを最大1件に制限します。
+
+```ts
+.limit(1);
+```
+
+メールアドレスには重複禁止の`.unique()`を設定していますが、必要な1件だけ取得する意思をコード上でも明確にしています。
+
+検索結果の先頭を取り出し、存在しない場合は`null`へ統一します。
+
+```ts
+const existingUser = existingUsers[0] ?? null;
+```
+
+- `existingUsers`：DB検索で返された配列
+- `[0]`：配列の先頭にある1件目を取り出す
+- データがない場合の`existingUsers[0]`は`undefined`になる
+- `?? null`：左側が`null`または`undefined`のときだけ、代わりに`null`を使う
+- `existingUser`：登録済みならユーザー情報、未登録なら`null`が入る
+
+`??`は`0`・空文字・`false`を有効な値として残し、`null`と`undefined`だけを右側の値へ置き換えます。
+
+現在できている処理の流れです。
+
+```text
+認証済みユーザー
+        ↓
+getDb()でNeonへ接続
+        ↓
+users.emailと認証メールを比較
+        ↓
+一致あり → existingUserにユーザー情報
+一致なし → existingUserにnull
+```
+
+### 登録済みユーザーの情報を返す
+
+`existingUser`にユーザー情報がある場合だけ、中の処理を実行します。
+
+```ts
+if (existingUser) {
+```
+
+登録済みなら`existingUser`はオブジェクトなので中へ進み、未登録なら`null`なので中へ進みません。
+
+登録済みユーザーの情報をJSON形式で返します。
+
+```ts
+return Response.json({
+```
+
+`return`が実行されるとAPI処理はここで終了するため、その下に追加する新規登録処理へ進みません。
+
+DBから取得したユーザー情報を`user`という名前で返します。
+
+```ts
+user: existingUser,
+```
+
+フロントエンドは、返されたJSONの`user`からID・理想体型・初回設定の状態などを読み取れます。
+
+登録済みユーザーであることを返します。
+
+```ts
+isNewUser: false,
+```
+
+`isNewUser`は「新しく作成したユーザーか」を表し、今回は登録済みなので`false`です。
+
+登録済みの場合に返るJSONは、次の形です。
+
+```json
+{
+  "user": {
+    "id": "ユーザーID",
+    "email": "メールアドレス",
+    "displayName": null,
+    "onboardingCompleted": false,
+    "goalBodyType": null,
+    "profileCompleted": false,
+    "initialAnalysisCompleted": false,
+    "createdAt": "作成日時",
+    "updatedAt": "更新日時"
+  },
+  "isNewUser": false
+}
+```
+
+このJSONを受け取ったフロントエンドは、`onboardingCompleted`を使って初回セットアップとホームのどちらへ進むか判断できます。
+
+```text
+existingUserあり
+        ↓
+userにDBのユーザー情報を入れる
+        ↓
+isNewUser: falseを付ける
+        ↓
+JSONを返してAPI終了
+```
+
+### 未登録ユーザーをNeonへ新規登録する
+
+ユーザーが見つからなかった場合は、認証情報を`users`テーブルへ保存します。
+
+```ts
+const createdUsers = await db
+```
+
+新規登録が完了するまで`await`で待ち、PostgreSQLから返された結果を`createdUsers`へ保存します。
+
+データを追加する対象を`users`テーブルへ指定します。
+
+```ts
+.insert(users)
+```
+
+`.insert()`は、指定したテーブルへ新しい1行を追加する処理を始めます。
+
+新しいユーザーへ保存する値を指定します。
+
+```ts
+.values({
+  email: authenticatedUser.email,
+  displayName: authenticatedUser.displayName,
+})
+```
+
+- `.values({...})`：新しい行の各項目へ保存する値を指定する
+- `email`：ログイン中のユーザーのメールアドレスを保存する
+- `displayName`：ログイン中のユーザーの表示名を保存する
+
+コードで指定していない項目には、`db/schema.ts`で決めた初期値が使われます。
+
+```text
+id                       → UUIDを自動生成
+onboardingCompleted      → false
+goalBodyType             → null
+profileCompleted         → false
+initialAnalysisCompleted → false
+createdAt                → 現在日時
+updatedAt                → 現在日時
+```
+
+新しく登録されたデータをPostgreSQLから返してもらいます。
+
+```ts
+.returning();
+```
+
+`.returning()`があるため、登録直後にもう一度検索しなくても、作成されたIDや初期値を取得できます。
+
+配列で返された登録結果から、新規ユーザーを取り出します。
+
+```ts
+const createdUser = createdUsers[0];
+```
+
+今回はユーザーを1件だけ登録するため、`[0]`で先頭の1件を取り出します。
+
+新規ユーザー情報をJSON形式で返します。
+
+```ts
+return Response.json(
+  {
+    user: createdUser,
+    isNewUser: true,
+  },
+  { status: 201 },
+);
+```
+
+- `user: createdUser`：新しく登録されたユーザー情報を返す
+- `isNewUser: true`：今回新しく登録されたことを返す
+- `status: 201`：新しいデータの作成に成功したことをHTTPで表す
+
+ユーザー初期化API全体の流れです。
+
+```text
+POST通信
+    ↓
+認証情報なし → HTTP 401
+    ↓ 認証情報あり
+メールアドレスでusersを検索
+    ↓
+登録済み → user + isNewUser: false
+    ↓ 未登録
+usersへ新規登録
+    ↓
+user + isNewUser: true + HTTP 201
+```
+
+### API全体のエラーを処理する
+
+認証・DB検索・新規登録を、エラーを捕まえられる範囲で囲みます。
+
+```ts
+try {
+```
+
+`try`の中は通常どおり上から処理され、途中でエラーが発生すると残りを中止して`catch`へ移動します。
+
+発生したエラー情報を受け取ります。
+
+```ts
+} catch (error) {
+```
+
+- `catch`：`try`内でエラーが発生した場合だけ実行する
+- `error`：実際に発生したエラー情報を受け取る変数
+
+開発者が原因を確認できるように、詳しい情報をサーバーログへ残します。
+
+```ts
+console.error(
+  "ユーザー初期化に失敗しました。",
+  error,
+);
+```
+
+`console.error()`は、どの処理で失敗したかという説明と、実際のエラー内容を開発者向けに記録します。
+
+フロントエンドへは安全な共通メッセージを返します。
+
+```ts
+return Response.json(
+  {
+    error:
+      "ユーザー情報の初期化に失敗しました。",
+  },
+  { status: 500 },
+);
+```
+
+- 詳しいDBエラーは接続先や内部構造を含む可能性があるため、ブラウザへそのまま返さない
+- `error`には利用者が理解できる共通メッセージだけを入れる
+- HTTP 500はサーバー内部の処理に失敗したことを表す
+
+エラー処理を含めた流れです。
+
+```text
+try内の処理に成功
+        ↓
+通常のJSONを返す
+
+try内でエラー発生
+        ↓
+残りの処理を中止
+        ↓
+catchで詳しい原因をサーバーへ記録
+        ↓
+安全なエラーJSONとHTTP 500を返す
+```
+
+### ユーザー初期化APIの接続テスト
+
+ローカル開発サーバーから、テスト専用の認証情報を使ってAPIを実際に呼びました。
+
+1回目はNeonにユーザーが存在しないため、新規登録されました。
+
+```text
+HTTP 201 Created
+isNewUser: true
+onboardingCompleted: false
+goalBodyType: null
+```
+
+同じ認証情報で2回目を呼ぶと、同じユーザーIDのデータが取得されました。
+
+```text
+HTTP 200 OK
+isNewUser: false
+```
+
+新しい行は追加されず、メールアドレス検索によって登録済みユーザーを再利用できたことを表します。
+
+認証情報を付けずに呼ぶと、DB操作を行わず未認証エラーが返りました。
+
+```text
+HTTP 401 Unauthorized
+error: ログインが必要です。
+```
+
+テストによって、次の3点を確認できました。
+
+```text
+未認証を拒否できる
+新規ユーザーをNeonへ登録できる
+登録済みユーザーを重複登録せず取得できる
+```
+
+Neonには接続確認用として`bootstrap-test-20260808@example.invalid`という実在しないテストユーザーが1件保存されています。
+
+### 今回追加された単語
+
+| 単語 | 意味 |
+| --- | --- |
+| `bootstrap` | アプリを開始するために必要な状態を準備する処理 |
+| `eq` | 2つの値が等しいというDB検索条件を作る関数 |
+| `@/` | プロジェクトの一番上からファイル位置を指定する省略記号 |
+| サーバー側認証 | ブラウザの入力ではなく、サーバーが確認した利用者情報を使うこと |
+| `async` | 関数内で完了を待つ`await`を使えるようにする |
+| `await` | 非同期処理が完了するまで次へ進まず待つ |
+| `Response.json()` | JSON形式のHTTPレスポンスを作る |
+| HTTP 401 | ログイン情報を確認できないことを表す番号 |
+| `.select()` | DBからデータを取得する検索を始める |
+| `.from()` | 検索対象のテーブルを指定する |
+| `.where()` | 条件に合うデータだけへ絞る |
+| `.limit()` | 取得する最大件数を指定する |
+| `[0]` | 配列の先頭にある1件目を取り出す |
+| `??` | 左側が`null`または`undefined`のときだけ右側を使う |
+| `isNewUser` | 今回新しく登録されたユーザーかを表す値 |
+| `.insert()` | 指定したDBテーブルへ新しいデータを追加する |
+| `.values()` | 新しく保存する各項目の値を指定する |
+| `.returning()` | 追加・更新されたデータをPostgreSQLから受け取る |
+| HTTP 201 | 新しいデータの作成に成功したことを表す番号 |
+| `try` | エラーを捕まえたい処理の範囲を作る |
+| `catch` | `try`内でエラーが発生した場合の処理を書く |
+| `console.error()` | 開発者向けにエラー情報を記録する |
+| HTTP 500 | サーバー内部で処理に失敗したことを表す番号 |
+
+## 12-9. 理想体型保存API
+
+担当ファイルは`app/api/users/goal/route.ts`です。
+
+このAPIは、初回セットアップやマイページで選んだ理想体型を、ログイン中のユーザー本人の`goalBodyType`へ保存する場所です。
+
+```text
+画面で理想体型を選ぶ
+        ↓
+自分が書くfetch()でPATCH通信
+        ↓
+理想体型保存API
+        ↓
+認証・入力値を確認
+        ↓
+NeonのgoalBodyTypeを更新
+```
+
+メールアドレスが一致するユーザーだけを更新する比較機能を読み込みます。
+
+```ts
+import { eq } from "drizzle-orm";
+```
+
+現在ログインしているユーザー情報を取得する機能を読み込みます。
+
+```ts
+import { getChatGPTUser } from "@/app/chatgpt-auth";
+```
+
+Neon PostgreSQLへの共通接続関数を読み込みます。
+
+```ts
+import { getDb } from "@/db";
+```
+
+更新対象となる`users`テーブルの設計を読み込みます。
+
+```ts
+import { users } from "@/db/schema";
+```
+
+ユーザー初期化APIと同じ部品を使いますが、今回は検索だけでなく`goalBodyType`の更新に利用します。
+
+### 保存を許可する理想体型
+
+DBへ保存してよい理想体型を配列へまとめます。
+
+```ts
+const allowedGoalBodyTypes = [
+  "細マッチョ",
+  "逆三角形",
+  "フィジーク",
+  "バルクアップ",
+];
+```
+
+フロントエンドから受け取った値がこの配列に含まれているか確認し、想定外の文字列が`goalBodyType`へ保存されることを防ぎます。
+
+```text
+細マッチョ → 配列に含まれる → 保存できる
+逆三角形   → 配列に含まれる → 保存できる
+その他     → 配列にない     → HTTP 400
+```
+
+### このファイルで使っている言語
+
+`route.ts`の`.ts`はTypeScriptファイルを表します。
+
+```text
+直接書いている言語：TypeScript
+DB操作に使うもの：Drizzle ORM
+受信・返信の形式：JSON
+保存先：Neon PostgreSQL
+```
+
+`request: Request`の`: Request`は、`request`へ入る値の型を指定するTypeScriptの書き方です。
+
+### PATCH関数と認証確認
+
+PATCH通信とその通信内容を受け取ります。
+
+```ts
+export async function PATCH(request: Request) {
+```
+
+- `PATCH`：すでに存在するユーザー情報の一部を変更する通信方法
+- `request`：フロントエンドから送られた通信内容を受け取る変数
+- `: Request`：`request`がWeb通信の情報を持つ型だとTypeScriptへ伝える
+
+ログイン中のユーザー情報を取得し、認証情報がなければHTTP 401を返します。
+
+```ts
+const authenticatedUser = await getChatGPTUser();
+
+if (!authenticatedUser) {
+  return Response.json(
+    { error: "ログインが必要です。" },
+    { status: 401 },
+  );
+}
+```
+
+### フロントエンドからJSONを受け取る
+
+通信内容をJSONからJavaScriptの値へ変換します。
+
+```ts
+const body = await request
+  .json()
+  .catch(() => null);
+```
+
+- `request.json()`：通信で送られたJSONを読み取る
+- `.catch(() => null)`：JSONが壊れていた場合はエラーで停止せず`null`を使う
+- `body`：変換後の受信データを保存する変数
+
+受信データから理想体型を取り出します。
+
+```ts
+const goalBodyType = body?.goalBodyType;
+```
+
+`?.`は`body`が`null`または`undefined`ならエラーを起こさず、結果を`undefined`にします。
+
+### 理想体型の入力値を確認する
+
+文字列でない場合、または許可一覧にない場合はHTTP 400を返します。
+
+```ts
+if (
+  typeof goalBodyType !== "string" ||
+  !allowedGoalBodyTypes.includes(goalBodyType)
+) {
+```
+
+- `typeof goalBodyType !== "string"`：値が文字列でないことを確認する
+- `||`：左か右のどちらかが当てはまれば不正とする
+- `.includes(goalBodyType)`：配列の中に受信した体型があるか確認する
+- `!`：判定結果を反対にし、配列に含まれない場合を表す
+
+不正な場合は安全なエラーを返します。
+
+```ts
+return Response.json(
+  {
+    error:
+      "正しい理想体型を選択してください。",
+  },
+  { status: 400 },
+);
+```
+
+HTTP 400は、サーバーではなく送られた入力内容に問題があることを表します。
+
+### Neonの理想体型を更新する
+
+`users`テーブルの既存データを更新します。
+
+```ts
+const updatedUsers = await db
+  .update(users)
+```
+
+- `.update(users)`：`users`テーブルの更新処理を始める
+- `updatedUsers`：更新後にPostgreSQLから返された結果の配列
+
+変更する項目を指定します。
+
+```ts
+.set({
+  goalBodyType,
+  updatedAt: new Date(),
+})
+```
+
+- `goalBodyType,`：`goalBodyType: goalBodyType`を省略した書き方
+- `new Date()`：現在の日付と時刻を作る
+- `updatedAt`：最後にユーザー情報を変更した日時を更新する
+
+ログイン中のメールアドレスと一致するユーザーだけに絞ります。
+
+```ts
+.where(
+  eq(
+    users.email,
+    authenticatedUser.email,
+  ),
+)
+```
+
+`.where()`がないと全ユーザーの理想体型を変更してしまうため、本人のメールアドレスを条件にしています。
+
+更新後のデータをPostgreSQLから受け取ります。
+
+```ts
+.returning();
+```
+
+### 更新結果を確認して返す
+
+更新結果の先頭を取り出し、存在しなければ`null`にします。
+
+```ts
+const updatedUser = updatedUsers[0] ?? null;
+```
+
+更新対象が見つからなければHTTP 404を返します。
+
+```ts
+if (!updatedUser) {
+  return Response.json(
+    { error: "ユーザーが見つかりません。" },
+    { status: 404 },
+  );
+}
+```
+
+更新に成功した場合は、更新後のユーザー情報をJSONで返します。
+
+```ts
+return Response.json({
+  user: updatedUser,
+});
+```
+
+### 予想外のエラーを処理する
+
+認証・JSON読取・DB更新の途中で予想外のエラーが起きた場合は`catch`へ進みます。
+
+```ts
+} catch (error) {
+```
+
+詳しい原因はサーバーログへ残し、利用者へは安全な共通メッセージとHTTP 500を返します。
+
+```ts
+console.error(
+  "理想体型の保存に失敗しました。",
+  error,
+);
+```
+
+```ts
+return Response.json(
+  { error: "理想体型の保存に失敗しました。" },
+  { status: 500 },
+);
+```
+
+### 理想体型保存APIの全体像
+
+```text
+PATCH通信を受け取る
+        ↓
+認証なし → HTTP 401
+        ↓
+JSONを読み取る
+        ↓
+不正な体型 → HTTP 400
+        ↓
+本人のgoalBodyTypeを更新
+        ↓
+ユーザーなし → HTTP 404
+        ↓
+更新後のuserをJSONで返す
+        ↓
+予想外の失敗 → HTTP 500
+```
+
+### 理想体型保存APIの接続テスト
+
+既存のテストユーザーを使い、ローカル画面と同じ3000番の開発サーバーからAPIを呼びました。
+
+許可された「細マッチョ」を送ると、Neonの`goalBodyType`と`updatedAt`が更新されました。
+
+```text
+HTTP 200 OK
+goalBodyType: 細マッチョ
+```
+
+許可一覧にない体型を送ると、DB更新前に入力エラーが返りました。
+
+```text
+HTTP 400 Bad Request
+error: 正しい理想体型を選択してください。
+```
+
+認証情報を付けずに送ると、DB更新前に未認証エラーが返りました。
+
+```text
+HTTP 401 Unauthorized
+error: ログインが必要です。
+```
+
+このテストによって、本人の理想体型を保存でき、不正入力と未認証の操作を拒否できることを確認しました。
+
+### 今回追加された単語
+
+| 単語 | 意味 |
+| --- | --- |
+| TypeScript | JavaScriptへ型の仕組みを追加したプログラミング言語 |
+| `PATCH` | 既存データの一部を変更するHTTP通信方法 |
+| `request: Request` | 通信内容を受け取る変数と、そのTypeScriptの型指定 |
+| `request.json()` | 受信したJSONをJavaScriptの値へ変換する |
+| `.catch()` | 直前の非同期処理が失敗した場合の処理を書く |
+| `?.` | 左側が`null`などでもエラーを起こさず安全に値を読む |
+| `typeof` | 値が文字列など、どの種類かを確認する |
+| `||` | 複数条件のどれか1つが当てはまることを表す |
+| `.includes()` | 配列に指定した値が含まれるか確認する |
+| `.update()` | DBの既存データを更新する |
+| `.set()` | DBで変更する項目と値を指定する |
+| `new Date()` | 現在の日付と時刻を持つ値を作る |
+| HTTP 400 | 送られた入力内容が不正であることを表す番号 |
+| HTTP 404 | 対象データが見つからないことを表す番号 |
+
+## 12-10. 身体プロフィールテーブル
+
+担当ファイルは`db/schema.ts`です。
+
+このテーブルは、身長・体重・体脂肪率・週のトレーニング回数などをユーザーごとに保存する場所です。
+
+このファイルへ直接書いている言語はTypeScriptで、Drizzle ORMの機能を使ってPostgreSQLのテーブルを定義します。
+
+```text
+TypeScript
+    ↓ Drizzle ORMのテーブル定義
+PostgreSQLのuser_profilesテーブル
+    ↓
+Neonへ身体情報を保存
+```
+
+週の回数や可能時間など、整数用の列を作る機能を読み込みます。
+
+```ts
+integer,
+```
+
+`integer`は小数部分を持たない整数をPostgreSQLへ保存します。
+
+身長・体重・体脂肪率など、小数を含められる列を作る機能を読み込みます。
+
+```ts
+real,
+```
+
+`real`は`172.5`や`65.8`のような小数を含む数値をPostgreSQLへ保存します。
+
+| 型 | 保存する予定の値 |
+| --- | --- |
+| `integer` | 週の回数、1回に使える分数 |
+| `real` | 身長、体重、体脂肪率 |
+
 # 13. 現在まだ実装していないこと
 
 - 保存した目標体型を再読み込み後の選択表示へ反映する処理
@@ -2743,4 +3768,4 @@ updatedAt: timestamp("updated_at", {
 - AIが他機能の共通データを取得するTool
 - PostgreSQLの残りのテーブル、保存API、検索処理を使った長期記憶
 
-次は`db/schema.ts`からPostgreSQL用マイグレーションファイルを生成し、実際に作成されるSQLを確認します。
+次は`user_profiles`テーブルを作り、プロフィールIDとusersテーブルとのつながりを定義します。

@@ -1,7 +1,9 @@
-// PostgreSQLへユーザー情報を保存するテーブルの型を読み込む場所
+// PostgreSQLへユーザー情報と身体プロフィールを保存するテーブルの型を読み込む場所
 import {
   boolean,
+  integer,
   pgTable,
+  real,
   text,
   timestamp,
   uuid,
