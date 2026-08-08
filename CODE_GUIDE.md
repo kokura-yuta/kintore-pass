@@ -29,7 +29,8 @@
 - [9. CSSの読み方](#9-cssの読み方)
 - [10. 基本の型まとめ](#10-基本の型まとめ)
 - [11. 単語帳](#11-単語帳)
-- [12. 現在まだ実装していないこと](#12-現在まだ実装していないこと)
+- [12. PostgreSQLバックエンド](#12-postgresqlバックエンド)
+- [13. 現在まだ実装していないこと](#13-現在まだ実装していないこと)
 
 ## 現在の実装状況
 
@@ -2379,7 +2380,360 @@ try {
 | `::placeholder` | 入力前の例文へ適用する |
 | `:disabled` | 操作できない要素へ適用する |
 
-# 12. 現在まだ実装していないこと
+# 12. PostgreSQLバックエンド
+
+## 12-1. バックエンドで使用している技術
+
+| 技術 | 何をするものか | 現在の状態 |
+| --- | --- | --- |
+| Next.js Route Handler | `app/api`内へGET・POSTなどのAPIを作る | AIチャットAPIで使用中 |
+| Vinext | Next.js形式のアプリをVite・Cloudflare Workers環境で動かす | 使用中 |
+| TypeScript | DB設定やテーブル定義を型付きで書く | `db`と設定ファイルで使用中 |
+| Neon PostgreSQL | ユーザー情報・記録・会話を永続保存するデータベース | 接続設定とusersテーブル設計まで完了 |
+| Drizzle ORM | TypeScriptからPostgreSQLの保存・取得・更新・削除を行う | DB接続とusersテーブル定義まで実装済み |
+| Drizzle Kit | テーブル設計からマイグレーションファイルを作り、DBへ適用する | PostgreSQL用設定済み・マイグレーションは未生成 |
+| `@neondatabase/serverless` | Cloudflare WorkersなどからNeonへHTTP接続するドライバー | インストール済み |
+| `dotenv` | マイグレーションコマンドから`.env.local`を読み込む | インストール済み |
+| OpenAI SDK | 質問やユーザーデータをOpenAI APIへ送り、AI回答を受け取る | 基本チャットで使用中 |
+| JSON | フロントエンドとバックエンド間でデータを送受信する形式 | チャットAPIで使用中 |
+| ChatGPT認証ヘルパー | 認証済み利用者のメールアドレスと表示名を取得する | ファイルは存在するが各APIへ未接続 |
+| Cloudflare Workers | デプロイ後にAPIやサーバー処理を実行する環境 | プロジェクトの実行基盤 |
+
+### PostgreSQL・Neon・Drizzleの違い
+
+```text
+PostgreSQL
+→ データを保存・検索するデータベース本体
+
+Neon
+→ PostgreSQLをインターネット上で管理・提供するサービス
+
+Drizzle ORM
+→ TypeScriptからPostgreSQLを操作するための仕組み
+
+Drizzle Kit
+→ テーブルの作成・変更履歴を生成してDBへ反映する開発用ツール
+```
+
+### バックエンド全体のデータの流れ
+
+```text
+Reactの入力フォーム
+        ↓ JSON
+Next.jsのAPI（app/api/.../route.js）
+        ↓ 入力値チェック
+Drizzle ORM
+        ↓ SQL操作
+Neon PostgreSQL
+        ↓ 保存結果・検索結果
+Next.jsのAPI
+        ↓ JSON
+Reactへ結果を表示
+```
+
+AIを使う場合は、PostgreSQLから取得した情報をOpenAIへ追加で渡します。
+
+```text
+Neon PostgreSQLから過去記録を取得
+        ↓
+必要なデータだけ整理
+        ↓
+OpenAI APIへ質問と一緒に送信
+        ↓
+AI回答を受け取る
+        ↓
+回答と会話履歴をPostgreSQLへ保存
+        ↓
+フロントエンドへJSONで返す
+```
+
+PostgreSQLへ保存するだけではAIの長期記憶になりません。質問時に必要な過去データを取得し、OpenAIへ渡す処理まで作ることで長期記憶として機能します。
+
+## 12-2. バックエンド関連ファイルの役割
+
+| ファイル・フォルダ | 役割 |
+| --- | --- |
+| `.env.local` | DB接続文字列とOpenAI APIキーを外部へ公開せず保存する |
+| `db/schema.ts` | users・profiles・training_recordsなどのテーブルを定義する |
+| `db/index.ts` | APIからNeon PostgreSQLへ接続する共通関数を提供する |
+| `drizzle.config.ts` | Drizzle KitへDB種類・スキーマ・接続先を伝える |
+| `drizzle-postgres/` | PostgreSQL用のテーブル変更履歴を保存する |
+| `app/api/.../route.js` | フロントエンドからの通信を受け取り、DBやAIを操作する |
+| `app/lib/ai/systemPrompt.js` | AIの役割・回答ルール・禁止事項を定義する |
+| `app/chatgpt-auth.ts` | 認証済みユーザーの情報を取得する共通機能 |
+
+### `db/index.ts`と`drizzle.config.ts`の違い
+
+```text
+db/index.ts
+→ アプリ実行中にAPIがデータを保存・取得するために使う
+
+drizzle.config.ts
+→ 開発中にテーブルを作成・変更するコマンドが使う
+```
+
+## 12-3. バックエンドで作る機能
+
+| 機能 | バックエンドの役割 | 現在の状態 |
+| --- | --- | --- |
+| 初回起動判定 | 初回設定が完了しているか返す | 保存項目の設計まで完了・APIは未実装 |
+| ユーザー管理 | 認証情報とアプリ内ユーザーIDを結び付ける | usersテーブル設計まで完了・APIは未実装 |
+| 理想体型 | 選択した目標体型をユーザーごとに保存・取得する | 保存項目の設計まで完了・APIは未実装 |
+| プロフィール | 身長・体重・体脂肪率・可能時間などを保存する | 未実装 |
+| 身体分析 | 身体データと分析結果を日付付きで保存する | 未実装 |
+| トレーニング記録 | 種目・重量・回数・セット・時間・調子・メモを保存する | 未実装 |
+| 記録履歴 | 日付やユーザーIDで過去記録を取得する | 未実装 |
+| 体重記録 | 日付ごとの体重を保存し、グラフ用データを返す | 未実装 |
+| 画像保存 | 参考画像・身体写真をストレージへ保存する | 未実装 |
+| AIメニュー | 過去記録とプロフィールからメニューを生成・保存する | 未実装 |
+| AIチャット | OpenAIへ質問を送り、回答を返す | 基本通信まで実装済み |
+| チャット履歴 | ルーム・メッセージ・タイトルをユーザーごとに保存する | 未実装 |
+| AI Tool | AIが目標・記録・プロフィールを必要に応じて取得する | 未実装 |
+| 長期記憶 | 過去データを検索してAIへ渡し、回答と履歴を保存する | 未実装 |
+
+## 12-4. Drizzle KitのPostgreSQL設定
+
+担当ファイルは`drizzle.config.ts`です。
+
+`.env.local`からNeonの接続文字列を読み込みます。
+
+```ts
+import { config } from "dotenv";
+
+config({ path: ".env.local" });
+```
+
+PostgreSQL用マイグレーションの保存先・スキーマ・接続先を指定します。
+
+```ts
+export default defineConfig({
+  out: "./drizzle-postgres",
+  schema: "./db/schema.ts",
+  dialect: "postgresql",
+  dbCredentials: {
+    url: databaseUrl,
+  },
+});
+```
+
+- `out`：PostgreSQL用のテーブル変更履歴を保存する場所
+- `schema`：テーブル設計を読み取るファイル
+- `dialect`：使用するDBの種類をPostgreSQLにする
+- `dbCredentials`：マイグレーションを適用するNeonの接続情報
+
+## 12-5. Neon PostgreSQLへ接続する場所
+
+担当ファイルは`db/index.ts`です。
+
+このファイルは、APIとNeon PostgreSQLをつなぐ共通の入口です。
+
+```text
+フロントエンドからAPIを呼ぶ
+        ↓
+APIがgetDb()を実行
+        ↓
+Neon PostgreSQLへ接続
+        ↓
+ユーザー情報・記録・会話を保存または取得
+```
+
+Neon対応のDrizzle機能とテーブル定義を読み込みます。
+
+```ts
+import { drizzle } from "drizzle-orm/neon-http";
+import * as schema from "./schema";
+```
+
+- `drizzle-orm/neon-http`：サーバーレス環境からNeon PostgreSQLへHTTP接続する
+- `schema`：`db/schema.ts`で定義するすべてのテーブルをまとめて読み込む
+
+ほかのバックエンド処理から使えるDB接続関数を定義します。
+
+```ts
+export function getDb() {
+```
+
+`.env.local`に保存した接続文字列を取得します。
+
+```ts
+const databaseUrl = process.env.DATABASE_URL;
+```
+
+接続文字列がない場合は、原因が分かるエラーを出して処理を止めます。
+
+```ts
+if (!databaseUrl) {
+  throw new Error(
+    "DATABASE_URLが設定されていません。",
+  );
+}
+```
+
+接続文字列とテーブル定義を使い、DB操作用オブジェクトを返します。
+
+```ts
+return drizzle(databaseUrl, { schema });
+```
+
+各APIへ接続コードを繰り返し書かず、`getDb()`を呼ぶだけで同じ設定を利用するためのファイルです。
+
+| 単語 | 意味 |
+| --- | --- |
+| PostgreSQL | 複数ユーザーのデータ保存や検索に使うリレーショナルデータベース |
+| Neon | サーバーレス環境から利用できるPostgreSQLサービス |
+| Drizzle ORM | TypeScriptからテーブル定義やSQL操作を扱う仕組み |
+| `DATABASE_URL` | DBの場所・ユーザー名・パスワードなどを含む秘密の接続文字列 |
+| `getDb()` | 共通設定でDB接続を取得する関数 |
+
+## 12-6. ユーザー情報を保存するテーブル
+
+担当ファイルは`db/schema.ts`です。
+
+このファイルは、PostgreSQLへ保存するデータの名前・種類・必須条件・初期値を定義する場所です。
+
+```text
+認証済みユーザーの情報
+        ↓
+usersテーブルからemailを検索
+        ↓
+初回設定の進み具合を確認
+        ↓
+初回セットアップまたはホームへ進む
+```
+
+PostgreSQLのテーブルを作るために必要な機能を読み込みます。
+
+```ts
+import {
+  boolean,
+  pgTable,
+  text,
+  timestamp,
+  uuid,
+} from "drizzle-orm/pg-core";
+```
+
+- `boolean`：`true`または`false`を保存する
+- `pgTable`：PostgreSQLのテーブルを定義する
+- `text`：文字列を保存する
+- `timestamp`：日付と時刻を保存する
+- `uuid`：重複しにくいIDを保存する
+
+`users`というテーブルを定義し、ほかのバックエンドファイルから利用できるようにします。
+
+```ts
+export const users = pgTable("users", {
+```
+
+`users`はTypeScript内で使う名前で、`"users"`はPostgreSQL内のテーブル名です。
+
+ユーザーを重複なく識別するIDを定義します。
+
+```ts
+id: uuid("id").defaultRandom().primaryKey(),
+```
+
+- `uuid("id")`：`id`というUUID形式の列を作る
+- `.defaultRandom()`：新規登録時にUUIDを自動生成する
+- `.primaryKey()`：この値を各ユーザーの中心となる識別子にする
+
+ログイン中のユーザーとDB内のデータを結び付ける情報を定義します。
+
+```ts
+email: text("email").notNull().unique(),
+displayName: text("display_name"),
+```
+
+- `.notNull()`：値が空になることを禁止する
+- `.unique()`：同じメールアドレスの重複登録を禁止する
+- `displayName`には`.notNull()`がないため、表示名がなくても登録できる
+
+初回セットアップがすべて完了したか保存します。
+
+```ts
+onboardingCompleted: boolean("onboarding_completed")
+  .notNull()
+  .default(false),
+```
+
+新規ユーザーは初期値が`false`になり、起動時に初回セットアップへ進みます。
+
+現在選択している理想体型を保存します。
+
+```ts
+goalBodyType: text("goal_body_type"),
+```
+
+細マッチョ・逆三角形・フィジーク・バルクアップなどの文字列が入る予定です。
+
+身体情報の入力が完了したか保存します。
+
+```ts
+profileCompleted: boolean("profile_completed")
+  .notNull()
+  .default(false),
+```
+
+初回の身体分析が完了したか保存します。
+
+```ts
+initialAnalysisCompleted: boolean(
+  "initial_analysis_completed",
+)
+  .notNull()
+  .default(false),
+```
+
+作成日時と最終更新日時を保存します。
+
+```ts
+createdAt: timestamp("created_at", {
+  withTimezone: true,
+})
+  .notNull()
+  .defaultNow(),
+```
+
+`withTimezone: true`はタイムゾーンを扱える日時にし、`.defaultNow()`は登録時の現在日時を自動保存します。
+
+```ts
+updatedAt: timestamp("updated_at", {
+  withTimezone: true,
+})
+  .notNull()
+  .defaultNow(),
+```
+
+`updatedAt`は最後にユーザー情報を変更した日時を保存する列です。今後の更新APIで、データ変更時に新しい日時を設定します。
+
+### `users`テーブルの項目一覧
+
+| TypeScriptの名前 | PostgreSQLの列名 | 保存する内容 |
+| --- | --- | --- |
+| `id` | `id` | ユーザー固有のUUID |
+| `email` | `email` | 認証に使うメールアドレス |
+| `displayName` | `display_name` | 画面に表示する名前 |
+| `onboardingCompleted` | `onboarding_completed` | 初回セットアップ全体の完了状態 |
+| `goalBodyType` | `goal_body_type` | 現在選択中の理想体型 |
+| `profileCompleted` | `profile_completed` | 身体情報入力の完了状態 |
+| `initialAnalysisCompleted` | `initial_analysis_completed` | 初回身体分析の完了状態 |
+| `createdAt` | `created_at` | ユーザー作成日時 |
+| `updatedAt` | `updated_at` | ユーザー情報の最終更新日時 |
+
+### 今回追加された単語
+
+| 単語 | 意味 |
+| --- | --- |
+| `pgTable()` | PostgreSQLのテーブルを定義する関数 |
+| `uuid()` | UUID形式の列を作る関数 |
+| `.primaryKey()` | テーブル内のデータを識別する中心の列にする |
+| `.notNull()` | 空の値を禁止する |
+| `.unique()` | 同じ値の重複を禁止する |
+| `.default()` | 新しいデータへ最初から入れる値を指定する |
+| `.defaultNow()` | 新しいデータへ現在日時を自動で入れる |
+| `withTimezone` | 日時とタイムゾーンを一緒に扱えるようにする設定 |
+
+# 13. 現在まだ実装していないこと
 
 - 保存した目標体型を再読み込み後の選択表示へ反映する処理
 - 参考画像の永続保存とサーバーへのアップロード
@@ -2387,6 +2741,6 @@ try {
 - トレーニング記録の重量・回数・セット入力、保存、履歴表示
 - AIメニュー作成
 - AIが他機能の共通データを取得するTool
-- データベースを使った長期記憶
+- PostgreSQLの残りのテーブル、保存API、検索処理を使った長期記憶
 
-次の作業場所は`app/components/TrainingLogSection.jsx`です。
+次は`db/schema.ts`からPostgreSQL用マイグレーションファイルを生成し、実際に作成されるSQLを確認します。
