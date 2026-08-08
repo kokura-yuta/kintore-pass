@@ -20,6 +20,108 @@ body {
   font-family: Arial, "Noto Sans JP", sans-serif;
 }
 
+/* アプリ起動時にだけ表示するタイトル画面 */
+.splashScreen {
+  position: relative;
+  display: flex;
+  width: 100%;
+  min-height: 100svh;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  padding: 32px 24px;
+  background:
+    radial-gradient(circle at 50% 44%, rgba(182, 242, 75, 0.12), transparent 34%),
+    var(--background);
+  text-align: center;
+}
+
+.splashGlow {
+  position: absolute;
+  width: 240px;
+  height: 240px;
+  border: 1px solid rgba(182, 242, 75, 0.18);
+  border-radius: 50%;
+  animation: splashPulse 1.8s ease-out infinite;
+}
+
+.splashContent {
+  position: relative;
+  z-index: 1;
+  animation: splashReveal 700ms ease-out both;
+}
+
+.splashTagline {
+  margin: 0 0 14px;
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+}
+
+.splashLogo {
+  margin: 0;
+  font-size: clamp(44px, 14vw, 72px);
+  font-weight: 900;
+  letter-spacing: -0.07em;
+  line-height: 1;
+}
+
+.splashLogo span {
+  margin-left: 0.12em;
+  color: var(--accent);
+}
+
+.splashMessage {
+  margin: 18px 0 0;
+  color: var(--muted);
+  font-size: 14px;
+  letter-spacing: 0.12em;
+}
+
+.splashLoader {
+  position: absolute;
+  right: 24px;
+  bottom: max(32px, env(safe-area-inset-bottom));
+  left: 24px;
+  height: 2px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.splashLoader span {
+  display: block;
+  width: 42%;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  animation: splashLoading 1.2s ease-in-out infinite;
+}
+
+@keyframes splashReveal {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes splashPulse {
+  from { opacity: 0.8; transform: scale(0.72); }
+  to { opacity: 0; transform: scale(1.45); }
+}
+
+@keyframes splashLoading {
+  from { transform: translateX(-110%); }
+  to { transform: translateX(340%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .splashContent,
+  .splashGlow,
+  .splashLoader span {
+    animation: none;
+  }
+}
+
 /* トップ画面と機能カード全体の配置 */
 main { width: min(1120px, calc(100% - 32px)); margin: 0 auto; padding: 72px 0; }
 .hero { margin-bottom: 48px; }

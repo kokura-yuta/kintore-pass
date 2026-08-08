@@ -16,6 +16,11 @@ export default function BottomNavigation() {
   // 現在のURLを使って選択中の下部メニューを判定する場所
   const pathname = usePathname();
 
+  // 起動画面では、アプリ本体のナビゲーションを表示しない。
+  if (pathname === "/") {
+    return null;
+  }
+
   return (
     <nav className="bottomNavigation" aria-label="主要機能">
       <div className="bottomNavigationInner">
