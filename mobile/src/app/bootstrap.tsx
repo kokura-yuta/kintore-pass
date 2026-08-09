@@ -15,6 +15,7 @@ export default function BootstrapScreen() {
   const { signOut } = useClerk();
   const [status, setStatus] = useState<Status>('loading');
   const [errorMessage, setErrorMessage] = useState('');
+  const [canUseDevelopmentBypass, setCanUseDevelopmentBypass] = useState(false);
 
   const loadBootstrap = useCallback(async () => {
     if (!isLoaded || !isSignedIn) return;
@@ -43,6 +44,9 @@ export default function BootstrapScreen() {
       setErrorMessage(
         error instanceof Error ? error.message : 'ユーザー情報の取得に失敗しました。',
       );
+      setCanUseDevelopmentBypass(
+        __DEV__ && error instanceof ApiError && error.message.includes('接続先'),
+      );
       setStatus('error');
     }
   }, [getToken, isLoaded, isSignedIn, router, signOut]);
@@ -55,6 +59,7 @@ export default function BootstrapScreen() {
   function retryBootstrap() {
     setStatus('loading');
     setErrorMessage('');
+    setCanUseDevelopmentBypass(false);
     void loadBootstrap();
   }
 
@@ -80,6 +85,19 @@ export default function BootstrapScreen() {
             <Pressable onPress={retryBootstrap} style={styles.primaryButton}>
               <Text style={styles.primaryButtonText}>もう一度試す</Text>
             </Pressable>
+            {canUseDevelopmentBypass ? (
+              <>
+                <Pressable
+                  onPress={() => router.replace('/ideal-body')}
+                  style={styles.developmentButton}
+                >
+                  <Text style={styles.developmentButtonText}>開発用に初回設定へ進む</Text>
+                </Pressable>
+                <Text style={styles.developmentNote}>
+                  開発中だけ表示されます。本番ではbootstrap APIの結果を使用します。
+                </Text>
+              </>
+            ) : null}
           </View>
         ) : null}
 
@@ -116,4 +134,21 @@ const styles = StyleSheet.create({
     backgroundColor: '#B6F24B',
   },
   primaryButtonText: { color: '#0B0D0C', fontSize: 15, fontWeight: '900' },
+  developmentButton: {
+    minHeight: 52,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: '#B6F24B',
+    borderRadius: 14,
+  },
+  developmentButtonText: { color: '#B6F24B', fontSize: 14, fontWeight: '900' },
+  developmentNote: {
+    marginTop: 12,
+    color: '#697169',
+    fontSize: 11,
+    lineHeight: 17,
+    textAlign: 'center',
+  },
 });
