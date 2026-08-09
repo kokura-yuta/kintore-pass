@@ -187,6 +187,14 @@ export default function SignInScreen() {
 
             {errorMessage ? <Text style={styles.error}>{errorMessage}</Text> : null}
 
+            {Platform.OS === 'web' ? (
+              <View
+                accessibilityLabel="不正登録防止の確認"
+                nativeID="clerk-captcha"
+                style={styles.captcha}
+              />
+            ) : null}
+
             <Pressable
               disabled={!isReady || isSubmitting}
               onPress={step === 'email' ? sendCode : verifyCode}
@@ -239,6 +247,7 @@ const styles = StyleSheet.create({
   },
   codeInput: { fontSize: 25, fontWeight: '800', letterSpacing: 8, textAlign: 'center' },
   error: { marginTop: 12, color: '#FF7676', fontSize: 13, lineHeight: 19 },
+  captcha: { minHeight: 1, marginTop: 8 },
   primaryButton: {
     minHeight: 54,
     alignItems: 'center',
