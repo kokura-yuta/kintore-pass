@@ -14,14 +14,25 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 type Step = 'email' | 'code';
-type AuthMode = 'sign-in' | 'sign-up';
 
-type ClerkResult = {
-  error: { code?: string; message?: string; longMessage?: string } | null;
+type ClerkErrorLike = {
+  errors?: { code?: string; message?: string; longMessage?: string }[];
+  message?: string;
+  longMessage?: string;
 };
 
-function getErrorMessage(error: ClerkResult['error']) {
-  return error?.longMessage ?? error?.message ?? '認証に失敗しました。もう一度お試しください。';
+function getErrorCode(error: ClerkErrorLike) {
+  return error.errors?.[0]?.code;
+}
+
+function getErrorMessage(error: ClerkErrorLike) {
+  return (
+    error.errors?.[0]?.longMessage ??
+    error.errors?.[0]?.message ??
+    error.longMessage ??
+    error.message ??
+    '認証に失敗しました。もう一度お試しください。'
+  );
 }
 
 export default function SignInScreen() {
@@ -30,14 +41,13 @@ export default function SignInScreen() {
   const { signIn } = useSignIn();
   const { signUp } = useSignUp();
   const [step, setStep] = useState<Step>('email');
-  const [authMode, setAuthMode] = useState<AuthMode>('sign-in');
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
   if (isAuthLoaded && isSignedIn) {
-    return <Redirect href="/home" />;
+    return <Redirect href="/bootstrap" />;
   }
 
   const isReady = isAuthLoaded && Boolean(signIn) && Boolean(signUp);
@@ -60,34 +70,15 @@ export default function SignInScreen() {
         signUpIfMissing: true,
       });
 
-      if (createResult.error) {
-        if (createResult.error.code === 'sign_up_if_missing_transfer') {
-          const transferResult = await signUp.create({ transfer: true });
-          if (transferResult.error) throw transferResult.error;
+      if (createResult.error) throw createResult.error;
 
-          const sendResult = await signUp.verifications.sendEmailCode();
-          if (sendResult.error) throw sendResult.error;
-          setAuthMode('sign-up');
-        } else {
-          throw createResult.error;
-        }
-      } else if (signIn.isTransferable) {
-        const transferResult = await signUp.create({ transfer: true });
-        if (transferResult.error) throw transferResult.error;
-
-        const sendResult = await signUp.verifications.sendEmailCode();
-        if (sendResult.error) throw sendResult.error;
-        setAuthMode('sign-up');
-      } else {
-        const sendResult = await signIn.emailCode.sendCode();
-        if (sendResult.error) throw sendResult.error;
-        setAuthMode('sign-in');
-      }
+      const sendResult = await signIn.emailCode.sendCode();
+      if (sendResult.error) throw sendResult.error;
 
       setEmail(normalizedEmail);
       setStep('code');
     } catch (error) {
-      setErrorMessage(getErrorMessage(error as ClerkResult['error']));
+      setErrorMessage(getErrorMessage(error as ClerkErrorLike));
     } finally {
       setIsSubmitting(false);
     }
@@ -106,15 +97,25 @@ export default function SignInScreen() {
     setErrorMessage('');
 
     try {
-      if (authMode === 'sign-up') {
-        const verifyResult = await signUp.verifications.verifyEmailCode({ code: normalizedCode });
-        if (verifyResult.error) throw verifyResult.error;
+      const verifyResult = await signIn.emailCode.verifyCode({ code: normalizedCode });
+
+      if (verifyResult.error) {
+        if (getErrorCode(verifyResult.error) !== 'sign_up_if_missing_transfer') {
+          throw verifyResult.error;
+        }
+
+        const transferResult = await signUp.create({ transfer: true });
+        if (transferResult.error) throw transferResult.error;
+        if (signUp.status !== 'complete') {
+          throw new Error('新規登録に追加情報が必要です。Clerkの必須項目設定を確認してください。');
+        }
 
         const finalizeResult = await signUp.finalize();
         if (finalizeResult.error) throw finalizeResult.error;
       } else {
-        const verifyResult = await signIn.emailCode.verifyCode({ code: normalizedCode });
-        if (verifyResult.error) throw verifyResult.error;
+        if (signIn.status !== 'complete') {
+          throw new Error('ログインを完了できませんでした。もう一度お試しください。');
+        }
 
         const finalizeResult = await signIn.finalize();
         if (finalizeResult.error) throw finalizeResult.error;
@@ -122,7 +123,7 @@ export default function SignInScreen() {
 
       router.replace('/bootstrap');
     } catch (error) {
-      setErrorMessage(getErrorMessage(error as ClerkResult['error']));
+      setErrorMessage(getErrorMessage(error as ClerkErrorLike));
     } finally {
       setIsSubmitting(false);
     }
