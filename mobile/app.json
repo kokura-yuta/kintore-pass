@@ -35,7 +35,15 @@
         }
       ],
       "@clerk/expo",
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "目標体型の参考画像を選ぶために写真へのアクセスを使用します。",
+          "cameraPermission": "身体分析用の写真を撮影するためにカメラを使用します。",
+          "microphonePermission": false
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

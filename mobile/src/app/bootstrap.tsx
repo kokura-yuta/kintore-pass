@@ -88,8 +88,11 @@ export default function BootstrapScreen() {
             <Text style={styles.eyebrow}>FIRST SETUP</Text>
             <Text style={styles.title}>初回設定を始めます</Text>
             <Text style={styles.description}>
-              次の工程で、理想体型と身体情報を入力する画面につなげます。
+              理想体型と身体情報を入力して、あなた専用の設定を作ります。
             </Text>
+            <Pressable onPress={() => router.replace('/ideal-body')} style={styles.primaryButton}>
+              <Text style={styles.primaryButtonText}>初回設定を始める</Text>
+            </Pressable>
           </View>
         ) : null}
       </SafeAreaView>
