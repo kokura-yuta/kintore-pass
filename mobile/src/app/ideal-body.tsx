@@ -6,6 +6,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { BodyTypeCard } from '@/components/BodyTypeCard';
+import { type GoalBodySelection, useOnboarding } from '@/contexts/OnboardingContext';
 import bulkUpImage from '../../assets/images/body-types/bulk-up.png';
 import leanMuscleImage from '../../assets/images/body-types/lean-muscle.png';
 import physiqueImage from '../../assets/images/body-types/physique.png';
@@ -40,13 +41,10 @@ const bodyTypes = [
   },
 ] as const;
 
-export type GoalBodySelection =
-  | { kind: 'preset'; bodyTypeId: (typeof bodyTypes)[number]['id'] }
-  | { kind: 'custom-image'; imageUri: string; fileName: string | null };
-
 export default function IdealBodyScreen() {
   const router = useRouter();
-  const [selection, setSelection] = useState<GoalBodySelection | null>(null);
+  const { goalBody, setGoalBody } = useOnboarding();
+  const [selection, setSelection] = useState<GoalBodySelection | null>(goalBody);
   const [errorMessage, setErrorMessage] = useState('');
 
   async function pickReferenceImage() {
@@ -83,6 +81,7 @@ export default function IdealBodyScreen() {
     }
 
     // 保存API完成後、このselectionを送信してから身体情報入力へ進みます。
+    setGoalBody(selection);
     router.push('/profile-setup');
   }
 

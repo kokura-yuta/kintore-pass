@@ -6,6 +6,7 @@ import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { ConfigurationRequiredScreen } from '@/components/ConfigurationRequiredScreen';
+import { OnboardingProvider } from '@/contexts/OnboardingContext';
 
 const publishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY;
 
@@ -37,7 +38,9 @@ export default function RootLayout() {
       <SafeAreaProvider>
         <ThemeProvider value={musclePasTheme}>
           <StatusBar style="light" />
-          <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#0B0D0C' } }} />
+          <OnboardingProvider>
+            <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#0B0D0C' } }} />
+          </OnboardingProvider>
         </ThemeProvider>
       </SafeAreaProvider>
     </ClerkProvider>
