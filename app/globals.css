@@ -412,6 +412,230 @@ h1 { margin: 8px 0; font-size: clamp(42px, 8vw, 88px); line-height: .95; }
   font-size: clamp(32px, 9vw, 54px);
 }
 
+.profileSetupTitle {
+  margin: 6px 0 0;
+  font-size: clamp(34px, 9vw, 54px);
+}
+
+.profileSetupLead {
+  margin: -8px 0 24px;
+  color: var(--muted);
+  line-height: 1.7;
+}
+
+.profileSetupForm {
+  display: grid;
+  gap: 16px;
+}
+
+.setupCard {
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--surface);
+}
+
+.setupCardHeading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.setupCardHeading h2,
+.setupCardHeading p {
+  margin: 0;
+}
+
+.setupCardHeading h2 {
+  font-size: 19px;
+}
+
+.setupCardHeading p {
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.setupCardHeading > span,
+.setupField b {
+  color: var(--accent);
+  font-size: 11px;
+}
+
+.setupCardHeading .optionalBadge,
+.setupField em {
+  color: var(--muted);
+  font-size: 11px;
+  font-style: normal;
+}
+
+.measurementGrid,
+.selectGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.setupField {
+  display: grid;
+  gap: 8px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.setupField small {
+  color: #ff8d98;
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.optionalField {
+  margin-top: 16px;
+}
+
+.unitInput {
+  display: flex;
+  min-height: 50px;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--background);
+}
+
+.unitInput:focus-within {
+  border-color: var(--accent);
+}
+
+.unitInput.hasError {
+  border-color: #ff6978;
+}
+
+.unitInput input {
+  width: 100%;
+  min-width: 0;
+  padding: 0 4px 0 14px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+}
+
+.unitInput > span {
+  padding-right: 14px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.locationOptions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.locationOption {
+  display: flex;
+  min-height: 92px;
+  align-items: flex-start;
+  justify-content: center;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--background);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.locationOption span {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.locationOption.selected {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.locationOption.selected strong {
+  color: var(--accent);
+}
+
+.setupField select {
+  min-height: 48px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  outline: 0;
+  background: var(--background);
+  color: var(--text);
+  font: inherit;
+}
+
+.setupField select:focus {
+  border-color: var(--accent);
+}
+
+.weakPartsFieldset {
+  margin: 20px 0 0;
+  padding: 0;
+  border: 0;
+}
+
+.weakPartsFieldset legend {
+  margin-bottom: 10px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.weakPartOptions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.weakPartOptions button {
+  min-height: 40px;
+  padding: 0 15px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--background);
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.weakPartOptions button.selected {
+  border-color: var(--accent);
+  background: rgba(182, 242, 75, 0.1);
+  color: var(--accent);
+}
+
+@media (max-width: 540px) {
+  .locationOptions {
+    grid-template-columns: 1fr;
+  }
+
+  .locationOption {
+    min-height: 72px;
+  }
+}
+
+@media (max-width: 420px) {
+  .measurementGrid,
+  .selectGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (max-width: 480px) {
   .goalUploadPanel {
     align-items: flex-start;
