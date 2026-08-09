@@ -290,7 +290,7 @@ export async function PATCH(
     weakBodyParts,
     updatedAt: new Date(),
   };
-    const savedProfiles = await db
+  const savedProfiles = await db
     .insert(userProfiles)
     .values(profileValues)
     .onConflictDoUpdate({
