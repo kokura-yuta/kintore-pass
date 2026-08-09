@@ -111,7 +111,6 @@ export default function SignInScreen() {
       if (authMode === 'sign-up') {
         const verifyResult = await signUp.verifications.verifyEmailCode({ code: normalizedCode });
         if (verifyResult.error) throw verifyResult.error;
-        if (signUp.status !== 'complete') throw new Error('新規登録を完了できませんでした。');
 
         const finalizeResult = await signUp.finalize();
         if (finalizeResult.error) throw finalizeResult.error;
