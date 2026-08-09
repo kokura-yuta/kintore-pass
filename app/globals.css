@@ -122,6 +122,67 @@ body {
   }
 }
 
+/* タイトル画面の直後に初回利用かを確認する画面 */
+.routeCheckScreen {
+  display: flex;
+  width: 100%;
+  min-height: 100svh;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 18px;
+  padding: 24px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.routeCheckScreen p {
+  margin: 0;
+  font-size: 13px;
+  letter-spacing: 0.05em;
+}
+
+.routeCheckSpinner {
+  width: 34px;
+  height: 34px;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: routeCheckSpin 700ms linear infinite;
+}
+
+.onboardingPage {
+  padding-top: 32px;
+}
+
+.onboardingHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+
+.onboardingHeader p {
+  margin: 0;
+}
+
+.onboardingStep {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+
+@keyframes routeCheckSpin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .routeCheckSpinner {
+    animation: none;
+  }
+}
+
 /* トップ画面と機能カード全体の配置 */
 main { width: min(1120px, calc(100% - 32px)); margin: 0 auto; padding: 72px 0; }
 .hero { margin-bottom: 48px; }
@@ -146,6 +207,7 @@ h1 { margin: 8px 0; font-size: clamp(42px, 8vw, 88px); line-height: .95; }
 }
 
 .bodyTypeButton {
+  position: relative;
   padding: 0;
   overflow: hidden;
   border: 1px solid var(--border);
@@ -154,6 +216,14 @@ h1 { margin: 8px 0; font-size: clamp(42px, 8vw, 88px); line-height: .95; }
   color: var(--text);
   text-align: left;
   cursor: pointer;
+}
+
+.bodyTypeButton:focus-visible,
+.goalUploadButton:focus-visible,
+.goalContinueButton:focus-visible,
+.goalImageRemoveButton:focus-visible {
+  outline: 3px solid rgba(182, 242, 75, 0.35);
+  outline-offset: 3px;
 }
 .bodyTypeImage {
   display: block;
@@ -185,6 +255,25 @@ h1 { margin: 8px 0; font-size: clamp(42px, 8vw, 88px); line-height: .95; }
   background: var(--accent);
   color: var(--background);
 }
+
+.bodyTypeCheck {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: none;
+  width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--background);
+  color: var(--accent);
+  font-weight: 900;
+}
+
+.bodyTypeButton.selected .bodyTypeCheck {
+  display: flex;
+}
 /* 利用者が選んだ参考画像のプレビュー */
 .referenceImagePreview {
   display: block;
@@ -196,6 +285,138 @@ h1 { margin: 8px 0; font-size: clamp(42px, 8vw, 88px); line-height: .95; }
   border-radius: 12px;
   background: var(--background);
   object-fit: contain;
+}
+
+.goalDivider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 24px 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.goalDivider::before,
+.goalDivider::after {
+  height: 1px;
+  flex: 1;
+  background: var(--border);
+  content: "";
+}
+
+.goalUploadPanel,
+.goalSelectionSummary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--background);
+}
+
+.goalUploadTitle,
+.goalUploadHint {
+  margin: 0;
+}
+
+.goalUploadTitle {
+  color: var(--text);
+  font-weight: 700;
+}
+
+.goalUploadHint {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.goalUploadButton,
+.goalImageRemoveButton {
+  flex: 0 0 auto;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  clip-path: inset(50%);
+}
+
+.goalImagePreviewWrap {
+  margin-top: 14px;
+}
+
+.goalImageRemoveButton {
+  margin-top: 10px;
+  color: #ff8d98;
+}
+
+.goalSelectionSummary {
+  margin-top: 24px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.goalSelectionSummary strong {
+  color: var(--text);
+  text-align: right;
+}
+
+.goalError {
+  margin: 12px 0 0;
+  color: #ff8d98;
+  font-size: 13px;
+}
+
+.goalContinueButton {
+  display: flex;
+  width: 100%;
+  min-height: 54px;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 16px;
+  padding: 0 20px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--accent);
+  color: var(--background);
+  font: inherit;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.goalContinueButton span {
+  font-size: 22px;
+}
+
+.goalPrivacyNote {
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  text-align: center;
+}
+
+.nextStepTitle {
+  margin: 0;
+  font-size: clamp(32px, 9vw, 54px);
+}
+
+@media (max-width: 480px) {
+  .goalUploadPanel {
+    align-items: flex-start;
+    flex-direction: column;
+  }
 }
 /* チャットの会話履歴を縦方向に並べる */
 .chatMessages {

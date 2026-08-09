@@ -3,15 +3,15 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 
-const DISPLAY_TIME_MS = 1800;
+const DISPLAY_TIME_MS = 2500;
 
 export default function SplashScreen() {
   const router = useRouter();
 
   useEffect(() => {
     const timerId = window.setTimeout(() => {
-      // 次に実装する初回判定画面へ、ここから進む。
-      router.replace("/dashboard");
+      // タイトル表示後、初回利用かどうかを確認する画面へ進む。
+      router.replace("/setup");
     }, DISPLAY_TIME_MS);
 
     return () => window.clearTimeout(timerId);

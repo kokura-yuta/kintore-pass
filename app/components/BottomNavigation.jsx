@@ -17,7 +17,13 @@ export default function BottomNavigation() {
   const pathname = usePathname();
 
   // 起動画面では、アプリ本体のナビゲーションを表示しない。
-  if (pathname === "/") {
+  const isOnboardingRoute =
+    pathname === "/" ||
+    pathname === "/setup" ||
+    pathname === "/ideal-body" ||
+    pathname === "/profile-setup";
+
+  if (isOnboardingRoute) {
     return null;
   }
 
