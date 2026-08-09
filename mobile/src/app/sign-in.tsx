@@ -117,13 +117,24 @@ export default function SignInScreen() {
         if (finalizeResult.error) throw finalizeResult.error;
       } else {
         const verifyResult = await signIn.emailCode.verifyCode({ code: normalizedCode });
-        if (verifyResult.error) throw verifyResult.error;
-        if (signIn.status !== 'complete') {
-          throw new Error('ログインを完了できませんでした。もう一度お試しください。');
-        }
+        if (verifyResult.error) {
+          if (getErrorCode(verifyResult.error) !== 'sign_up_if_missing_transfer') {
+            throw verifyResult.error;
+          }
 
-        const finalizeResult = await signIn.finalize();
-        if (finalizeResult.error) throw finalizeResult.error;
+          const transferResult = await signUp.create({ transfer: true });
+          if (transferResult.error) throw transferResult.error;
+
+          const finalizeSignUpResult = await signUp.finalize();
+          if (finalizeSignUpResult.error) throw finalizeSignUpResult.error;
+        } else {
+          if (signIn.status !== 'complete') {
+            throw new Error('ログインを完了できませんでした。もう一度お試しください。');
+          }
+
+          const finalizeResult = await signIn.finalize();
+          if (finalizeResult.error) throw finalizeResult.error;
+        }
       }
 
       router.replace('/bootstrap');
