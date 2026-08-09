@@ -49,3 +49,60 @@ export const users = pgTable("users", {
     .notNull()
     .defaultNow(),
 });
+
+// 身長・体重・運動条件などをusersテーブルの各ユーザーと1対1で管理するテーブル
+export const userProfiles = pgTable(
+  "user_profiles",
+  {
+    // 身体プロフィール自体を重複なく識別するID
+    id: uuid("id")
+      .defaultRandom()
+      .primaryKey(),
+
+    // users.idと結び付け、1人につき1プロフィールだけ持てるようにするID
+    userId: uuid("user_id")
+      .notNull()
+      .unique()
+      .references(() => users.id, {
+        onDelete: "cascade",
+      }),
+
+    // 身長・体重・体脂肪率を任意入力の小数として保存する項目
+    heightCm: real("height_cm"),
+
+    weightKg: real("weight_kg"),
+
+    bodyFatPercentage: real(
+      "body_fat_percentage",
+    ),
+
+    // 週の回数と1回に使える時間を任意入力の整数として保存する項目
+    weeklyTrainingDays: integer(
+      "weekly_training_days",
+    ),
+
+    availableMinutes: integer(
+      "available_minutes",
+    ),
+
+    // トレーニング場所と苦手部位を任意入力で保存する項目
+    trainingLocation: text(
+      "training_location",
+    ),
+
+    weakBodyParts: text(
+      "weak_body_parts",
+    ).array(),
+    createdAt: timestamp("created_at", {
+      withTimezone: true,
+    })
+      .notNull()
+      .defaultNow(),
+
+    updatedAt: timestamp("updated_at", {
+      withTimezone: true,
+    })
+      .notNull()
+      .defaultNow(),
+  },
+);

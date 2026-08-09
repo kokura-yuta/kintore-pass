@@ -2430,6 +2430,39 @@ Drizzle ORMを使ってDB操作を表す
 
 Drizzle ORM・JSON・PostgreSQL・Neonは、すべてTypeScriptとは役割が違います。
 
+### TypeScriptとJavaScriptを分けている理由
+
+現在のプロジェクトは、すでに作成済みのフロントエンドがJavaScript・JSX、新しく作るDBとバックエンドの中心部分がTypeScriptになっています。
+
+```text
+既存のReact画面
+→ JavaScript・JSX
+
+新しいDB設計・ユーザーAPI
+→ TypeScript
+```
+
+TypeScriptはJavaScriptへ型の確認を追加した言語で、実行前に値の種類やデータ構造の間違いを見つけやすくなります。
+
+バックエンドではユーザーID・認証情報・DBの列・APIの入力値など、形を間違えると保存やセキュリティに影響するデータを扱うため、TypeScriptを使っています。
+
+フロントエンドの既存コードはJavaScriptで正常に動いているため、学習途中で全ファイルを書き換えて複雑にせず、そのまま利用しています。
+
+```text
+TypeScriptを使う主な場所
+- db/schema.ts
+- db/index.ts
+- app/api/users/.../route.ts
+- drizzle.config.ts
+
+JavaScript・JSXを使う主な場所
+- app/components/...jsx
+- app/.../page.jsx
+- 既存のapp/api/chat/route.js
+```
+
+今後の基本方針は、新しく作るDB・認証・保存APIはTypeScript、既存のReact画面は現在のJavaScript・JSXに合わせることです。フロントエンドを将来TypeScriptへ統一する場合は、`.jsx`を`.tsx`へ段階的に移行します。
+
 ## 12-1. バックエンドで使用している技術
 
 | 技術 | 何をするものか | 現在の状態 |
@@ -2527,7 +2560,7 @@ drizzle.config.ts
 | 初回起動判定 | 初回設定が完了しているか返す | 初期化API実装済み・Neon接続テスト成功 |
 | ユーザー管理 | 認証情報とアプリ内ユーザーIDを結び付ける | 検索・新規登録API実装済み・Neon接続テスト成功 |
 | 理想体型 | 選択した目標体型をユーザーごとに保存・取得する | 保存API実装済み・Neon接続テスト成功 |
-| プロフィール | 身長・体重・体脂肪率・可能時間などを保存する | 未実装 |
+| プロフィール | 身長・体重・体脂肪率・可能時間などを保存する | user_profilesテーブルをNeonへ作成済み・保存APIは未実装 |
 | 身体分析 | 身体データと分析結果を日付付きで保存する | 未実装 |
 | トレーニング記録 | 種目・重量・回数・セット・時間・調子・メモを保存する | 未実装 |
 | 記録履歴 | 日付やユーザーIDで過去記録を取得する | 未実装 |
@@ -3758,6 +3791,606 @@ real,
 | `integer` | 週の回数、1回に使える分数 |
 | `real` | 身長、体重、体脂肪率 |
 
+### user_profilesテーブルの土台
+
+TypeScript内で`userProfiles`という名前を使い、PostgreSQLには`user_profiles`という名前でテーブルを作ります。
+
+```ts
+export const userProfiles = pgTable(
+  "user_profiles",
+  {
+```
+
+- `export`：ほかのAPIからテーブル定義を読み込めるようにする
+- `userProfiles`：TypeScriptのコード内で使う名前
+- `"user_profiles"`：PostgreSQL内で使うテーブル名
+
+プロフィール自体を識別するIDを作ります。
+
+```ts
+id: uuid("id")
+  .defaultRandom()
+  .primaryKey(),
+```
+
+新しいプロフィールを作成するとUUIDが自動生成され、そのプロフィールを識別する主キーになります。
+
+プロフィールを`users`テーブルのユーザーと結び付けます。
+
+```ts
+userId: uuid("user_id")
+  .notNull()
+  .unique()
+  .references(() => users.id, {
+    onDelete: "cascade",
+  }),
+```
+
+- `userId`：TypeScript内で使う項目名
+- `"user_id"`：PostgreSQL内で使う列名
+- `.notNull()`：どのユーザーのプロフィールかを必須にする
+- `.unique()`：同じユーザーIDのプロフィールを重複作成できないようにする
+- `.references(() => users.id)`：`users`テーブルに存在するIDだけを保存できるようにする
+- `onDelete: "cascade"`：ユーザーを削除した場合、そのユーザーのプロフィールも削除する
+
+このような別テーブル同士のつながりをリレーションと呼び、参照先を保証する`user_id`を外部キーと呼びます。
+
+```text
+users.id
+   ↓ 外部キー
+user_profiles.user_id
+
+1人のusersデータ
+   ↓ .unique()
+1件のuser_profilesデータ
+```
+
+### 身長・体重・体脂肪率
+
+身長をセンチメートル単位で保存します。
+
+```ts
+heightCm: real("height_cm"),
+```
+
+`heightCm`には`172.5`のような小数を保存できます。
+
+体重をキログラム単位で保存します。
+
+```ts
+weightKg: real("weight_kg"),
+```
+
+`weightKg`には`65.8`のような小数を保存できます。
+
+体脂肪率をパーセント単位で保存します。
+
+```ts
+bodyFatPercentage: real(
+  "body_fat_percentage",
+),
+```
+
+`bodyFatPercentage`には`15.5`のような小数を保存できます。
+
+3項目には`.notNull()`を付けていないため、すべて任意入力です。
+
+```text
+入力あり → 数値を保存
+入力なし → nullを保存
+```
+
+今後作るAPIでは、未入力をエラーにせず、値が送られた項目だけ数値の範囲を確認します。
+
+### 週の回数と可能時間
+
+1週間にトレーニングできる日数を整数で保存します。
+
+```ts
+weeklyTrainingDays: integer(
+  "weekly_training_days",
+),
+```
+
+例えば週3回なら`3`を保存します。
+
+1回のトレーニングに使える時間を分単位の整数で保存します。
+
+```ts
+availableMinutes: integer(
+  "available_minutes",
+),
+```
+
+例えば1回60分なら`60`を保存します。
+
+どちらにも`.notNull()`を付けていないため任意入力で、未入力時は`null`になります。
+
+```text
+weeklyTrainingDays未入力 → null
+availableMinutes未入力   → null
+```
+
+### トレーニング場所と苦手部位
+
+自宅・ジム・両方など、普段トレーニングする場所を任意入力で保存します。
+
+```ts
+trainingLocation: text(
+  "training_location",
+),
+```
+
+APIでは`home`・`gym`・`both`など、保存を許可する値を後から確認します。
+
+苦手部位を複数選べる文字列の配列として保存します。
+
+```ts
+weakBodyParts: text(
+  "weak_body_parts",
+).array(),
+```
+
+`.array()`を付けることで、次のように複数の部位を1項目へ保存できます。
+
+```json
+["胸", "背中", "脚"]
+```
+
+どちらも`.notNull()`がないため任意入力で、未入力時は`null`になります。
+
+### プロフィールの作成日時と更新日時
+
+身体プロフィールを最初に作成した日時を保存します。
+
+```ts
+createdAt: timestamp("created_at", {
+  withTimezone: true,
+})
+  .notNull()
+  .defaultNow(),
+```
+
+身体プロフィールを最後に変更した日時を保存します。
+
+```ts
+updatedAt: timestamp("updated_at", {
+  withTimezone: true,
+})
+  .notNull()
+  .defaultNow(),
+```
+
+この2項目は利用者が入力する項目ではなく、システムが自動的に保存します。
+
+- `timestamp`：日付と時刻を保存する型
+- `withTimezone: true`：タイムゾーンを扱える日時にする
+- `.notNull()`：システムが必ず日時を保存するため空を禁止する
+- `.defaultNow()`：プロフィール作成時の現在日時を自動で入れる
+
+`updatedAt`は、今後作るプロフィール保存APIで情報を変更するたびに`new Date()`へ更新します。
+
+### user_profilesの項目一覧
+
+| TypeScriptの名前 | PostgreSQLの列名 | 入力 | 保存する内容 |
+| --- | --- | --- | --- |
+| `id` | `id` | 自動 | プロフィール固有のUUID |
+| `userId` | `user_id` | 自動 | usersテーブルと結び付くID |
+| `heightCm` | `height_cm` | 任意 | 身長（cm） |
+| `weightKg` | `weight_kg` | 任意 | 体重（kg） |
+| `bodyFatPercentage` | `body_fat_percentage` | 任意 | 体脂肪率（%） |
+| `weeklyTrainingDays` | `weekly_training_days` | 任意 | 週のトレーニング日数 |
+| `availableMinutes` | `available_minutes` | 任意 | 1回に使える時間（分） |
+| `trainingLocation` | `training_location` | 任意 | 自宅・ジム・両方 |
+| `weakBodyParts` | `weak_body_parts` | 任意 | 苦手部位の配列 |
+| `createdAt` | `created_at` | 自動 | プロフィール作成日時 |
+| `updatedAt` | `updated_at` | 自動 | プロフィール最終更新日時 |
+
+### 今回追加された単語
+
+| 単語 | 意味 |
+| --- | --- |
+| リレーション | 複数のDBテーブル同士のつながり |
+| 外部キー | 別テーブルに存在するデータを参照する列 |
+| `.references()` | 参照するテーブルと列を指定する |
+| `onDelete: "cascade"` | 親データを削除したとき関連データも削除する |
+| 1対1 | 1人のユーザーに1件のプロフィールが対応する関係 |
+| 任意入力 | 値がなくても保存でき、DBでは`null`になる項目 |
+| `.array()` | PostgreSQLの1項目へ同じ種類の値を複数保存できる配列型にする |
+
+## 12-11. user_profilesのマイグレーション
+
+担当ファイルは`drizzle-postgres/0001_create_user_profiles.sql`です。
+
+`db/schema.ts`へ書いたTypeScriptのテーブル定義を、Drizzle KitがPostgreSQL用のSQLへ変換したファイルです。
+
+```text
+db/schema.ts
+TypeScript + Drizzle ORM
+        ↓ Drizzle Kit
+0001_create_user_profiles.sql
+SQL
+        ↓ 次の作業で適用
+Neon PostgreSQL
+```
+
+次のコマンドで生成しました。
+
+```bash
+npm run db:generate -- --name=create_user_profiles
+```
+
+生成結果では、2テーブル・`user_profiles`の11項目・外部キー1件が認識されました。
+
+PostgreSQLへ`user_profiles`テーブルを作るSQLです。
+
+```sql
+CREATE TABLE "user_profiles" (
+```
+
+プロフィールIDと、必須のユーザーIDを定義します。
+
+```sql
+"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+"user_id" uuid NOT NULL,
+```
+
+利用者が任意入力する身体情報を定義します。
+
+```sql
+"height_cm" real,
+"weight_kg" real,
+"body_fat_percentage" real,
+"weekly_training_days" integer,
+"available_minutes" integer,
+"training_location" text,
+"weak_body_parts" text[],
+```
+
+これらには`NOT NULL`が付いていないため、未入力時は`null`を保存できます。
+
+作成日時と更新日時を必須の自動入力として定義します。
+
+```sql
+"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+```
+
+1人のユーザーが複数プロフィールを持てないようにします。
+
+```sql
+CONSTRAINT "user_profiles_user_id_unique" UNIQUE("user_id")
+```
+
+`user_profiles.user_id`と`users.id`を外部キーで結び付けます。
+
+```sql
+ALTER TABLE "user_profiles"
+ADD CONSTRAINT "user_profiles_user_id_users_id_fk"
+FOREIGN KEY ("user_id")
+REFERENCES "public"."users"("id")
+ON DELETE cascade
+ON UPDATE no action;
+```
+
+- `FOREIGN KEY`：別テーブルの列を参照する外部キーを作る
+- `REFERENCES`：参照先を`users.id`へ指定する
+- `ON DELETE cascade`：ユーザー削除時にプロフィールも削除する
+- `ON UPDATE no action`：参照先IDの更新に合わせた自動処理は行わない
+
+`0001`は2番目のマイグレーションであることを表し、最初の`0000_create_users.sql`の後に実行されます。
+
+この生成ファイルの言語はSQLです。普段はSQLを直接編集せず、TypeScriptの`db/schema.ts`を変更して新しいSQLを生成します。
+
+### Neonへの適用結果
+
+次のコマンドで、`0001_create_user_profiles.sql`をNeon PostgreSQLへ適用しました。
+
+```bash
+npx drizzle-kit migrate --config drizzle.config.ts
+```
+
+適用後にNeonを読み取り専用で確認し、次の結果を確認しました。
+
+```text
+user_profilesテーブル：あり
+列数：11
+外部キー：あり
+主キー：あり
+user_idの重複禁止：あり
+```
+
+任意入力の7項目は`null`を許可しています。
+
+```text
+height_cm              → nullを許可
+weight_kg              → nullを許可
+body_fat_percentage    → nullを許可
+weekly_training_days   → nullを許可
+available_minutes      → nullを許可
+training_location      → nullを許可
+weak_body_parts        → nullを許可
+```
+
+システムが管理する`id`・`user_id`・`created_at`・`updated_at`は必須項目です。
+
+## 12-12. 身体プロフィール保存・取得API
+
+担当ファイルは`app/api/users/profile/route.ts`です。
+
+このファイルへ書いている言語はTypeScriptです。ログイン中のユーザー本人の身体プロフィールをNeonへ保存・取得します。
+
+```ts
+import { eq } from "drizzle-orm";
+```
+
+`eq`は、認証メールやユーザーIDが一致するデータだけを検索・更新する条件に使います。
+
+```ts
+import { getChatGPTUser } from "@/app/chatgpt-auth";
+```
+
+サーバー側で確認されたログイン中のユーザー情報を取得します。
+
+```ts
+import { getDb } from "@/db";
+```
+
+Neon PostgreSQLを操作する共通接続を取得します。
+
+```ts
+import {
+  userProfiles,
+  users,
+} from "@/db/schema";
+```
+
+- `users`：認証メールからアプリ内ユーザーを探す
+- `userProfiles`：そのユーザーの身体情報を保存・取得する
+
+### GET通信とログイン確認
+
+身体プロフィールを取得するGET関数をTypeScriptで定義します。
+
+```ts
+export async function GET() {
+```
+
+サーバー側でログイン中のユーザー情報を取得します。
+
+```ts
+const authenticatedUser =
+  await getChatGPTUser();
+```
+
+認証情報を取得できなければ、DBへ接続せずHTTP 401を返します。
+
+```ts
+if (!authenticatedUser) {
+  return Response.json(
+    { error: "ログインが必要です。" },
+    { status: 401 },
+  );
+}
+```
+
+この時点では、認証済みの場合に次のDB検索へ進める状態までできています。
+
+### 認証メールからユーザーIDを取得する
+
+Neon PostgreSQLを操作するDB接続を取得します。
+
+```ts
+const db = getDb();
+```
+
+`const db`は取得した接続を後から変更しない変数へ保存するという意味です。
+
+DB検索の完了を待ち、結果を`matchedUsers`へ保存します。
+
+```ts
+const matchedUsers = await db
+```
+
+`.select({`は取得する項目を指定し始めます。
+
+```ts
+.select({
+```
+
+`id: users.id`は`users`テーブルのIDだけを`id`という名前で取得します。
+
+```ts
+id: users.id,
+```
+
+`.from(users)`は検索対象を`users`テーブルに指定します。
+
+```ts
+.from(users)
+```
+
+`.where(`は検索条件を指定し始めます。
+
+```ts
+.where(
+```
+
+`eq(`は左側と右側が同じデータだけを対象にします。
+
+```ts
+eq(
+```
+
+`users.email`はDBに保存されているメールアドレス列です。
+
+```ts
+users.email,
+```
+
+`authenticatedUser.email`は現在ログインしているユーザーのメールアドレスです。
+
+```ts
+authenticatedUser.email,
+```
+
+`.limit(1)`は取得件数を最大1件に制限します。
+
+```ts
+.limit(1);
+```
+
+検索結果の先頭を取り出し、データがなければ`null`を使います。
+
+```ts
+const currentUser =
+  matchedUsers[0] ?? null;
+```
+
+`matchedUsers[0]`は検索結果の配列から1件目を取り出します。
+
+`?? null`は左側が`null`または`undefined`の場合だけ`null`を使います。
+
+ユーザーが見つからなかった場合だけエラー処理へ入ります。
+
+```ts
+if (!currentUser) {
+```
+
+HTTP 404と安全なエラーJSONを返してGET処理を終了します。
+
+```ts
+return Response.json(
+  { error: "ユーザーが見つかりません。" },
+  { status: 404 },
+);
+```
+
+現在の流れは、認証メールからプロフィール検索に必要な`users.id`を取得するところまでです。
+
+### ユーザーIDから身体プロフィールを取得する
+
+DB検索の完了を待ち、結果を`matchedProfiles`へ保存します。
+
+```ts
+const matchedProfiles = await db
+```
+
+`.select()`はテーブルからデータを取得する検索を始めます。
+
+```ts
+.select()
+```
+
+`.from(userProfiles)`は検索対象を`user_profiles`テーブルに指定します。
+
+```ts
+.from(userProfiles)
+```
+
+`.where(`は取得するプロフィールの条件を指定し始めます。
+
+```ts
+.where(
+```
+
+`eq(`はプロフィール側とログインユーザー側のIDが同じデータだけに絞ります。
+
+```ts
+eq(
+```
+
+`userProfiles.userId`はプロフィールに保存されているユーザーIDです。
+
+```ts
+userProfiles.userId,
+```
+
+`currentUser.id`は認証メールから取得したログイン中のユーザーIDです。
+
+```ts
+currentUser.id,
+```
+
+`.limit(1)`は取得するプロフィールを最大1件にします。
+
+```ts
+.limit(1);
+```
+
+検索結果の1件目を取り出し、プロフィールがなければ`null`にします。
+
+```ts
+const profile =
+  matchedProfiles[0] ?? null;
+```
+
+プロフィールまたは`null`をJSON形式でフロントエンドへ返します。
+
+```ts
+return Response.json({
+  profile,
+});
+```
+
+`profile,`は`profile: profile`を省略したTypeScript・JavaScriptの書き方です。
+
+プロフィール未作成は異常ではないため、HTTP 404ではなく`profile: null`を返します。
+
+```json
+{
+  "profile": null
+}
+```
+
+現在のGET処理は、ログイン中のユーザー本人のプロフィールを取得できるところまで完成しています。
+
+### GET処理の予想外のエラーを捕まえる
+
+`try {`は認証とDB検索で発生するエラーを捕まえる範囲を始めます。
+
+```ts
+try {
+```
+
+`} catch (error) {`は`try`内でエラーが発生した場合だけ実行します。
+
+```ts
+} catch (error) {
+```
+
+`console.error(`は詳しい原因を開発者向けのサーバーログへ記録します。
+
+```ts
+console.error(
+```
+
+`"身体プロフィールの取得に失敗しました。"`は、どの処理で失敗したかをログへ残します。
+
+```ts
+"身体プロフィールの取得に失敗しました。",
+```
+
+`error`は実際に発生したエラー情報をログへ残します。
+
+```ts
+error,
+```
+
+`Response.json()`はフロントエンドへ安全な共通エラーを返します。
+
+```ts
+return Response.json(
+  {
+    error:
+      "身体プロフィールの取得に失敗しました。",
+  },
+  { status: 500 },
+);
+```
+
+HTTP 500は認証不足や入力ミスではなく、サーバー内部の処理に失敗したことを表します。
+
 # 13. 現在まだ実装していないこと
 
 - 保存した目標体型を再読み込み後の選択表示へ反映する処理
@@ -3768,4 +4401,4 @@ real,
 - AIが他機能の共通データを取得するTool
 - PostgreSQLの残りのテーブル、保存API、検索処理を使った長期記憶
 
-次は`user_profiles`テーブルを作り、プロフィールIDとusersテーブルとのつながりを定義します。
+次は身体プロフィールAPIへGET関数を作り、最初にログイン情報を確認します。
