@@ -1,7 +1,13 @@
+import { ClerkProvider } from '@clerk/expo';
+import { tokenCache } from '@clerk/expo/token-cache';
 import { DarkTheme, ThemeProvider } from 'expo-router';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+
+import { ConfigurationRequiredScreen } from '@/components/ConfigurationRequiredScreen';
+
+const publishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY;
 
 const musclePasTheme = {
   ...DarkTheme,
@@ -17,12 +23,23 @@ const musclePasTheme = {
 };
 
 export default function RootLayout() {
-  return (
-    <SafeAreaProvider>
-      <ThemeProvider value={musclePasTheme}>
+  if (!publishableKey) {
+    return (
+      <SafeAreaProvider>
         <StatusBar style="light" />
-        <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#0B0D0C' } }} />
-      </ThemeProvider>
-    </SafeAreaProvider>
+        <ConfigurationRequiredScreen />
+      </SafeAreaProvider>
+    );
+  }
+
+  return (
+    <ClerkProvider publishableKey={publishableKey} tokenCache={tokenCache}>
+      <SafeAreaProvider>
+        <ThemeProvider value={musclePasTheme}>
+          <StatusBar style="light" />
+          <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#0B0D0C' } }} />
+        </ThemeProvider>
+      </SafeAreaProvider>
+    </ClerkProvider>
   );
 }

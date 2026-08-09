@@ -1,7 +1,16 @@
+import { useEffect } from 'react';
+import { useRouter } from 'expo-router';
 import { StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function StartScreen() {
+  const router = useRouter();
+
+  useEffect(() => {
+    const timerId = setTimeout(() => router.replace('/auth-gate'), 2500);
+    return () => clearTimeout(timerId);
+  }, [router]);
+
   return (
     <View style={styles.screen}>
       <SafeAreaView style={styles.safeArea}>
@@ -13,9 +22,8 @@ export default function StartScreen() {
           <Text style={styles.message}>理想まで、迷わない。</Text>
         </View>
 
-        <View style={styles.statusCard}>
-          <View style={styles.statusDot} />
-          <Text style={styles.statusText}>iPhoneアプリの土台ができました</Text>
+        <View style={styles.loadingTrack}>
+          <View style={styles.loadingBar} />
         </View>
       </SafeAreaView>
     </View>
@@ -57,30 +65,20 @@ const styles = StyleSheet.create({
     fontSize: 14,
     letterSpacing: 1.4,
   },
-  statusCard: {
+  loadingTrack: {
     position: 'absolute',
     right: 24,
     bottom: 32,
     left: 24,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 9,
-    paddingVertical: 14,
-    borderWidth: 1,
-    borderColor: '#2C312D',
-    borderRadius: 14,
-    backgroundColor: '#141715',
+    height: 3,
+    overflow: 'hidden',
+    borderRadius: 2,
+    backgroundColor: '#202420',
   },
-  statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+  loadingBar: {
+    width: '70%',
+    height: '100%',
+    borderRadius: 2,
     backgroundColor: '#B6F24B',
-  },
-  statusText: {
-    color: '#9DA69F',
-    fontSize: 12,
-    fontWeight: '600',
   },
 });
