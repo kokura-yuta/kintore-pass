@@ -67,10 +67,12 @@ export const userProfiles = pgTable(
         onDelete: "cascade",
       }),
 
-    // 身長・体重・体脂肪率を任意入力の小数として保存する項目
-    heightCm: real("height_cm"),
+    // 身長と体重を必須、体脂肪率を任意入力の小数として保存する項目
+    heightCm: real("height_cm")
+      .notNull(),
 
-    weightKg: real("weight_kg"),
+    weightKg: real("weight_kg")
+      .notNull(),
 
     bodyFatPercentage: real(
       "body_fat_percentage",

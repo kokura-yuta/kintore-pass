@@ -2560,7 +2560,7 @@ drizzle.config.ts
 | 初回起動判定 | 初回設定が完了しているか返す | 初期化API実装済み・Neon接続テスト成功 |
 | ユーザー管理 | 認証情報とアプリ内ユーザーIDを結び付ける | 検索・新規登録API実装済み・Neon接続テスト成功 |
 | 理想体型 | 選択した目標体型をユーザーごとに保存・取得する | 保存API実装済み・Neon接続テスト成功 |
-| プロフィール | 身長・体重・体脂肪率・可能時間などを保存する | user_profilesテーブルをNeonへ作成済み・保存APIは未実装 |
+| プロフィール | 身長・体重・体脂肪率・可能時間などを保存する | 身長・体重の必須化を設計済み・DB変更と保存APIは作業中 |
 | 身体分析 | 身体データと分析結果を日付付きで保存する | 未実装 |
 | トレーニング記録 | 種目・重量・回数・セット・時間・調子・メモを保存する | 未実装 |
 | 記録履歴 | 日付やユーザーIDで過去記録を取得する | 未実装 |
@@ -2571,6 +2571,43 @@ drizzle.config.ts
 | チャット履歴 | ルーム・メッセージ・タイトルをユーザーごとに保存する | 未実装 |
 | AI Tool | AIが目標・記録・プロフィールを必要に応じて取得する | 未実装 |
 | 長期記憶 | 過去データを検索してAIへ渡し、回答と履歴を保存する | 未実装 |
+
+### AI Toolへ渡す情報の方針
+
+最終的に、AIはログイン中のユーザー本人についてアプリ内へ保存された全機能の情報をTool経由で取得できるようにします。
+
+```text
+理想体型
+身体プロフィール
+体重履歴
+身体分析結果
+トレーニング記録
+最近鍛えていない部位
+過去に生成したAIメニュー
+メニューの実施結果
+コンディション・調子・メモ
+AIチャット履歴と長期記憶
+```
+
+「全情報を利用可能にする」ことと「毎回すべてを一度にAIへ送る」ことは分けて考えます。
+
+履歴が増えた後も入力上限やAPI料金を抑えるため、AIがToolへ情報の種類・期間・件数を指定し、必要なデータを取得する構成にします。
+
+```text
+AIが質問内容を確認
+        ↓
+必要なToolと取得条件を選ぶ
+        ↓
+PostgreSQLから本人のデータだけ取得
+        ↓
+必要な情報をAIへ返す
+        ↓
+取得結果を使って回答する
+```
+
+Toolへ渡さない情報は、`DATABASE_URL`・OpenAI APIキー・認証用の秘密情報・他ユーザーのデータです。
+
+身体写真などの容量が大きいデータは、毎回の会話へ画像全体を渡さず、保存済みの分析結果や必要な画像だけを取得する設計にします。
 
 ## 12-4. Drizzle KitのPostgreSQL設定
 
@@ -3850,18 +3887,20 @@ user_profiles.user_id
 身長をセンチメートル単位で保存します。
 
 ```ts
-heightCm: real("height_cm"),
+heightCm: real("height_cm")
+  .notNull(),
 ```
 
-`heightCm`には`172.5`のような小数を保存できます。
+`heightCm`には`172.5`のような小数を保存し、`.notNull()`によって未入力を禁止します。
 
 体重をキログラム単位で保存します。
 
 ```ts
-weightKg: real("weight_kg"),
+weightKg: real("weight_kg")
+  .notNull(),
 ```
 
-`weightKg`には`65.8`のような小数を保存できます。
+`weightKg`には`65.8`のような小数を保存し、`.notNull()`によって未入力を禁止します。
 
 体脂肪率をパーセント単位で保存します。
 
@@ -3873,11 +3912,11 @@ bodyFatPercentage: real(
 
 `bodyFatPercentage`には`15.5`のような小数を保存できます。
 
-3項目には`.notNull()`を付けていないため、すべて任意入力です。
+身長と体重は`.notNull()`を付けた必須入力で、体脂肪率だけが任意入力です。
 
 ```text
-入力あり → 数値を保存
-入力なし → nullを保存
+身長・体重：入力必須
+体脂肪率：入力なしならnull
 ```
 
 今後作るAPIでは、未入力をエラーにせず、値が送られた項目だけ数値の範囲を確認します。
@@ -3976,11 +4015,11 @@ updatedAt: timestamp("updated_at", {
 | --- | --- | --- | --- |
 | `id` | `id` | 自動 | プロフィール固有のUUID |
 | `userId` | `user_id` | 自動 | usersテーブルと結び付くID |
-| `heightCm` | `height_cm` | 任意 | 身長（cm） |
-| `weightKg` | `weight_kg` | 任意 | 体重（kg） |
+| `heightCm` | `height_cm` | 必須 | 身長（cm） |
+| `weightKg` | `weight_kg` | 必須 | 体重（kg） |
 | `bodyFatPercentage` | `body_fat_percentage` | 任意 | 体脂肪率（%） |
 | `weeklyTrainingDays` | `weekly_training_days` | 任意 | 週のトレーニング日数 |
-| `availableMinutes` | `available_minutes` | 任意 | 1回に使える時間（分） |
+| `availableMinutes` | `available_minutes` | 任意 | 1回のトレーニングに使える時間（20〜180分） |
 | `trainingLocation` | `training_location` | 任意 | 自宅・ジム・両方 |
 | `weakBodyParts` | `weak_body_parts` | 任意 | 苦手部位の配列 |
 | `createdAt` | `created_at` | 自動 | プロフィール作成日時 |
@@ -4100,7 +4139,7 @@ user_profilesテーブル：あり
 user_idの重複禁止：あり
 ```
 
-任意入力の7項目は`null`を許可しています。
+`0001_create_user_profiles.sql`を適用した時点では7項目が`null`を許可していますが、その後に身長と体重を必須へ変更しました。次のマイグレーションでNeonへ反映します。
 
 ```text
 height_cm              → nullを許可
@@ -4391,6 +4430,356 @@ return Response.json(
 
 HTTP 500は認証不足や入力ミスではなく、サーバー内部の処理に失敗したことを表します。
 
+### PATCH通信とログイン確認
+
+`export async function PATCH(`は身体プロフィールを保存・更新する関数を公開します。
+
+```ts
+export async function PATCH(
+```
+
+`request: Request,`はフロントエンドから送られた通信内容をTypeScriptの`Request`型で受け取ります。
+
+```ts
+request: Request,
+```
+
+`const authenticatedUser =`は認証結果を保存する変数を定義します。
+
+```ts
+const authenticatedUser =
+```
+
+`await getChatGPTUser();`はログイン中のユーザー情報を取得できるまで待ちます。
+
+```ts
+await getChatGPTUser();
+```
+
+`if (!authenticatedUser) {`は認証情報がない場合だけ中の処理へ進みます。
+
+```ts
+if (!authenticatedUser) {
+```
+
+`Response.json()`は未認証エラーをJSON形式で返します。
+
+```ts
+return Response.json(
+  { error: "ログインが必要です。" },
+  { status: 401 },
+);
+```
+
+HTTP 401を返した場合は`return`によってPATCH処理が終了し、DB操作へ進みません。
+
+### PATCH通信のJSONを読み取る
+
+`const body = await request`はJSONの読み取り結果を`body`へ保存する準備をします。
+
+```ts
+const body = await request
+```
+
+`.json()`はフロントエンドから送られたJSONをJavaScriptの値へ変換します。
+
+```ts
+.json()
+```
+
+`.catch(() => null)`はJSONが壊れていた場合に、処理を停止せず`null`を返します。
+
+```ts
+.catch(() => null);
+```
+
+`body === null`はJSONの読み取りに失敗した状態か確認します。
+
+```ts
+body === null ||
+```
+
+`typeof body !== "object"`は受信値が項目を持つオブジェクトでない状態か確認します。
+
+```ts
+typeof body !== "object" ||
+```
+
+`Array.isArray(body)`は受信値が配列になっていないか確認します。
+
+```ts
+Array.isArray(body)
+```
+
+`||`は3つの不正条件のうち、どれか1つでも当てはまることを表します。
+
+入力形式が不正なら安全なエラーJSONとHTTP 400を返します。
+
+```ts
+return Response.json(
+  { error: "入力内容が不正です。" },
+  { status: 400 },
+);
+```
+
+この確認に通った`body`だけが、次の身体情報の取り出し処理へ進みます。
+
+### JSONから身体情報を取り出す
+
+`const {`はオブジェクトから複数の項目を取り出す分割代入を始めます。
+
+```ts
+const {
+```
+
+`heightCm = null`は身長を取り出し、送られていなければ`null`にします。
+
+```ts
+heightCm = null,
+```
+
+`weightKg = null`は体重を取り出し、送られていなければ`null`にします。
+
+```ts
+weightKg = null,
+```
+
+`bodyFatPercentage = null`は体脂肪率を取り出し、送られていなければ`null`にします。
+
+```ts
+bodyFatPercentage = null,
+```
+
+`} = body;`は3項目の取得元を受信した`body`に指定します。
+
+```ts
+} = body;
+```
+
+この書き方をオブジェクトの分割代入と呼び、任意項目が`undefined`になる場合だけ初期値の`null`を使います。
+
+`weeklyTrainingDays = null`は週のトレーニング日数を取り出し、送られていなければ`null`にします。
+
+```ts
+weeklyTrainingDays = null,
+```
+
+`availableMinutes = null`は1回のトレーニングに使える時間を取り出し、送られていなければ`null`にします。
+
+```ts
+availableMinutes = null,
+```
+
+`trainingLocation = null`はトレーニング場所を取り出し、送られていなければ`null`にします。
+
+```ts
+trainingLocation = null,
+```
+
+`weakBodyParts = null`は苦手部位の配列を取り出し、送られていなければ`null`にします。
+
+```ts
+weakBodyParts = null,
+```
+
+`} = body;`は4項目の取得元を受信した`body`に指定します。
+
+現在の分割代入では未送信項目を`null`にしますが、次の入力値チェックで身長と体重の`null`を拒否します。残り5項目は任意入力です。
+
+### 任意入力の数値を確認する共通関数
+
+`function isOptionalNumberInRange(`は任意入力の数値が指定範囲内か確認する関数を定義します。
+
+```ts
+function isOptionalNumberInRange(
+```
+
+`value: unknown`は確認前で種類が分からない入力値を受け取ります。
+
+```ts
+value: unknown,
+```
+
+`minimum: number`は許可する最小値を数値として受け取ります。
+
+```ts
+minimum: number,
+```
+
+`maximum: number`は許可する最大値を数値として受け取ります。
+
+```ts
+maximum: number,
+```
+
+`return (`は確認結果を`true`か`false`で返し始めます。
+
+```ts
+return (
+```
+
+`value === null`は任意入力なので未入力の`null`を正しい値として許可します。
+
+```ts
+value === null ||
+```
+
+`typeof value === "number"`は入力値が数値か確認します。
+
+```ts
+typeof value === "number" &&
+```
+
+`Number.isFinite(value)`は`NaN`や`Infinity`ではない通常の数値か確認します。
+
+```ts
+Number.isFinite(value) &&
+```
+
+`value >= minimum`は入力値が最小値以上か確認します。
+
+```ts
+value >= minimum &&
+```
+
+`value <= maximum`は入力値が最大値以下か確認します。
+
+```ts
+value <= maximum
+```
+
+`||`は`null`または数値条件を満たす場合に`true`を返すことを表します。
+
+`&&`は数値に関するすべての条件を満たす必要があることを表します。
+
+### 任意入力の整数を確認する共通関数
+
+`function isOptionalIntegerInRange(`は任意入力の整数が指定範囲内か確認する関数を定義します。
+
+```ts
+function isOptionalIntegerInRange(
+```
+
+`value: unknown`は確認前で種類が分からない入力値を受け取ります。
+
+```ts
+value: unknown,
+```
+
+`minimum: number`は許可する最小値を受け取ります。
+
+```ts
+minimum: number,
+```
+
+`maximum: number`は許可する最大値を受け取ります。
+
+```ts
+maximum: number,
+```
+
+`value === null`は任意入力なので未入力を許可します。
+
+```ts
+value === null ||
+```
+
+`Number.isInteger(value)`は入力値が小数を含まない整数か確認します。
+
+```ts
+Number.isInteger(value) &&
+```
+
+`typeof value === "number"`は入力値が数値型か確認します。
+
+```ts
+typeof value === "number" &&
+```
+
+`value >= minimum`は入力値が最小値以上か確認します。
+
+`value <= maximum`は入力値が最大値以下か確認します。
+
+この関数は週のトレーニング日数と1回に使える時間の確認へ再利用します。
+
+### 身体情報の数値範囲を確認する
+
+`if (`は必須の身長・体重が未入力、または5つの数値のどれかに問題がある場合の条件分岐を始めます。
+
+`heightCm === null`は身長が未入力ならエラーにする必須チェックです。
+
+`weightKg === null`は体重が未入力ならエラーにする必須チェックです。
+
+`!isOptionalNumberInRange(heightCm, 50, 250)`は入力された身長が50〜250cmの数値か確認します。
+
+`!isOptionalNumberInRange(weightKg, 20, 500)`は入力された体重が20〜500kgの数値か確認します。
+
+`!isOptionalNumberInRange(bodyFatPercentage, 0, 80)`は体脂肪率が`null`または0〜80%でなければ不正とします。
+
+`!isOptionalIntegerInRange(weeklyTrainingDays, 0, 7)`は週の回数が`null`または0〜7の整数でなければ不正とします。
+
+`!isOptionalIntegerInRange(availableMinutes, 20, 180)`は、1回のトレーニングに使える時間が`null`または20〜180分の整数でなければ不正とします。
+
+`||`は5つの確認のどれか1つでも不正ならエラーにすることを表します。
+
+`Response.json()`は安全な入力エラーとHTTP 400を返します。
+
+```ts
+return Response.json(
+  {
+    error:
+      "身体情報の数値が正しくありません。",
+  },
+  { status: 400 },
+);
+```
+
+この確認によって、不正な文字列・範囲外の数値・週3.5回などの小数をDBへ保存しません。
+
+### PATCHで保存対象のユーザーIDを検索する
+
+`const db = getDb();`はNeon PostgreSQLを操作する接続を取得します。
+
+`const matchedUsers = await db`はユーザー検索の完了を待ち、結果を配列として保存します。
+
+`.select({ id: users.id })`はプロフィール保存に必要なユーザーIDだけを取得します。
+
+`.from(users)`は検索対象を`users`テーブルにします。
+
+`.where(eq(users.email, authenticatedUser.email))`は認証メールと同じメールを持つユーザーへ絞ります。
+
+`.limit(1)`は検索結果を最大1人に制限します。
+
+この検索によって、これから保存するプロフィールをログイン中のユーザーIDと結び付けられます。
+
+### PATCHの検索結果から現在のユーザーを取り出す
+
+`const currentUser =`はプロフィールを保存するユーザーを入れる変数を作ります。
+
+`matchedUsers[0]`は検索結果の配列から1人目を取り出します。
+
+`?? null`は検索結果が空なら値を`null`へ統一します。
+
+`if (!currentUser)`は保存先のユーザーが存在しない場合だけ中の処理を実行します。
+
+`Response.json()`は「ユーザーが見つかりません」というエラーとHTTP 404を返し、保存処理へ進ませません。
+
+この処理によって、プロフィールを存在しないユーザーIDへ保存することを防ぎます。
+
+### プロフィールとして保存する値をまとめる
+
+`const profileValues = {`は、DBへ保存するプロフィール情報を1つのオブジェクトにまとめます。
+
+`userId: currentUser.id`は、プロフィールをログイン中のユーザーと結び付けます。
+
+`heightCm`と`weightKg`は、入力必須として確認済みの身長と体重です。
+
+`bodyFatPercentage`、`weeklyTrainingDays`、`availableMinutes`、`trainingLocation`、`weakBodyParts`は任意入力のプロフィール情報です。
+
+`updatedAt: new Date()`は、プロフィールを保存・更新した現在日時を記録します。
+
+ここでは保存内容を準備しただけで、まだPostgreSQLへの書き込みは実行していません。
+
 # 13. 現在まだ実装していないこと
 
 - 保存した目標体型を再読み込み後の選択表示へ反映する処理
@@ -4401,4 +4790,4 @@ HTTP 500は認証不足や入力ミスではなく、サーバー内部の処理
 - AIが他機能の共通データを取得するTool
 - PostgreSQLの残りのテーブル、保存API、検索処理を使った長期記憶
 
-次は身体プロフィールAPIへGET関数を作り、最初にログイン情報を確認します。
+次は`profileValues`を、初回なら新規作成、2回目以降なら更新する形でPostgreSQLへ保存します。
