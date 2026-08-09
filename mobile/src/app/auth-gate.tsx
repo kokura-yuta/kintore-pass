@@ -14,7 +14,7 @@ export default function AuthGateScreen() {
     );
   }
 
-  return <Redirect href={isSignedIn ? '/home' : '/sign-in'} />;
+  return <Redirect href={isSignedIn ? '/bootstrap' : '/sign-in'} />;
 }
 
 const styles = StyleSheet.create({
