@@ -14,6 +14,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 type Step = 'email' | 'code';
+type AuthMode = 'sign-in' | 'sign-up';
 
 type ClerkErrorLike = {
   errors?: { code?: string; message?: string; longMessage?: string }[];
@@ -41,6 +42,7 @@ export default function SignInScreen() {
   const { signIn } = useSignIn();
   const { signUp } = useSignUp();
   const [step, setStep] = useState<Step>('email');
+  const [authMode, setAuthMode] = useState<AuthMode>('sign-in');
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -65,15 +67,24 @@ export default function SignInScreen() {
     setErrorMessage('');
 
     try {
-      const createResult = await signIn.create({
-        identifier: normalizedEmail,
-        signUpIfMissing: true,
-      });
+      const createResult = await signIn.create({ identifier: normalizedEmail });
 
-      if (createResult.error) throw createResult.error;
+      if (createResult.error) {
+        if (getErrorCode(createResult.error) !== 'form_identifier_not_found') {
+          throw createResult.error;
+        }
 
-      const sendResult = await signIn.emailCode.sendCode();
-      if (sendResult.error) throw sendResult.error;
+        const signUpResult = await signUp.create({ emailAddress: normalizedEmail });
+        if (signUpResult.error) throw signUpResult.error;
+
+        const sendSignUpCodeResult = await signUp.verifications.sendEmailCode();
+        if (sendSignUpCodeResult.error) throw sendSignUpCodeResult.error;
+        setAuthMode('sign-up');
+      } else {
+        const sendSignInCodeResult = await signIn.emailCode.sendCode();
+        if (sendSignInCodeResult.error) throw sendSignInCodeResult.error;
+        setAuthMode('sign-in');
+      }
 
       setEmail(normalizedEmail);
       setStep('code');
@@ -97,22 +108,16 @@ export default function SignInScreen() {
     setErrorMessage('');
 
     try {
-      const verifyResult = await signIn.emailCode.verifyCode({ code: normalizedCode });
-
-      if (verifyResult.error) {
-        if (getErrorCode(verifyResult.error) !== 'sign_up_if_missing_transfer') {
-          throw verifyResult.error;
-        }
-
-        const transferResult = await signUp.create({ transfer: true });
-        if (transferResult.error) throw transferResult.error;
-        if (signUp.status !== 'complete') {
-          throw new Error('新規登録に追加情報が必要です。Clerkの必須項目設定を確認してください。');
-        }
+      if (authMode === 'sign-up') {
+        const verifyResult = await signUp.verifications.verifyEmailCode({ code: normalizedCode });
+        if (verifyResult.error) throw verifyResult.error;
+        if (signUp.status !== 'complete') throw new Error('新規登録を完了できませんでした。');
 
         const finalizeResult = await signUp.finalize();
         if (finalizeResult.error) throw finalizeResult.error;
       } else {
+        const verifyResult = await signIn.emailCode.verifyCode({ code: normalizedCode });
+        if (verifyResult.error) throw verifyResult.error;
         if (signIn.status !== 'complete') {
           throw new Error('ログインを完了できませんでした。もう一度お試しください。');
         }
@@ -131,6 +136,7 @@ export default function SignInScreen() {
 
   function changeEmail() {
     setStep('email');
+    setAuthMode('sign-in');
     setCode('');
     setErrorMessage('');
     void signIn?.reset();
