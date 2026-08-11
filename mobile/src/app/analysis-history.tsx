@@ -41,7 +41,7 @@ export default function AnalysisHistoryScreen() {
 
           {selected ? <AnalysisDetail item={selected} /> : <View style={styles.emptyCard}><Text style={styles.emptyText}>分析履歴はまだありません。</Text></View>}
 
-          <Pressable onPress={() => router.push('/initial-analysis')} style={styles.analysisButton}>
+          <Pressable onPress={() => router.push('/body-analysis')} style={styles.analysisButton}>
             <View><Text style={styles.buttonEyebrow}>NEW ANALYSIS</Text><Text style={styles.buttonText}>新しく身体を分析する</Text></View><Text style={styles.buttonArrow}>›</Text>
           </Pressable>
           <Text style={styles.previewNote}>現在は確認用の分析データです。身体分析API接続後はユーザーごとの結果を表示します。</Text>
