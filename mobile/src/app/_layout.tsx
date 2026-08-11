@@ -7,6 +7,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { ConfigurationRequiredScreen } from '@/components/ConfigurationRequiredScreen';
 import { OnboardingProvider } from '@/contexts/OnboardingContext';
+import { TrainingDraftProvider } from '@/contexts/TrainingDraftContext';
 
 const publishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY;
 
@@ -39,7 +40,9 @@ export default function RootLayout() {
         <ThemeProvider value={musclePasTheme}>
           <StatusBar style="light" />
           <OnboardingProvider>
-            <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#0B0D0C' } }} />
+            <TrainingDraftProvider>
+              <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#0B0D0C' } }} />
+            </TrainingDraftProvider>
           </OnboardingProvider>
         </ThemeProvider>
       </SafeAreaProvider>

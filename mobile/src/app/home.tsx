@@ -5,6 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { BottomNavigation } from '@/components/BottomNavigation';
 import { useOnboarding } from '@/contexts/OnboardingContext';
+import { useTrainingDraft } from '@/contexts/TrainingDraftContext';
 import { getGoalBodyLabel } from '@/lib/initialAnalysisPreview';
 import { homePreview } from '@/lib/homePreview';
 
@@ -20,6 +21,18 @@ export default function HomeScreen() {
   const router = useRouter();
   const { isLoaded, isSignedIn } = useAuth({ treatPendingAsSignedOut: false });
   const { goalBody } = useOnboarding();
+  const { setDraft } = useTrainingDraft();
+
+  function startTraining() {
+    setDraft({
+      menuId: 'preview-menu-today',
+      exercises: homePreview.exercises.map((exercise) => ({
+        exerciseId: exercise.exerciseId,
+        sets: exercise.sets,
+      })),
+    });
+    router.push('/training' as Href);
+  }
 
   if (isLoaded && !isSignedIn) {
     return <Redirect href="/sign-in" />;
@@ -88,7 +101,7 @@ export default function HomeScreen() {
             </View>
           </View>
 
-          <Pressable onPress={() => router.push('/training' as Href)} style={styles.startButton}>
+          <Pressable onPress={startTraining} style={styles.startButton}>
             <View>
               <Text style={styles.startLabel}>START NOW</Text>
               <Text style={styles.startText}>トレーニングを開始</Text>

@@ -5,7 +5,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { BottomNavigation } from '@/components/BottomNavigation';
 import { ExercisePickerModal } from '@/components/ExercisePickerModal';
 import { ExerciseRecordCard, type ExerciseRecord } from '@/components/ExerciseRecordCard';
+import { useTrainingDraft } from '@/contexts/TrainingDraftContext';
 import { exerciseCatalog, type ExerciseOption } from '@/lib/exerciseCatalog';
+import { previousRecordPreview, type PreviousSetPreview } from '@/lib/previousRecordPreview';
 
 function createRecord(exercise: ExerciseOption): ExerciseRecord {
   return {
@@ -26,11 +28,23 @@ function formatLocalDate(date: Date) {
 }
 
 export default function TrainingScreen() {
+  const { draft } = useTrainingDraft();
   const defaultExercises = ['bench-press', 'incline-dumbbell-press', 'side-raise']
     .map((id) => exerciseCatalog.find((exercise) => exercise.id === id))
     .filter((exercise): exercise is ExerciseOption => Boolean(exercise))
     .map(createRecord);
-  const [exercises, setExercises] = useState<ExerciseRecord[]>(defaultExercises);
+  const [exercises, setExercises] = useState<ExerciseRecord[]>(() => {
+    if (!draft) return defaultExercises;
+
+    return draft.exercises.flatMap((draftExercise) => {
+      const exercise = exerciseCatalog.find((item) => item.id === draftExercise.exerciseId);
+      if (!exercise) return [];
+      return [{
+        ...exercise,
+        sets: draftExercise.sets.map((set, index) => ({ ...set, id: `${exercise.id}-menu-set-${index + 1}` })),
+      }];
+    });
+  });
   const [pickerVisible, setPickerVisible] = useState(false);
   const [trainingMinutes, setTrainingMinutes] = useState('');
   const [condition, setCondition] = useState<number | null>(null);
@@ -66,6 +80,17 @@ export default function TrainingScreen() {
     setExercises((current) => current.map((exercise, index) => index === exerciseIndex && exercise.sets.length > 1
       ? { ...exercise, sets: exercise.sets.filter((set) => set.id !== setId) }
       : exercise));
+  }
+
+  function applyPreviousSets(exerciseIndex: number, previousSets: PreviousSetPreview[]) {
+    setExercises((current) => current.map((exercise, index) => index === exerciseIndex
+      ? {
+          ...exercise,
+          sets: previousSets.map((set, setIndex) => ({ ...set, id: `${exercise.id}-previous-set-${setIndex + 1}` })),
+        }
+      : exercise));
+    setErrorMessage('');
+    setSuccessMessage('');
   }
 
   async function saveRecord() {
@@ -111,6 +136,8 @@ export default function TrainingScreen() {
               onChangeSet={(setId, field, value) => updateSet(index, setId, field, value)}
               onRemove={() => setExercises((current) => current.filter((item) => item.id !== exercise.id))}
               onRemoveSet={(setId) => removeSet(index, setId)}
+              onUsePrevious={() => applyPreviousSets(index, previousRecordPreview[exercise.id] ?? [])}
+              previousSets={previousRecordPreview[exercise.id]}
             />
           ))}
 

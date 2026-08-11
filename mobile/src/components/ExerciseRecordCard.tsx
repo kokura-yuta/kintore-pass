@@ -1,6 +1,7 @@
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import type { ExerciseOption } from '@/lib/exerciseCatalog';
+import type { PreviousSetPreview } from '@/lib/previousRecordPreview';
 
 export type SetRecord = {
   id: string;
@@ -19,9 +20,11 @@ type Props = {
   onChangeSet: (setId: string, field: 'weightKg' | 'reps', value: string) => void;
   onRemove: () => void;
   onRemoveSet: (setId: string) => void;
+  onUsePrevious: () => void;
+  previousSets?: PreviousSetPreview[];
 };
 
-export function ExerciseRecordCard({ exercise, index, onAddSet, onChangeSet, onRemove, onRemoveSet }: Props) {
+export function ExerciseRecordCard({ exercise, index, onAddSet, onChangeSet, onRemove, onRemoveSet, onUsePrevious, previousSets }: Props) {
   return (
     <View style={styles.card}>
       <View style={styles.heading}>
@@ -36,6 +39,20 @@ export function ExerciseRecordCard({ exercise, index, onAddSet, onChangeSet, onR
           <Text style={styles.removeText}>削除</Text>
         </Pressable>
       </View>
+
+      {previousSets?.length ? (
+        <View style={styles.previousBox}>
+          <View style={styles.previousCopy}>
+            <Text style={styles.previousLabel}>前回</Text>
+            <Text numberOfLines={1} style={styles.previousValue}>
+              {previousSets.map((set) => `${set.weightKg || '—'}kg × ${set.reps || '—'}回`).join(' / ')}
+            </Text>
+          </View>
+          <Pressable onPress={onUsePrevious} style={styles.copyButton}>
+            <Text style={styles.copyButtonText}>前回をコピー</Text>
+          </Pressable>
+        </View>
+      ) : null}
 
       <View style={styles.columnLabels}>
         <Text style={[styles.columnLabel, styles.setColumn]}>SET</Text>
@@ -96,6 +113,12 @@ const styles = StyleSheet.create({
   meta: { marginTop: 3, color: '#737B75', fontSize: 10 },
   removeButton: { paddingHorizontal: 7, paddingVertical: 8 },
   removeText: { color: '#FF8D98', fontSize: 11, fontWeight: '800' },
+  previousBox: { flexDirection: 'row', alignItems: 'center', gap: 9, marginTop: 14, padding: 10, borderRadius: 11, backgroundColor: '#20251F' },
+  previousCopy: { flex: 1 },
+  previousLabel: { color: '#737B75', fontSize: 8, fontWeight: '900', letterSpacing: 1 },
+  previousValue: { marginTop: 3, color: '#DDE1DD', fontSize: 10, fontWeight: '700' },
+  copyButton: { paddingHorizontal: 10, paddingVertical: 8, borderWidth: 1, borderColor: '#B6F24B', borderRadius: 9 },
+  copyButtonText: { color: '#B6F24B', fontSize: 9, fontWeight: '900' },
   columnLabels: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 16, marginBottom: 6 },
   columnLabel: { flex: 1, color: '#858E87', fontSize: 9, fontWeight: '800' },
   setColumn: { width: 30, flex: 0, textAlign: 'center' },
