@@ -77,7 +77,7 @@ export default function MyPageScreen() {
             <View style={styles.shortcutRow}>
               <ShortcutCard label="体重記録" onPress={() => router.push('/weight-history' as Href)} value="推移を見る" />
               <ShortcutCard label="カレンダー" onPress={() => router.push('/calendar' as Href)} value="記録を見る" />
-              <ShortcutCard label="分析履歴" value="次に追加" />
+              <ShortcutCard label="分析履歴" onPress={() => router.push('/analysis-history' as Href)} value="結果を見る" />
             </View>
 
             <View style={styles.card}>
