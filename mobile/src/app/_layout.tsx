@@ -9,6 +9,7 @@ import { ConfigurationRequiredScreen } from '@/components/ConfigurationRequiredS
 import { OnboardingProvider } from '@/contexts/OnboardingContext';
 import { TrainingDraftProvider } from '@/contexts/TrainingDraftContext';
 import { TrainingHistoryProvider } from '@/contexts/TrainingHistoryContext';
+import { WeightHistoryProvider } from '@/contexts/WeightHistoryContext';
 
 const publishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY;
 
@@ -43,7 +44,9 @@ export default function RootLayout() {
           <OnboardingProvider>
             <TrainingDraftProvider>
               <TrainingHistoryProvider>
-                <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#0B0D0C' } }} />
+                <WeightHistoryProvider>
+                  <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#0B0D0C' } }} />
+                </WeightHistoryProvider>
               </TrainingHistoryProvider>
             </TrainingDraftProvider>
           </OnboardingProvider>
