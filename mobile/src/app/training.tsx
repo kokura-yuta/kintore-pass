@@ -6,6 +6,7 @@ import { BottomNavigation } from '@/components/BottomNavigation';
 import { ExercisePickerModal } from '@/components/ExercisePickerModal';
 import { ExerciseRecordCard, type ExerciseRecord } from '@/components/ExerciseRecordCard';
 import { useTrainingDraft } from '@/contexts/TrainingDraftContext';
+import { useTrainingHistory } from '@/contexts/TrainingHistoryContext';
 import { exerciseCatalog, type ExerciseOption } from '@/lib/exerciseCatalog';
 import { previousRecordPreview, type PreviousSetPreview } from '@/lib/previousRecordPreview';
 
@@ -29,6 +30,7 @@ function formatLocalDate(date: Date) {
 
 export default function TrainingScreen() {
   const { draft } = useTrainingDraft();
+  const { addRecord } = useTrainingHistory();
   const defaultExercises = ['bench-press', 'incline-dumbbell-press', 'side-raise']
     .map((id) => exerciseCatalog.find((exercise) => exercise.id === id))
     .filter((exercise): exercise is ExerciseOption => Boolean(exercise))
@@ -102,8 +104,24 @@ export default function TrainingScreen() {
     setErrorMessage('');
     setIsSaving(true);
     await new Promise((resolve) => setTimeout(resolve, 650));
+    addRecord({
+      id: `training-${Date.now()}`,
+      performedOn: trainingDate,
+      menuId: draft?.menuId ?? null,
+      exercises: exercises.map((exercise) => ({
+        exerciseId: exercise.id,
+        name: exercise.name,
+        sets: exercise.sets.map((set) => ({
+          weightKg: set.weightKg || null,
+          reps: set.reps || null,
+        })),
+      })),
+      trainingMinutes: trainingMinutes ? Number(trainingMinutes) : null,
+      condition,
+      memo: memo.trim() || null,
+    });
     setIsSaving(false);
-    setSuccessMessage('入力内容を確認しました。API接続後、この記録を履歴へ保存します。');
+    setSuccessMessage('記録を保存し、カレンダーへ反映しました。');
   }
 
   return (

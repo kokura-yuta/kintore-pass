@@ -8,6 +8,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { ConfigurationRequiredScreen } from '@/components/ConfigurationRequiredScreen';
 import { OnboardingProvider } from '@/contexts/OnboardingContext';
 import { TrainingDraftProvider } from '@/contexts/TrainingDraftContext';
+import { TrainingHistoryProvider } from '@/contexts/TrainingHistoryContext';
 
 const publishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY;
 
@@ -41,7 +42,9 @@ export default function RootLayout() {
           <StatusBar style="light" />
           <OnboardingProvider>
             <TrainingDraftProvider>
-              <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#0B0D0C' } }} />
+              <TrainingHistoryProvider>
+                <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#0B0D0C' } }} />
+              </TrainingHistoryProvider>
             </TrainingDraftProvider>
           </OnboardingProvider>
         </ThemeProvider>

@@ -76,7 +76,7 @@ export default function MyPageScreen() {
 
             <View style={styles.shortcutRow}>
               <ShortcutCard label="体重記録" value="次に追加" />
-              <ShortcutCard label="カレンダー" value="次に追加" />
+              <ShortcutCard label="カレンダー" onPress={() => router.push('/calendar' as Href)} value="記録を見る" />
               <ShortcutCard label="分析履歴" value="次に追加" />
             </View>
 
@@ -139,8 +139,8 @@ export default function MyPageScreen() {
   );
 }
 
-function ShortcutCard({ label, value }: { label: string; value: string }) {
-  return <View style={styles.shortcutCard}><Text style={styles.shortcutLabel}>{label}</Text><Text style={styles.shortcutValue}>{value}</Text></View>;
+function ShortcutCard({ label, onPress, value }: { label: string; onPress?: () => void; value: string }) {
+  return <Pressable disabled={!onPress} onPress={onPress} style={styles.shortcutCard}><Text style={styles.shortcutLabel}>{label}</Text><Text style={[styles.shortcutValue, onPress && styles.activeShortcut]}>{value}</Text></Pressable>;
 }
 
 function OptionTitle({ label, optional }: { label: string; optional?: boolean }) {
@@ -162,6 +162,7 @@ const styles = StyleSheet.create({
   shortcutCard: { flex: 1, minHeight: 72, padding: 11, borderWidth: 1, borderColor: '#2C312D', borderRadius: 14, backgroundColor: '#151816' },
   shortcutLabel: { color: '#E8EBE8', fontSize: 11, fontWeight: '900' },
   shortcutValue: { marginTop: 9, color: '#697169', fontSize: 8, fontWeight: '800' },
+  activeShortcut: { color: '#B6F24B' },
   card: { marginTop: 13, padding: 16, borderWidth: 1, borderColor: '#2C312D', borderRadius: 17, backgroundColor: '#151816' },
   cardHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   cardTitle: { color: '#F4F6F3', fontSize: 16, fontWeight: '900' },
