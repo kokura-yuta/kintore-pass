@@ -10,6 +10,7 @@ import { OnboardingProvider } from '@/contexts/OnboardingContext';
 import { TrainingDraftProvider } from '@/contexts/TrainingDraftContext';
 import { TrainingHistoryProvider } from '@/contexts/TrainingHistoryContext';
 import { WeightHistoryProvider } from '@/contexts/WeightHistoryContext';
+import { ChatHistoryProvider } from '@/contexts/ChatHistoryContext';
 
 const publishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY;
 
@@ -45,7 +46,9 @@ export default function RootLayout() {
             <TrainingDraftProvider>
               <TrainingHistoryProvider>
                 <WeightHistoryProvider>
-                  <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#0B0D0C' } }} />
+                  <ChatHistoryProvider>
+                    <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#0B0D0C' } }} />
+                  </ChatHistoryProvider>
                 </WeightHistoryProvider>
               </TrainingHistoryProvider>
             </TrainingDraftProvider>
