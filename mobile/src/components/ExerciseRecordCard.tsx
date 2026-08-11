@@ -39,8 +39,8 @@ export function ExerciseRecordCard({ exercise, index, onAddSet, onChangeSet, onR
 
       <View style={styles.columnLabels}>
         <Text style={[styles.columnLabel, styles.setColumn]}>SET</Text>
-        <Text style={styles.columnLabel}>重量</Text>
-        <Text style={styles.columnLabel}>回数</Text>
+        <Text style={styles.columnLabel}>重量（任意）</Text>
+        <Text style={styles.columnLabel}>回数（任意）</Text>
         <View style={styles.deleteColumn} />
       </View>
 

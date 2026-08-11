@@ -74,19 +74,6 @@ export default function TrainingScreen() {
       setErrorMessage('実施した種目を1つ以上追加してください。');
       return;
     }
-    if (exercises.some((exercise) => exercise.sets.some((set) => !set.reps))) {
-      setErrorMessage('すべてのセットに回数を入力してください。');
-      return;
-    }
-    if (!trainingMinutes || Number(trainingMinutes) <= 0) {
-      setErrorMessage('トレーニング時間を入力してください。');
-      return;
-    }
-    if (!condition) {
-      setErrorMessage('今日の調子を1〜10で選択してください。');
-      return;
-    }
-
     setErrorMessage('');
     setIsSaving(true);
     await new Promise((resolve) => setTimeout(resolve, 650));
@@ -108,7 +95,7 @@ export default function TrainingScreen() {
               <Text style={styles.dateValue}>{trainingDate}</Text>
             </View>
           </View>
-          <Text style={styles.lead}>今日取り組んだ種目とコンディションを記録します。</Text>
+          <Text style={styles.lead}>今日取り組んだ種目を記録します。種目以外の項目は空欄でも保存できます。</Text>
 
           <View style={styles.sectionHeading}>
             <Text style={styles.sectionTitle}>実施した種目</Text>
@@ -134,7 +121,7 @@ export default function TrainingScreen() {
 
           <View style={styles.detailsCard}>
             <Text style={styles.cardTitle}>トレーニング詳細</Text>
-            <Text style={styles.fieldLabel}>トレーニング時間</Text>
+            <Text style={styles.fieldLabel}>トレーニング時間 <Text style={styles.optionalText}>任意</Text></Text>
             <View style={styles.timeInputWrap}>
               <TextInput
                 inputMode="numeric"
@@ -148,7 +135,7 @@ export default function TrainingScreen() {
               <Text style={styles.timeUnit}>分</Text>
             </View>
 
-            <Text style={styles.conditionLabel}>今日の調子 <Text style={styles.conditionValue}>{condition ?? '—'} / 10</Text></Text>
+            <Text style={styles.conditionLabel}>今日の調子 <Text style={styles.optionalText}>任意</Text> <Text style={styles.conditionValue}>{condition ?? '—'} / 10</Text></Text>
             <View style={styles.ratingRow}>
               {Array.from({ length: 10 }, (_, index) => index + 1).map((score) => (
                 <Pressable key={score} onPress={() => setCondition(score)} style={[styles.ratingButton, condition === score && styles.selectedRating]}>
