@@ -8,7 +8,14 @@ import { ExerciseRecordCard, type ExerciseRecord } from '@/components/ExerciseRe
 import { exerciseCatalog, type ExerciseOption } from '@/lib/exerciseCatalog';
 
 function createRecord(exercise: ExerciseOption): ExerciseRecord {
-  return { ...exercise, weightKg: '', reps: '', sets: '' };
+  return {
+    ...exercise,
+    sets: Array.from({ length: 3 }, (_, index) => ({
+      id: `${exercise.id}-set-${index + 1}`,
+      weightKg: '',
+      reps: '',
+    })),
+  };
 }
 
 function formatLocalDate(date: Date) {
@@ -38,10 +45,27 @@ export default function TrainingScreen() {
     setErrorMessage('');
   }
 
-  function updateExercise(index: number, field: 'weightKg' | 'reps' | 'sets', value: string) {
-    setExercises((current) => current.map((exercise, exerciseIndex) => exerciseIndex === index ? { ...exercise, [field]: value } : exercise));
+  function updateSet(exerciseIndex: number, setId: string, field: 'weightKg' | 'reps', value: string) {
+    setExercises((current) => current.map((exercise, index) => index === exerciseIndex
+      ? { ...exercise, sets: exercise.sets.map((set) => set.id === setId ? { ...set, [field]: value } : set) }
+      : exercise));
     setErrorMessage('');
     setSuccessMessage('');
+  }
+
+  function addSet(exerciseIndex: number) {
+    setExercises((current) => current.map((exercise, index) => index === exerciseIndex
+      ? {
+          ...exercise,
+          sets: [...exercise.sets, { id: `${exercise.id}-set-${Date.now()}`, weightKg: '', reps: '' }],
+        }
+      : exercise));
+  }
+
+  function removeSet(exerciseIndex: number, setId: string) {
+    setExercises((current) => current.map((exercise, index) => index === exerciseIndex && exercise.sets.length > 1
+      ? { ...exercise, sets: exercise.sets.filter((set) => set.id !== setId) }
+      : exercise));
   }
 
   async function saveRecord() {
@@ -50,8 +74,8 @@ export default function TrainingScreen() {
       setErrorMessage('実施した種目を1つ以上追加してください。');
       return;
     }
-    if (exercises.some((exercise) => !exercise.reps || !exercise.sets)) {
-      setErrorMessage('すべての種目に回数とセット数を入力してください。');
+    if (exercises.some((exercise) => exercise.sets.some((set) => !set.reps))) {
+      setErrorMessage('すべてのセットに回数を入力してください。');
       return;
     }
     if (!trainingMinutes || Number(trainingMinutes) <= 0) {
@@ -96,8 +120,10 @@ export default function TrainingScreen() {
               exercise={exercise}
               index={index}
               key={exercise.id}
-              onChange={(field, value) => updateExercise(index, field, value)}
+              onAddSet={() => addSet(index)}
+              onChangeSet={(setId, field, value) => updateSet(index, setId, field, value)}
               onRemove={() => setExercises((current) => current.filter((item) => item.id !== exercise.id))}
+              onRemoveSet={(setId) => removeSet(index, setId)}
             />
           ))}
 

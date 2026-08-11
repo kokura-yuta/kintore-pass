@@ -2,22 +2,26 @@ import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import type { ExerciseOption } from '@/lib/exerciseCatalog';
 
-export type ExerciseRecord = ExerciseOption & {
+export type SetRecord = {
+  id: string;
   weightKg: string;
   reps: string;
-  sets: string;
 };
 
-type NumericField = 'weightKg' | 'reps' | 'sets';
+export type ExerciseRecord = ExerciseOption & {
+  sets: SetRecord[];
+};
 
 type Props = {
   exercise: ExerciseRecord;
   index: number;
-  onChange: (field: NumericField, value: string) => void;
+  onAddSet: () => void;
+  onChangeSet: (setId: string, field: 'weightKg' | 'reps', value: string) => void;
   onRemove: () => void;
+  onRemoveSet: (setId: string) => void;
 };
 
-export function ExerciseRecordCard({ exercise, index, onChange, onRemove }: Props) {
+export function ExerciseRecordCard({ exercise, index, onAddSet, onChangeSet, onRemove, onRemoveSet }: Props) {
   return (
     <View style={styles.card}>
       <View style={styles.heading}>
@@ -26,38 +30,58 @@ export function ExerciseRecordCard({ exercise, index, onChange, onRemove }: Prop
         </View>
         <View style={styles.headingCopy}>
           <Text style={styles.name}>{exercise.name}</Text>
-          <Text style={styles.meta}>{exercise.category} · {exercise.equipment}</Text>
+          <Text style={styles.meta}>{exercise.category} ・ {exercise.equipment}</Text>
         </View>
         <Pressable accessibilityLabel={`${exercise.name}を削除`} onPress={onRemove} style={styles.removeButton}>
           <Text style={styles.removeText}>削除</Text>
         </Pressable>
       </View>
 
-      <View style={styles.fieldRow}>
-        <RecordInput label="重量" onChangeText={(value) => onChange('weightKg', value)} unit="kg" value={exercise.weightKg} />
-        <RecordInput label="回数" onChangeText={(value) => onChange('reps', value)} unit="回" value={exercise.reps} />
-        <RecordInput label="セット" onChangeText={(value) => onChange('sets', value)} unit="set" value={exercise.sets} />
+      <View style={styles.columnLabels}>
+        <Text style={[styles.columnLabel, styles.setColumn]}>SET</Text>
+        <Text style={styles.columnLabel}>重量</Text>
+        <Text style={styles.columnLabel}>回数</Text>
+        <View style={styles.deleteColumn} />
       </View>
+
+      {exercise.sets.map((set, setIndex) => (
+        <View key={set.id} style={styles.setRow}>
+          <View style={styles.setColumn}>
+            <Text style={styles.setNumber}>{setIndex + 1}</Text>
+          </View>
+          <RecordInput onChangeText={(value) => onChangeSet(set.id, 'weightKg', value)} unit="kg" value={set.weightKg} />
+          <RecordInput onChangeText={(value) => onChangeSet(set.id, 'reps', value)} unit="回" value={set.reps} />
+          <Pressable
+            accessibilityLabel={`${setIndex + 1}セット目を削除`}
+            disabled={exercise.sets.length === 1}
+            onPress={() => onRemoveSet(set.id)}
+            style={[styles.deleteSetButton, exercise.sets.length === 1 && styles.disabledDelete]}
+          >
+            <Text style={styles.deleteSetText}>×</Text>
+          </Pressable>
+        </View>
+      ))}
+
+      <Pressable onPress={onAddSet} style={styles.addSetButton}>
+        <Text style={styles.addSetText}>＋ セットを追加</Text>
+      </Pressable>
     </View>
   );
 }
 
-function RecordInput({ label, onChangeText, unit, value }: { label: string; onChangeText: (value: string) => void; unit: string; value: string }) {
+function RecordInput({ onChangeText, unit, value }: { onChangeText: (value: string) => void; unit: string; value: string }) {
   return (
-    <View style={styles.field}>
-      <Text style={styles.fieldLabel}>{label}</Text>
-      <View style={styles.inputWrap}>
-        <TextInput
-          inputMode="decimal"
-          keyboardType="decimal-pad"
-          onChangeText={(text) => onChangeText(text.replace(/[^0-9.]/g, ''))}
-          placeholder="0"
-          placeholderTextColor="#59605A"
-          style={styles.input}
-          value={value}
-        />
-        <Text style={styles.unit}>{unit}</Text>
-      </View>
+    <View style={styles.inputWrap}>
+      <TextInput
+        inputMode="decimal"
+        keyboardType="decimal-pad"
+        onChangeText={(text) => onChangeText(text.replace(/[^0-9.]/g, ''))}
+        placeholder="0"
+        placeholderTextColor="#59605A"
+        style={styles.input}
+        value={value}
+      />
+      <Text style={styles.unit}>{unit}</Text>
     </View>
   );
 }
@@ -72,10 +96,18 @@ const styles = StyleSheet.create({
   meta: { marginTop: 3, color: '#737B75', fontSize: 10 },
   removeButton: { paddingHorizontal: 7, paddingVertical: 8 },
   removeText: { color: '#FF8D98', fontSize: 11, fontWeight: '800' },
-  fieldRow: { flexDirection: 'row', gap: 8, marginTop: 15 },
-  field: { flex: 1 },
-  fieldLabel: { marginBottom: 6, color: '#858E87', fontSize: 9, fontWeight: '800' },
-  inputWrap: { minHeight: 46, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#343A35', borderRadius: 11, backgroundColor: '#0B0D0C' },
+  columnLabels: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 16, marginBottom: 6 },
+  columnLabel: { flex: 1, color: '#858E87', fontSize: 9, fontWeight: '800' },
+  setColumn: { width: 30, flex: 0, textAlign: 'center' },
+  deleteColumn: { width: 28 },
+  setRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
+  setNumber: { color: '#B6F24B', fontSize: 12, fontWeight: '900', textAlign: 'center' },
+  inputWrap: { minHeight: 46, flex: 1, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#343A35', borderRadius: 11, backgroundColor: '#0B0D0C' },
   input: { flex: 1, minWidth: 0, paddingLeft: 10, color: '#F4F6F3', fontSize: 14, fontWeight: '800' },
   unit: { paddingRight: 8, color: '#697169', fontSize: 8, fontWeight: '800' },
+  deleteSetButton: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center' },
+  deleteSetText: { color: '#FF8D98', fontSize: 18, fontWeight: '500' },
+  disabledDelete: { opacity: 0.2 },
+  addSetButton: { minHeight: 40, alignItems: 'center', justifyContent: 'center', marginTop: 5, borderWidth: 1, borderColor: '#343A35', borderRadius: 11 },
+  addSetText: { color: '#B6F24B', fontSize: 11, fontWeight: '900' },
 });
