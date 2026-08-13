@@ -14,6 +14,10 @@ export const users = pgTable("users", {
   // ユーザーを重複なく識別するためのID
   id: uuid("id").defaultRandom().primaryKey(),
 
+  // ClerkのログインユーザーとNeon内のユーザーを重複なく結び付けるID
+  clerkUserId: text("clerk_user_id")
+    .unique(),
+
   // ログイン中のユーザーとDB内のデータを結び付ける認証情報
   email: text("email").notNull().unique(),
 

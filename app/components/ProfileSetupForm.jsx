@@ -73,6 +73,28 @@ export default function ProfileSetupForm() {
   function handleSubmit(event) {
     event.preventDefault();
     if (!validate()) return;
+        const profileData = {
+      heightCm: Number(form.height),
+      weightKg: Number(form.weight),
+      bodyFatPercentage:
+        form.bodyFat
+          ? Number(form.bodyFat)
+          : null,
+      weeklyTrainingDays:
+        form.weeklyFrequency
+          ? Number(form.weeklyFrequency)
+          : null,
+      availableMinutes:
+        form.sessionMinutes
+          ? Number(form.sessionMinutes)
+          : null,
+      trainingLocation:
+        form.trainingLocation || null,
+      weakBodyParts:
+        form.weakBodyParts.length > 0
+          ? form.weakBodyParts
+          : null,
+    };
 
     window.localStorage.setItem(PROFILE_DRAFT_KEY, JSON.stringify(form));
     router.push("/initial-analysis");

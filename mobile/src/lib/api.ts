@@ -41,8 +41,14 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions): P
 
       let message = fallbackMessage;
       try {
-        const body = (await response.json()) as { message?: string };
-        message = body.message ?? fallbackMessage;
+        const body = (await response.json()) as {
+          error?: string;
+          message?: string;
+        };
+        message =
+          body.error ??
+          body.message ??
+          fallbackMessage;
       } catch {
         // JSON以外のエラー応答では、ステータス別のメッセージを使用します。
       }

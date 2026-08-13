@@ -3,7 +3,7 @@
 import { eq } from "drizzle-orm";
 
 // 認証情報・DB接続・usersとuser_profilesをAPIで使えるようにする場所
-import { getChatGPTUser } from "@/app/chatgpt-auth";
+import { getClerkUserId } from "@/app/lib/auth/clerk-auth";
 import { getDb } from "@/db";
 import {
   userProfiles,
@@ -47,15 +47,17 @@ function isOptionalIntegerInRange(
 
 
 // GET通信を受け取り、ログイン中のユーザーの身体プロフィールを取得する場所
-export async function GET() {
+export async function GET(
+  request: Request,
+) {
   // 認証・DB検索で発生した予想外のエラーをまとめて捕まえる
   try {
-    // サーバー側で確認されたログイン中のユーザー情報を取得する
-    const authenticatedUser =
-      await getChatGPTUser();
+    // リクエストのClerkトークンを検証してログイン中のユーザーIDを取得する
+    const clerkUserId =
+      await getClerkUserId(request);
 
-    // 認証情報がない場合はDBを操作せずHTTP 401を返す
-    if (!authenticatedUser) {
+    // ClerkユーザーIDを取得できなければDBを操作せずHTTP 401を返す
+    if (!clerkUserId) {
       return Response.json(
         { error: "ログインが必要です。" },
         { status: 401 },
@@ -65,7 +67,7 @@ export async function GET() {
     // Neon PostgreSQLを操作する共通のDB接続を取得する
     const db = getDb();
 
-    // 認証メールと一致するusersデータからIDだけを最大1件取得する
+    // ClerkユーザーIDが一致するusersデータからアプリ内IDだけを最大1件取得する
     const matchedUsers = await db
       .select({
         id: users.id,
@@ -73,8 +75,8 @@ export async function GET() {
       .from(users)
       .where(
         eq(
-          users.email,
-          authenticatedUser.email,
+          users.clerkUserId,
+          clerkUserId,
         ),
       )
       .limit(1);
@@ -133,12 +135,12 @@ export async function GET() {
 export async function PATCH(
   request: Request,
 ) {
-  // サーバー側で確認されたログイン中のユーザー情報を取得する
-  const authenticatedUser =
-    await getChatGPTUser();
+  // リクエストのClerkトークンを検証してログイン中のユーザーIDを取得する
+  const clerkUserId =
+    await getClerkUserId(request);
 
-  // 認証情報がない場合はDBを操作せずHTTP 401を返す
-  if (!authenticatedUser) {
+  // ClerkユーザーIDを取得できなければDBを操作せずHTTP 401を返す
+  if (!clerkUserId) {
     return Response.json(
       { error: "ログインが必要です。" },
       { status: 401 },
@@ -253,18 +255,19 @@ export async function PATCH(
   const db = getDb();
 
   // 認証メールと一致するusersデータからIDだけを最大1件取得する
-  const matchedUsers = await db
-    .select({
-      id: users.id,
-    })
-    .from(users)
-    .where(
-      eq(
-        users.email,
-        authenticatedUser.email,
-      ),
-    )
-    .limit(1);
+  // ClerkユーザーIDが一致するusersデータからアプリ内IDだけを最大1件取得する
+const matchedUsers = await db
+  .select({
+    id: users.id,
+  })
+  .from(users)
+  .where(
+    eq(
+      users.clerkUserId,
+      clerkUserId,
+    ),
+  )
+  .limit(1);
 
   // 検索結果の先頭を取り出し、ユーザーがいなければnullに統一する
   const currentUser =
@@ -290,6 +293,8 @@ export async function PATCH(
     weakBodyParts,
     updatedAt: new Date(),
   };
+
+  // 初回はプロフィールを新規作成し、同じユーザーの2回目以降は内容を更新する
   const savedProfiles = await db
     .insert(userProfiles)
     .values(profileValues)
@@ -298,4 +303,25 @@ export async function PATCH(
       set: profileValues,
     })
     .returning();
+
+  // 身体情報の保存が完了したことをユーザーの初回設定状態へ記録する
+  await db
+    .update(users)
+    .set({
+      profileCompleted: true,
+      updatedAt: new Date(),
+    })
+    .where(
+      eq(users.id, currentUser.id),
+    );
+
+  // DBから返された保存結果の先頭を取り出し、フロントエンドへ返す
+  const savedProfile =
+    savedProfiles[0] ?? null;
+
+  // 保存済みプロフィールと身体情報入力の完了状態をJSONで返す
+  return Response.json({
+    profile: savedProfile,
+    profileCompleted: true,
+  });
 }
