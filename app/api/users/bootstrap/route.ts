@@ -1,4 +1,7 @@
 // 認証済みユーザーをNeonへ登録または取得し、初回設定の状態を返すAPI
+//この route.ts は、POST で呼ばれたときに「今ログインしているユーザーを Neon の users テーブルに登録するか、すでにあるならその状態を返す」処理をしています。
+
+
 // usersテーブルから同じClerkユーザーIDを検索する比較機能
 import { eq } from "drizzle-orm";
 

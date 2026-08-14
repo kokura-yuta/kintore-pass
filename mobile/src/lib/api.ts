@@ -62,3 +62,66 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions): P
     throw new ApiError('インターネット接続を確認して、もう一度お試しください。');
   }
 }
+// 画像などのFormDataを認証付きでバックエンドへ送信する
+export async function apiUploadRequest<T>(
+  path: string,
+  token: string,
+  body: FormData,
+): Promise<T> {
+  if (!apiBaseUrl) {
+    throw new ApiError(
+      'APIの接続先がまだ設定されていません。',
+    );
+  }
+
+  try {
+    const response = await fetch(
+      `${apiBaseUrl}${path}`,
+      {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body,
+      },
+    );
+
+    if (!response.ok) {
+      let message =
+        `画像の送信に失敗しました。（HTTP ${response.status}）`;
+
+      try {
+        const errorBody =
+          (await response.json()) as {
+            error?: string;
+            message?: string;
+            detail?: string;
+          };
+
+        message =
+          errorBody.error ??
+          errorBody.message ??
+          errorBody.detail ??
+          message;
+      } catch {
+        // JSON以外のエラーでは共通メッセージを使用する
+      }
+
+      throw new ApiError(
+        message,
+        response.status,
+      );
+    }
+
+    return (await response.json()) as T;
+  } catch (error) {
+    if (error instanceof ApiError) {
+      throw error;
+    }
+
+    throw new ApiError(
+      'インターネット接続を確認してください。',
+    );
+  }
+}

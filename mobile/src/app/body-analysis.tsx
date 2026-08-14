@@ -1,12 +1,43 @@
+import { useAuth } from '@clerk/expo';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useState } from 'react';
+import {
+  ActivityIndicator,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import {
+  ApiError,
+  apiUploadRequest,
+} from '@/lib/api';
+
 
 type PhotoPosition = 'front' | 'side' | 'back';
 type AnalysisStatus = 'input' | 'loading' | 'result';
+
+// 身体分析APIから返るJSONの形
+type BodyAnalysisApiResponse = {
+  bodyAnalysisId: string;
+  analysis: {
+    summary: string;
+    goal_difference: string;
+    areas: {
+      body_part: string;
+      score: number;
+      priority: string;
+      observation: string;
+      recommendation: string;
+    }[];
+  };
+};
 
 const MAX_IMAGE_SIZE = 8 * 1024 * 1024;
 const positions: { key: PhotoPosition; label: string; guide: string }[] = [
@@ -15,18 +46,60 @@ const positions: { key: PhotoPosition; label: string; guide: string }[] = [
   { key: 'back', label: '背面', guide: '背筋を伸ばして後ろから撮影' },
 ];
 
+// ブラウザとiPhoneに合った形式で画像をFormDataへ追加する
+async function appendPhotoToFormData(
+  formData: FormData,
+  fieldName: string,
+  imageUri: string,
+  fileName: string,
+) {
+  if (Platform.OS === 'web') {
+    const imageResponse =
+      await fetch(imageUri);
+
+    if (!imageResponse.ok) {
+      throw new ApiError(
+        '選択した画像を読み込めませんでした。',
+      );
+    }
+
+    const imageBlob =
+      await imageResponse.blob();
+
+    formData.append(
+      fieldName,
+      imageBlob,
+      fileName,
+    );
+
+    return;
+  }
+
+  formData.append(
+    fieldName,
+    {
+      uri: imageUri,
+      name: fileName,
+      type: 'image/jpeg',
+    } as unknown as Blob,
+  );
+}
+
 export default function BodyAnalysisScreen() {
   const router = useRouter();
+    // 身体画像を本人のデータとして送るためClerkトークンを取得する
+  const { getToken } = useAuth({
+    treatPendingAsSignedOut: false,
+  });
   const [photos, setPhotos] = useState<Record<PhotoPosition, string | null>>({ front: null, side: null, back: null });
   const [weightKg, setWeightKg] = useState('');
   const [status, setStatus] = useState<AnalysisStatus>('input');
   const [error, setError] = useState('');
-
-  useEffect(() => {
-    if (status !== 'loading') return;
-    const timer = setTimeout(() => setStatus('result'), 1700);
-    return () => clearTimeout(timer);
-  }, [status]);
+  // APIから返った分析結果を画面表示用に保存する
+  const [analysisResult, setAnalysisResult] =
+  useState<BodyAnalysisApiResponse | null>(
+    null,
+  );
 
   async function selectPhoto(position: PhotoPosition, source: 'camera' | 'library') {
     setError('');
@@ -57,39 +130,208 @@ export default function BodyAnalysisScreen() {
     setPhotos((current) => ({ ...current, [position]: asset.uri }));
   }
 
-  function beginAnalysis() {
-    if (positions.some((position) => !photos[position.key])) {
-      setError('正面・横・背面の3枚を設定してください。');
-      return;
-    }
-    if (weightKg && (Number(weightKg) < 30 || Number(weightKg) > 300)) {
-      setError('体重を30〜300kgで入力してください。');
-      return;
-    }
-    setError('');
-    setStatus('loading');
+  // 3枚の身体画像を認証付きでバックエンドへ送信する
+async function beginAnalysis() {
+  const frontImage = photos.front;
+  const sideImage = photos.side;
+  const backImage = photos.back;
+
+  if (
+    !frontImage ||
+    !sideImage ||
+    !backImage
+  ) {
+    setError(
+      '正面・横・背面の3枚を設定してください。',
+    );
+    return;
   }
+
+  if (
+    weightKg &&
+    (
+      Number(weightKg) < 30 ||
+      Number(weightKg) > 300
+    )
+  ) {
+    setError(
+      '体重を30〜300kgで入力してください。',
+    );
+    return;
+  }
+
+  setError('');
+  setAnalysisResult(null);
+  setStatus('loading');
+
+  try {
+    const token = await getToken();
+
+    if (!token) {
+      throw new ApiError(
+        'ログイン情報を確認できませんでした。',
+        401,
+      );
+    }
+
+    // TypeScriptバックエンドへ送る3枚入りの荷物を作る
+    const formData = new FormData();
+
+    await appendPhotoToFormData(
+      formData,
+      'front_image',
+      frontImage,
+      'front.jpg',
+    );
+
+    await appendPhotoToFormData(
+      formData,
+      'side_image',
+      sideImage,
+      'side.jpg',
+    );
+
+    await appendPhotoToFormData(
+      formData,
+      'back_image',
+      backImage,
+      'back.jpg',
+    );
+
+    const result =
+      await apiUploadRequest<BodyAnalysisApiResponse>(
+        '/api/body-analysis',
+        token,
+        formData,
+      );
+
+    setAnalysisResult(result);
+    setStatus('result');
+  } catch (caughtError) {
+    setStatus('input');
+
+    setError(
+      caughtError instanceof Error
+        ? caughtError.message
+        : '身体分析に失敗しました。',
+    );
+  }
+}
 
   if (status === 'loading') {
     return <View style={styles.screen}><SafeAreaView edges={['top', 'bottom']} style={styles.loadingArea}><ActivityIndicator color="#B6F24B" size="large" /><Text style={styles.loadingTitle}>身体を分析しています</Text><Text style={styles.loadingText}>写真とこれまでの記録を照らし合わせています…</Text></SafeAreaView></View>;
   }
 
-  if (status === 'result') {
-    return (
-      <View style={styles.screen}>
-        <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
-          <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-            <Text style={styles.completeEyebrow}>ANALYSIS COMPLETE</Text><Text style={styles.resultTitle}>身体分析が完了しました</Text>
-            <View style={styles.resultCard}><Text style={styles.resultNumber}>01</Text><Text style={styles.resultLabel}>今回の変化</Text><Text style={styles.resultText}>前回より肩まわりの輪郭が安定しています。体重は大きく変化していないため、継続して上半身の筋量を増やす方針がおすすめです。</Text></View>
-            <View style={styles.resultCard}><Text style={styles.resultNumber}>02</Text><Text style={styles.resultLabel}>重点部位</Text><View style={styles.focusRow}><View style={styles.focusChip}><Text style={styles.focusText}>背中</Text></View><View style={styles.focusChip}><Text style={styles.focusText}>肩</Text></View></View><Text style={styles.resultText}>背中の頻度が最近少ないため、次回はローイング系種目を追加してバランスを整えましょう。</Text></View>
-            <View style={styles.resultCard}><Text style={styles.resultNumber}>03</Text><Text style={styles.resultLabel}>AIアドバイス</Text><Text style={styles.resultText}>同じ場所・明るさ・姿勢で定期的に撮影すると、変化を比較しやすくなります。写真だけで断定せず、体重やトレーニング記録も合わせて確認します。</Text></View>
-            <Pressable onPress={() => router.replace('/analysis-history')} style={styles.primaryButton}><Text style={styles.primaryText}>結果を保存して分析履歴へ</Text><Text style={styles.primaryArrow}>›</Text></Pressable>
-            <Text style={styles.previewNote}>現在は確認用のAI結果です。API接続後に画像を送信し、実際の分析結果を保存します。</Text>
-          </ScrollView>
-        </SafeAreaView>
-      </View>
-    );
-  }
+  // APIから分析結果が返った場合だけ結果画面を表示する
+if (
+  status === 'result' &&
+  analysisResult
+) {
+  return (
+    <View style={styles.screen}>
+      <SafeAreaView
+        edges={['top', 'bottom']}
+        style={styles.safeArea}
+      >
+        <ScrollView
+          contentContainerStyle={styles.content}
+          showsVerticalScrollIndicator={false}
+        >
+          <Text style={styles.completeEyebrow}>
+            ANALYSIS COMPLETE
+          </Text>
+
+          <Text style={styles.resultTitle}>
+            身体分析が完了しました
+          </Text>
+
+          <View style={styles.resultCard}>
+            <Text style={styles.resultNumber}>
+              01
+            </Text>
+
+            <Text style={styles.resultLabel}>
+              分析結果
+            </Text>
+
+            <Text style={styles.resultText}>
+              {analysisResult.analysis.summary}
+            </Text>
+          </View>
+
+          <View style={styles.resultCard}>
+            <Text style={styles.resultNumber}>
+              02
+            </Text>
+
+            <Text style={styles.resultLabel}>
+              理想体型との差
+            </Text>
+
+            <Text style={styles.resultText}>
+              {
+                analysisResult.analysis
+                  .goal_difference
+              }
+            </Text>
+          </View>
+
+          {analysisResult.analysis.areas.map(
+            (area, index) => (
+              <View
+                key={`${area.body_part}-${index}`}
+                style={styles.resultCard}
+              >
+                <Text style={styles.resultNumber}>
+                  {String(index + 3).padStart(
+                    2,
+                    '0',
+                  )}
+                </Text>
+
+                <Text style={styles.resultLabel}>
+                  {area.body_part}
+                  {'　'}
+                  {area.score}/10
+                </Text>
+
+                <Text style={styles.resultText}>
+                  {area.observation}
+                </Text>
+
+                <Text style={styles.resultText}>
+                  おすすめ：
+                  {area.recommendation}
+                </Text>
+              </View>
+            ),
+          )}
+
+          <Pressable
+            onPress={() =>
+              router.replace(
+                '/analysis-history',
+              )
+            }
+            style={styles.primaryButton}
+          >
+            <Text style={styles.primaryText}>
+              分析履歴へ
+            </Text>
+
+            <Text style={styles.primaryArrow}>
+              ›
+            </Text>
+          </Pressable>
+
+          <Text style={styles.previewNote}>
+            分析結果は保存済みです。身体写真自体は現在保存していません。
+          </Text>
+        </ScrollView>
+      </SafeAreaView>
+    </View>
+  );
+}
 
   return (
     <View style={styles.screen}>

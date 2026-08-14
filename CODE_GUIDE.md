@@ -5742,6 +5742,156 @@ message =
 
 実際のログイン済みトークンによるNeon登録と画面分岐は、スマホ版を再起動して実機から確認します。
 
+### 使用済み認証コードが繰り返し表示される問題の修正
+
+担当ファイルは`mobile/src/app/sign-in.tsx`です。
+
+画面に表示された`This verification has already been verified.`は、Clerkが「その確認コードはすでに認証処理で使用済み」と返したエラーです。
+
+赤いエラー表示自体が原因ではなく、同じコード確認処理が複数回実行されることと、前回途中で止まった認証状態が残ることが原因でした。
+
+今回、次の3点を修正しました。
+
+```text
+1. 新しい認証を始める前に前回のClerk状態をresetする
+2. 登録済みはsignIn、未登録はsignUpへ分ける
+3. useRefのロックでEnterとボタンによる二重送信を防ぐ
+```
+
+#### 前回の認証状態を消す
+
+```ts
+await signIn.reset();
+await signUp.reset();
+```
+
+`signIn.reset()`は、途中で止まったログイン確認の状態を最初へ戻します。
+
+`signUp.reset()`は、途中で止まった新規登録確認の状態を最初へ戻します。
+
+`await`を付けることで、リセットが完了する前に新しいコード送信を開始しません。
+
+#### 登録済みユーザーかを最初に確認する
+
+```ts
+const createResult = await signIn.create({ identifier: normalizedEmail });
+```
+
+`identifier`には、空白を除いて小文字へ統一したメールアドレスを渡します。
+
+Clerkに登録済みなら、`signIn.emailCode.sendCode()`でログイン用コードを送ります。
+
+未登録を表す`form_identifier_not_found`が返った場合は、`signUp.create()`で新規登録を始めます。
+
+```ts
+const signUpResult = await signUp.create({ emailAddress: normalizedEmail });
+```
+
+このように分ける理由は、新規登録ではメール確認後にユーザーとセッションの両方を作る必要があるためです。
+
+`signIn`から`signUp`へ途中で移動してすぐ`finalize()`すると、セッションが未作成のままになり、`Cannot finalize sign-up without a created session.`が発生する場合があります。
+
+`authMode`には、今回がログインなのか新規登録なのかを保存し、コード確認時に正しいClerk処理を選びます。
+
+#### 二重送信を即座に防ぐ
+
+```ts
+const submissionLock = useRef(false);
+```
+
+`useRef(false)`は、画面の再描画とは別に、現在送信中かを保持します。
+
+```ts
+if (submissionLock.current) return;
+submissionLock.current = true;
+```
+
+`.current`が`true`なら、すでに別の認証処理が動いているため次の処理を開始しません。
+
+Reactの`setIsSubmitting(true)`が画面へ反映されるより先にロックできるため、Enterとログインボタンがほぼ同時に押されても確認コードを2回送りません。
+
+処理が成功または失敗した後は、`finally`で必ずロックを解除します。
+
+```ts
+finally {
+  submissionLock.current = false;
+  setIsSubmitting(false);
+}
+```
+
+`finally`は、`try`が成功した場合も`catch`へ進んだ場合も最後に実行される場所です。
+
+#### コード確認後の流れ
+
+```text
+既存ユーザー
+→ signInでコード確認
+→ signIn.finalize()
+→ Clerkセッション確定
+
+新規ユーザー
+→ signUpでユーザー登録開始
+→ signUpでコード確認
+→ ユーザーとセッション作成を確認
+→ signUp.finalize()
+→ Clerkセッション確定
+```
+
+`finalize()`は、コード確認済みの処理を実際のログインセッションとして有効にします。
+
+2026年8月12日にExpo LintとTypeScript型検査が成功したことを確認しました。
+
+### スマホから開発中のバックエンドへ接続する設定
+
+ここでは、Expoアプリが動くスマホから、Macで起動しているbootstrap APIへ接続できるようにしています。
+
+#### `package.json` の起動命令
+
+```json
+"dev": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext dev --hostname 0.0.0.0"
+```
+
+`vinext dev`は、React／Next.js形式で作ったバックエンドを開発用に起動する命令です。
+
+`--hostname 0.0.0.0`は、Mac自身の`localhost`だけでなく、同じWi-Fi上のスマホからも3000番ポートへ接続できるようにする指定です。
+
+この指定がない場合、スマホが`EXPO_PUBLIC_API_BASE_URL=http://MacのIPアドレス:3000`へアクセスしてもバックエンドまで届きません。
+
+#### `vite.config.ts` のWorker設定
+
+```ts
+dev: {
+  inspector: {
+    hostname: "127.0.0.1",
+  },
+  server: {
+    hostname: "0.0.0.0",
+  },
+},
+```
+
+`server.hostname: "0.0.0.0"`は、Cloudflare Worker側の開発サーバーもLAN接続を受け取れるようにします。
+
+`inspector.hostname: "127.0.0.1"`は、デバッグ専用機能をMac内部だけで使えるように制限します。
+
+つまり、アプリが使うAPIはスマホから接続可能にし、開発者用のデバッグ機能は外へ公開しない構成です。
+
+#### `mobile/.env.local` のAPI接続先
+
+```env
+EXPO_PUBLIC_API_BASE_URL=http://MacのIPアドレス:3000
+```
+
+この値は、ExpoアプリがどのバックエンドへHTTPリクエストを送るかを表します。
+
+Macとスマホは同じWi-Fiへ接続し、MacのIPアドレスが変わった場合はこの値も変更してExpoを再起動します。
+
+#### 接続確認で401が返る理由
+
+認証トークンを付けずにbootstrap APIを確認すると、`401 ログインが必要です`が返ります。
+
+これは接続失敗ではなく、「APIには到達したが、認証情報がないのでDB処理を止めた」という正常な結果です。
+
 ### Clerk認証でフロントエンド担当が行うこと
 
 フロントエンド担当は、ユーザーが実際に触るログイン画面と、ログイン状態に応じた画面遷移を作ります。
@@ -5830,3 +5980,1974 @@ Clerkの秘密鍵とNeonの`DATABASE_URL`はバックエンドの環境変数だ
 - 認証が必要な画面の保護
 - API送信中・認証エラー・通信エラーの表示
 - スマートフォン向けのログイン画面デザイン
+
+## トレーニング記録：1回分の親テーブル
+
+### どこに書くコードか
+
+担当ファイルは`db/schema.ts`で、`userProfiles`より下に書きます。
+
+使用言語はTypeScriptで、Drizzleを使ってNeon PostgreSQLのテーブルを定義しています。
+
+TypeScriptで「保存するデータの形」を書き、Drizzleがその内容をPostgreSQL用のテーブル設計へ変換します。
+
+### 何をする場所か
+
+`trainingSessions`は、1回のトレーニング全体を表す親データです。
+
+例えば「8月12日に60分トレーニングして、調子は8、メモは胸の調子が良かった」という情報を1件にまとめます。
+
+ベンチプレスなどの種目や各セットの重量・回数は、後から別の子テーブルとして結び付けます。
+
+### 基本の文の構造
+
+```ts
+export const trainingSessions = pgTable("training_sessions", {
+  // 保存する列を書く
+});
+```
+
+`export`は、別のAPIファイルからこのテーブルを読み込めるようにする命令です。
+
+`const trainingSessions`は、TypeScript内でテーブル定義を使うための名前です。
+
+`pgTable()`は、PostgreSQLのテーブルを定義するDrizzleの関数です。
+
+`"training_sessions"`は、Neon上で実際に作られるテーブル名です。
+
+波括弧`{}`の中には、そのテーブルで保存する列を書きます。
+
+### 各項目の意味
+
+```ts
+id: uuid("id").defaultRandom().primaryKey(),
+```
+
+`id`は、1回ごとのトレーニング記録を重複なく区別する番号です。
+
+`uuid()`は、推測されにくい長いIDを保存する型です。
+
+`defaultRandom()`は、新規保存時にUUIDを自動生成します。
+
+`primaryKey()`は、この列をテーブル内の代表IDにします。
+
+```ts
+userId: uuid("user_id")
+  .notNull()
+  .references(() => users.id, {
+    onDelete: "cascade",
+  }),
+```
+
+`userId`は、この記録を行ったユーザーを表します。
+
+`notNull()`は、ユーザーIDを必須にして空の記録を防ぎます。
+
+`references(() => users.id)`によって、トレーニング記録を`users`テーブルの本人と結び付けます。
+
+`onDelete: "cascade"`は、ユーザーを削除した場合に、そのユーザーのトレーニング記録も一緒に削除する設定です。
+
+```ts
+performedAt: timestamp("performed_at", {
+  withTimezone: true,
+})
+  .notNull()
+  .defaultNow(),
+```
+
+`performedAt`は、トレーニングを実施した日時です。
+
+`timestamp()`は日付と時刻を保存する型です。
+
+`withTimezone: true`は、日本時間などのタイムゾーンの違いを扱えるようにします。
+
+`defaultNow()`は、日時が渡されなかった場合に現在日時を自動保存します。
+
+`durationMinutes`はトレーニング時間、`conditionScore`は当日の調子、`memo`は任意のメモを保存します。
+
+この3項目に`notNull()`がないため、入力しなくても保存できます。
+
+`createdAt`は、このデータがデータベースへ登録された日時です。
+
+### 覚える単語
+
+- `pgTable()`：PostgreSQLのテーブルを定義する
+- `uuid()`：重複しにくいIDを保存する
+- `integer()`：整数を保存する
+- `text()`：文字列を保存する
+- `timestamp()`：日時を保存する
+- `notNull()`：必須項目にする
+- `defaultNow()`：現在日時を初期値にする
+- `references()`：別のテーブルと結び付ける
+- `cascade`：親データ削除時に関連データも削除する
+
+### `pgTable()`とは
+
+`pgTable()`は、PostgreSQLのテーブルをTypeScriptで定義するDrizzleの関数です。
+
+`pg`はPostgreSQL、`Table`はデータを保存する表という意味です。
+
+```ts
+export const bodyAnalyses = pgTable("body_analyses", {
+  // 保存する列
+});
+```
+
+この文は「PostgreSQLへ`body_analyses`というテーブルを用意し、波括弧内で定義した列を保存できるようにする」と読みます。
+
+`bodyAnalyses`はTypeScriptのコード内で使う名前です。
+
+`"body_analyses"`はNeon PostgreSQL上で実際に使われるテーブル名です。
+
+波括弧`{}`の中には、`id`、`userId`、`status`など、テーブルへ保存する項目を定義します。
+
+`pgTable()`自体はデータを保存する処理ではなく、保存できる表の形を決める設計です。
+
+`schema.ts`へ`pgTable()`で設計を書き、`drizzle-kit push`などを実行すると、Neonへ実際のテーブルが作成されます。
+
+```text
+schema.tsでpgTable()を書く
+          ↓
+Drizzle KitでDBへ反映する
+          ↓
+Neonに実際のテーブルが作られる
+          ↓
+route.tsからデータを保存・取得する
+```
+
+### `userId`で分析結果とユーザーを結び付ける文
+
+```ts
+userId: uuid("user_id")
+  .notNull()
+  .references(() => users.id, {
+    onDelete: "cascade",
+  }),
+```
+
+このまとまりは「このデータが誰のものか」を保存し、`users`テーブルの本人と結び付けます。
+
+#### `userId:`
+
+`userId`は、TypeScriptやDrizzleのコード内でこの列を呼ぶときの名前です。
+
+例えば保存処理では`userId: user.id`のように使用します。
+
+#### `uuid("user_id")`
+
+`uuid()`は、この列へUUID形式のIDを保存すると決めます。
+
+`"user_id"`は、Neon PostgreSQL上で実際に作られる列名です。
+
+`users.id`もUUIDなので、結び付ける両方の列を同じ型にします。
+
+#### `.notNull()`
+
+`.notNull()`は、この列を必須にします。
+
+身体分析結果には必ず所有者が必要なため、ユーザーIDが空の分析結果は保存できません。
+
+これは「誰の写真・分析結果か分からないデータ」を作らないためにも重要です。
+
+#### `.references(() => users.id)`
+
+`.references()`は、この列が別テーブルのどの列を参照するかを指定します。
+
+`() => users.id`は、「`users`テーブルの`id`を参照する」という値を返すアロー関数です。
+
+これにより、実際に`users`テーブルへ存在するユーザーIDだけを保存できます。
+
+このように別テーブルのIDを参照する列を外部キーと呼びます。
+
+#### `{ onDelete: "cascade" }`
+
+これは参照先のユーザーが削除された場合の動きを指定する設定オブジェクトです。
+
+`cascade`は、親であるユーザーが削除されたら、そのユーザーに属する身体分析結果も一緒に削除する設定です。
+
+身体写真や分析結果を退会後も所有者不明のまま残さないために使います。
+
+```text
+users.id（親のユーザー）
+   ↓ userIdで結び付く
+body_analyses（子の分析結果）
+
+ユーザー削除
+   ↓ cascade
+そのユーザーの分析結果も削除
+```
+
+#### 最後の`,`
+
+最後のカンマは、`userId`の列定義がここで終わり、次の列定義へ進むことを表します。
+
+### 覚える単語
+
+- 外部キー：別テーブルのデータと結び付けるための列
+- 親テーブル：参照される側のテーブル
+- 子テーブル：親のIDを保存して参照する側のテーブル
+- 参照整合性：存在しないユーザーIDなどを保存させない仕組み
+- 設定オブジェクト：処理方法を`{ 名前: 値 }`で渡すデータ
+
+## 身体分析結果のDB設計
+
+### `bodyAnalyses`親テーブル
+
+`bodyAnalyses`は、Pythonが行う1回分の身体分析全体を保存する親テーブルです。
+
+`userId`で分析結果を本人へ結び付け、`status`で分析待ち・成功・失敗の状態を管理します。
+
+`summary`は身体全体の説明、`goalDifference`は設定中の理想体型との差を保存します。
+
+`analyzedAt`はPythonによる分析が完了した日時です。分析待ちの段階では空にできるため`notNull()`を付けていません。
+
+### `bodyAnalysisAreas`子テーブル
+
+`bodyAnalysisAreas`は、肩・胸・背中・腕・腹部・脚などの部位別結果を保存します。
+
+`analysisId`は`bodyAnalyses.id`を参照し、部位別結果がどの身体分析に属するかを表します。
+
+1件の`bodyAnalyses`に複数件の`bodyAnalysisAreas`を持てるため、親子の1対多関係です。
+
+`bodyPart`は部位名で、分析結果に必ず必要なので`notNull()`を付けています。
+
+`score`は部位の評価点、`priority`は優先度を保存します。
+
+`observation`はPythonが画像から読み取った外見上の傾向、`recommendation`は今後のトレーニング提案です。
+
+これらは分析方法の変更や判定不能に対応するため、現段階では任意項目にしています。
+
+親の身体分析を削除すると、`onDelete: "cascade"`により、その分析に属する全部位の結果も削除されます。
+
+```text
+body_analyses（1回分の分析全体）
+├─ body_analysis_areas（肩）
+├─ body_analysis_areas（胸）
+├─ body_analysis_areas（背中）
+└─ body_analysis_areas（脚）
+```
+
+## Python身体画像分析API
+
+### なぜPythonを分けるのか
+
+Clerk認証・Neon保存・フロントとの通信はTypeScriptバックエンドが担当し、画像処理だけをPythonサービスへ分けます。
+
+PythonはOpenCV・MediaPipe・PyTorchなど、画像処理や機械学習向けのライブラリを利用しやすいためです。
+
+### `main.py`の役割
+
+`python-analysis/app/main.py`は、身体画像分析用Python APIの入口です。
+
+`from fastapi import FastAPI`は、インストールしたFastAPIからAPI本体を作る機能を読み込みます。
+
+`app = FastAPI(...)`はPython API全体を表す`app`を作ります。
+
+`title`はAPIの名前で、処理内容には影響しませんが、自動生成されるAPI説明画面などに表示されます。
+
+`@app.get("/health")`は、GET通信で`/health`へアクセスしたとき、直後の関数を実行する指定です。この`@`から始まる文をデコレーターと呼びます。
+
+`def health_check():`は、サーバーの稼働確認を行うPython関数です。
+
+`return`でPythonの辞書を返すと、FastAPIが自動的にJSONへ変換します。
+
+`/health`は画像を受け取らず、Pythonサービスが起動中かだけを確認する安全な入口です。
+
+### `requirements.txt`
+
+`requirements.txt`は、このPythonサービスに必要な外部ライブラリの一覧です。
+
+`fastapi`はAPIを作り、`uvicorn`は作ったAPIをローカルサーバーとして起動します。
+
+`python-multipart`は、正面・横・背面などの画像ファイルを`multipart/form-data`形式で受け取るためのライブラリです。
+
+`python-multipart`自体をターミナルで直接実行するのではなく、`python -m pip install -r requirements.txt`でPython環境へインストールします。
+
+`multipart/form-data`は、文字だけのJSONではなく、画像などのファイルをHTTP通信で送るときに使うデータ形式です。
+
+### 覚える単語
+
+- FastAPI：PythonでAPIを作るフレームワーク
+- Uvicorn：FastAPIを起動するサーバー
+- python-multipart：FastAPIでアップロードファイルを受け取れるようにするライブラリ
+- multipart/form-data：画像などのファイルを送受信するためのHTTPデータ形式
+- デコレーター：関数へAPIのURLなどの役割を付ける`@`から始まる文
+- 辞書：Pythonの`{ キー: 値 }`形式のデータ
+- ヘルスチェック：サービスが起動しているか確認する処理
+
+### Pydanticで分析結果JSONの形を決める
+
+`from pydantic import BaseModel, Field`は、受信・返却データの型と入力条件を作る機能を読み込みます。
+
+Pydanticは、Pythonのデータが決めた型や範囲に合っているか自動確認するライブラリです。FastAPIに含まれる依存関係として利用できます。
+
+`class BodyAreaResult(BaseModel):`は、肩や胸など1部位分の分析結果の設計図を作ります。
+
+Pythonの`class`は、関連するデータや処理を1つの型としてまとめる仕組みです。
+
+`body_part: str`は部位名を文字列、`priority: str`なども文字列として必須にします。
+
+`score: int = Field(ge=1, le=10)`は、スコアを整数かつ1以上10以下に制限します。
+
+`ge`はgreater than or equal（以上）、`le`はless than or equal（以下）の略です。
+
+`BodyAnalysisResponse`は1回分の分析全体を表し、全体説明、理想との差、部位別結果を持ちます。
+
+`areas: list[BodyAreaResult]`は、`BodyAreaResult`型の部位別結果を複数持つリストです。
+
+この型を決めることで、Pythonが毎回異なる構造を返すことを防ぎ、TypeScript側が安全にNeonへ保存できます。
+
+### 覚える単語
+
+- Pydantic：Pythonデータの型や条件を検証するライブラリ
+- `BaseModel`：Pydanticのデータモデルを作る親クラス
+- `Field()`：数値範囲などの細かい条件を付ける
+- `class`：データや処理をまとめた型を作る
+- `str`：Pythonの文字列型
+- `int`：Pythonの整数型
+- `list`：複数の値を順番に持つPythonの配列
+
+### 仮の身体分析API
+
+`@app.post("/analyze")`は、POST通信で身体分析を開始する入口です。
+
+`response_model=BodyAnalysisResponse`は、返すJSONが決めた分析結果の型に合うかFastAPIに確認させます。
+
+`analyze_body()`は現時点では画像を受け取らず、TypeScriptとの接続確認に使う仮の分析結果を返します。
+
+### 正面・横・背面画像を受け取る基本の型
+
+`from fastapi import FastAPI, File, UploadFile`では、API本体に加えて、送信された画像を受け取る`File`と`UploadFile`を読み込みます。
+
+`async def analyze_body(...):`は、画像の読み込みなど完了まで待つ可能性がある処理を、非同期関数として定義します。
+
+`front_image`、`side_image`、`back_image`は、それぞれ正面・横・背面画像を受け取る変数です。
+
+`UploadFile`は、その値がアップロードされたファイルであることをFastAPIへ伝える型です。
+
+`File(...)`の`File`はフォーム通信からファイルを受け取る指定で、`...`はそのファイルが必須であることを表します。
+
+この段階では画像を受け取る入口を作っただけで、画像の永続保存や本物の身体分析はまだ行いません。
+
+### Python側の画像検査設定
+
+`HTTPException`は、Python APIで入力エラーを見つけたときに、HTTP 400番台のエラーとして処理を中断するFastAPIの機能です。
+
+`ALLOWED_IMAGE_TYPES`は、Pythonが受け付けるJPEG・PNG・WebPのMIMEタイプをPythonの`set`へまとめます。
+
+Pythonでは、途中で変更しない設定値を`ALLOWED_IMAGE_TYPES`のような大文字名で書く慣習があります。
+
+`MAX_IMAGE_SIZE_BYTES = 10 * 1024 * 1024`は、1枚あたり10MBという上限をバイト単位で表します。
+
+TypeScript側だけでなくPython側でも確認することで、Python APIが直接呼ばれた場合にも不正な画像を拒否できます。この考え方を多層防御と呼びます。
+
+### Pythonの画像検査関数
+
+`async def validate_image(image: UploadFile) -> None:`は、アップロード画像1枚を検査する非同期関数です。`-> None`は、正常時に結果データを返さないことを表します。
+
+`image.content_type not in ALLOWED_IMAGE_TYPES`は、送信者が申告した画像形式が許可一覧にないか確認します。
+
+`raise HTTPException(...)`は、その場で通常処理を中断し、FastAPIから指定したHTTPエラーを返します。
+
+`await image.read(MAX_IMAGE_SIZE_BYTES + 1)`は、上限より1バイト多い位置まで読み、10MBを超えたか判定できるようにします。
+
+`len(image_bytes)`は読み取った実際のバイト数を返します。`0`なら空ファイル、上限より大きければ容量超過です。
+
+`await image.seek(0)`は、検査で末尾へ進んだファイルの読み取り位置を先頭へ戻します。これを行わないと、後の画像分析が空の続きから読もうとして失敗します。
+
+`for image in (front_image, side_image, back_image):`は、3枚を順番に取り出し、同じ`validate_image()`を繰り返します。
+
+現時点ではMIMEタイプと容量を確認しています。ファイルの中身が本物の画像かどうかは、次に画像ライブラリで検証します。
+
+### Pillowで画像の中身を確認する準備
+
+`pillow`は、PythonでJPEG・PNG・WebPなどの画像を開き、形式・縦横サイズ・破損の有無などを確認する画像処理ライブラリです。
+
+`requirements.txt`へ`pillow`を書くことで、このPython分析サービスにPillowが必要であることを記録します。
+
+`python -m pip install -r requirements.txt`は、一覧に書かれたライブラリを現在のPython環境へインストールします。
+
+今回Pillowを使う理由は、`content_type`の申告だけを信用せず、受信データを実際に画像として開けるか確認するためです。
+
+### Pillowで本物の画像か検査する
+
+`from io import BytesIO`は、メモリ上の画像バイト列をファイルのように読み取るための機能を読み込みます。
+
+`from PIL import Image, UnidentifiedImageError`は、画像を開く`Image`と、画像として認識できない場合のエラーを読み込みます。インストール名は`pillow`ですが、コードでは`PIL`からimportします。
+
+`ALLOWED_IMAGE_FORMATS`は、Pillowが画像内部を調べて判定した実際の形式について、JPEG・PNG・WebPだけを許可します。
+
+`MAX_IMAGE_PIXELS = 25_000_000`は、画像の総画素数を最大2500万画素に制限する設定値です。
+
+`Image.open(BytesIO(image_bytes))`は、受信したバイト列を実際の画像として開きます。
+
+`with ... as opened_image:`は、処理が終わったときに画像を自動的に閉じるPythonの書き方です。
+
+`opened_image.format`はファイル内部から判定された実際の画像形式、`opened_image.size`は`(横幅, 高さ)`を返します。
+
+`width, height = opened_image.size`は、2つの値を横幅と高さの変数へ分けるアンパックという書き方です。
+
+`width * height`で総画素数を計算し、2500万画素を超える画像を拒否します。ファイル容量が小さくても、展開すると非常に大きくなる画像による負荷を抑えるためです。
+
+`opened_image.verify()`は画像データが壊れていないか検査します。画像の加工や分析はまだ行いません。
+
+`except (...) as error:`は、画像を開けない・破損している・危険な大きさとしてPillowが拒否した場合のエラーをまとめて受け取ります。
+
+`raise HTTPException(...) from error`は、元の原因を開発者向けに残しながら、利用者には安全な共通エラーメッセージを返します。
+
+### Python画像検査の動作確認結果
+
+ローカルの`POST /analyze`へ正常なJPEGを3枚送信し、HTTP 200と仮の身体分析JSONが返ることを確認しました。
+
+文字ファイルを`image/jpeg`と偽って送信した場合は、Pillowが中身を画像として開けず、HTTP 400の`正常な画像ファイルではありません。`で拒否しました。
+
+未対応の`text/plain`を送信した場合はHTTP 415、容量0の空画像を送信した場合はHTTP 400で拒否しました。
+
+これにより、Python側のMIMEタイプ・空ファイル・画像内部の形式と破損確認が実際に機能していることを確認できました。
+
+## スマホ版から身体画像を送る
+
+### JSON用と画像用のAPI関数を分ける理由
+
+`mobile/src/lib/api.ts`の`apiRequest()`は、プロフィールなどの文字・数値をJSONで送るため、`Content-Type: application/json`を設定します。
+
+画像はJSONではなく`FormData`を使うため、画像送信専用の`apiUploadRequest()`を別に作ります。
+
+`apiUploadRequest<T>(path, token, body)`の`path`はAPIの住所、`token`はClerkのログイン証明、`body`は画像入りの`FormData`です。
+
+戻り値の`Promise<T>`は、通信完了後に呼び出し側が指定した型`T`のJSONを返すことを表します。
+
+`Authorization: Bearer ${token}`は、TypeScriptバックエンドへログイン中の本人であることを伝えます。
+
+画像送信では`Content-Type`を手動設定しません。`fetch()`が`multipart/form-data`と、各データの境界を示す`boundary`を自動的に設定するためです。
+
+`response.ok`が`false`ならエラーJSONを読み、バックエンドのメッセージを`ApiError`として画面側へ渡します。
+
+既存のJSON用関数と画像用関数を分けることで、プロフィールなど他のAPI通信へ影響を与えずに画像送信を追加できます。
+
+### 身体分析画面でClerk認証を使う
+
+`import { useAuth } from '@clerk/expo'`は、Expoスマホ版で現在のログイン状態や認証トークンを扱うClerkのHookを読み込みます。
+
+`import { ApiError, apiUploadRequest } from '@/lib/api'`は、画像送信関数とAPI用エラー型を身体分析画面で使えるようにします。
+
+`const { getToken } = useAuth(...)`は、Clerkの認証機能からトークン取得関数だけを分割代入で取り出します。
+
+`treatPendingAsSignedOut: false`は、Clerkが認証状態を確認している途中の利用者を、すぐ未ログイン扱いにしない設定です。
+
+画像送信直前に`getToken()`を呼び、そのトークンを`Authorization`ヘッダーへ付けることで、TypeScriptバックエンドが画像の所有者を判断できます。
+
+### 身体分析結果の型とstate
+
+`BodyAnalysisApiResponse`は、TypeScriptバックエンドから返る身体分析JSONの構造をスマホ版へ教える型です。
+
+`bodyAnalysisId`はNeonへ保存された1回分の分析ID、`analysis`はPythonが返した分析内容です。
+
+`areas: {...}[]`は、肩・胸・背中などの部位別結果を複数持つ配列です。
+
+`useState<BodyAnalysisApiResponse | null>(null)`は、API結果または未分析を表す`null`を保存できるstateを作ります。
+
+分析前は`null`で、通信成功後に`setAnalysisResult()`へAPI結果を渡すと画面表示に使える状態になります。
+
+### 3枚の画像を身体分析APIへ送る
+
+`async function beginAnalysis()`は、入力確認・認証トークン取得・画像送信・結果保存を順番に行う非同期関数です。
+
+`const frontImage = photos.front`などは、state内の正面・横・背面URIを個別の変数へ取り出します。
+
+3つのうち1つでも空なら、API通信を始めず画面へエラーを表示します。
+
+`setStatus('loading')`は通信中画面へ切り替え、`setAnalysisResult(null)`は前回の分析結果を消します。
+
+`await getToken()`はClerkから現在のログイン証明を取得します。取得できなければHTTP通信を行いません。
+
+`new FormData()`は、3枚の画像をまとめて送るフォーム形式のデータを作ります。
+
+`formData.append('front_image', {...})`は、正面画像のURI・送信用ファイル名・MIMEタイプを追加します。`side_image`と`back_image`も同じ考え方です。
+
+項目名はTypeScriptバックエンドの`requestFormData.get(...)`およびPythonの引数名と完全に一致させます。
+
+`apiUploadRequest<BodyAnalysisApiResponse>(...)`は、画像を認証付きで送信し、返却JSONを指定した型として受け取ります。
+
+成功時は`setAnalysisResult(result)`で結果を保存して結果画面へ進み、失敗時は`catch`で入力画面へ戻してエラーメッセージを表示します。
+
+以前の`useEffect`と`setTimeout`は、API完了と関係なく1.7秒後に仮結果を表示する開発用処理だったため削除します。
+
+### React Nativeの画像オブジェクトとBlob型
+
+Expoのネイティブアプリでは、`FormData.append()`へ`{ uri, name, type }`形式の画像オブジェクトを渡します。
+
+一方、TypeScriptがブラウザ版の`FormData`型を参照すると、文字列または`Blob`しか受け付けないと判定し、画像オブジェクトへ型エラーを出す場合があります。
+
+`} as unknown as Blob`は、値を一度`unknown`として扱い、その後`Blob`型としてTypeScriptへ伝える型アサーションです。
+
+これは実際の画像オブジェクトをBlobへ変換する処理ではありません。実行時にはExpoが`uri・name・type`を使って端末内の画像を送信します。
+
+この指定により、Apple Store向けのReact Native実装を維持しながら、TypeScriptの型検査を通せます。
+
+### API結果を身体分析画面へ表示する
+
+`status === 'result' && analysisResult`は、通信が完了し、実際の結果データも存在するときだけ結果画面を表示します。
+
+`analysisResult.analysis.summary`はPythonが返した分析全体の説明、`goal_difference`は設定済み理想体型との差を表示する場所です。
+
+`analysisResult.analysis.areas.map((area, index) => ...)`は、部位別結果の配列を1件ずつReactのカードへ変換します。
+
+`area`には現在処理中の部位名・点数・観察・提案が入り、`index`には配列内の0から始まる順番が入ります。
+
+`key={`${area.body_part}-${index}`}`は、Reactが各カードを区別するための識別値です。
+
+`String(index + 3).padStart(2, '0')`は、全体結果と理想との差を01・02で表示した続きとして、部位カードを03・04の形式で表示します。
+
+`.padStart(2, '0')`は、文字が2桁未満なら先頭へ`0`を追加します。
+
+この変更により、開発用の固定文章ではなく、TypeScriptバックエンドから返った検品済みJSONが画面へ表示されます。
+
+### ブラウザとiPhoneで画像追加方法を切り替える
+
+`Platform.OS`は、現在アプリが動作している環境を表します。ブラウザでは`web`、iPhoneでは`ios`になります。
+
+`appendPhotoToFormData()`は、実行環境に合わせて画像を`FormData`へ追加する共通関数です。
+
+ブラウザでは画像URIを`fetch(imageUri)`で読み、`response.blob()`で実際の画像データへ変換してから追加します。
+
+iPhoneでは、Expoが扱える`{ uri, name, type }`形式の画像オブジェクトをそのまま追加します。
+
+関数を定義する場所では`formData・fieldName・imageUri・fileName`という汎用的な引数を使い、正面などの具体的な変数は使用しません。
+
+`beginAnalysis()`の中でこの共通関数を3回呼び、正面・横・背面の具体的な画像を渡します。
+
+```text
+appendPhotoToFormData()の定義
+└─ 渡された画像1枚を環境に合わせて追加する
+
+beginAnalysis()の実行
+├─ 正面画像で呼ぶ
+├─ 横画像で呼ぶ
+└─ 背面画像で呼ぶ
+```
+
+これにより、開発中のブラウザ確認とApple Store向けiPhoneアプリの両方で同じ身体分析処理を利用できます。
+
+### 画像送信エラーの詳細を画面へ渡す
+
+画像送信APIは、TypeScriptバックエンドの`error`、一般的なAPIの`message`、FastAPIの`detail`の順番でエラーメッセージを探します。
+
+`errorBody.error ?? errorBody.message ?? errorBody.detail ?? message`は、左から最初に存在する値を採用するNull合体演算子のつながりです。
+
+応答本文がJSONではなく読めない場合にも原因を絞れるよう、初期メッセージへ`response.status`のHTTP番号を含めます。
+
+今回のブラウザテストではHTTP 403が確認され、画像やPythonではなく、TypeScript開発サーバーの送信元チェックで拒否されていると切り分けられました。
+
+### Vinextで3枚入りの通信を受け入れる
+
+Vinextは`multipart/form-data`を受け取る前に、送信元と通信全体の容量を確認します。そのため、`route.ts`より前の入口設定が必要です。
+
+`experimental.serverActions.allowedOrigins`は、開発中に画像フォームを送ってよいブラウザのホストとポートを限定します。
+
+`127.0.0.1:8081`と`localhost:8081`は同じMac上のブラウザ、`192.168.68.54:8081`は現在のローカルネットワーク上のExpo開発画面です。
+
+`bodySizeLimit: "26mb"`は、1枚8MB以下の画像3枚で最大24MBと、FormDataの付加情報を合わせた1通信全体の入口上限です。
+
+これは画像1枚を26MBまで許可する設定でも、画像を保存する設定でもありません。
+
+フロント・TypeScript・Pythonの1枚ごとの検査は引き続き必要で、Vinextの設定はそれらの検査場所まで通信を通す役割です。
+
+`next.config.ts`はサーバー起動時に読み込まれるため、変更後はTypeScriptバックエンドを再起動します。
+
+### VinextへNext設定を明示的に渡す
+
+このプロジェクトではNext.js互換環境としてVinextをViteプラグインから起動しています。
+
+`import nextConfig from "./next.config"`は、画像送信の送信元許可と容量上限をVite設定へ読み込みます。
+
+`vinext({ nextConfig })`は、その設定を実際に動作するVinextへ明示的に渡します。
+
+Next.js本家とVinextでは`NextConfig`の型定義が別なので、`next.config.ts`では`import type { NextConfig } from "vinext"`を使用します。
+
+設定反映後、異なる開発Originから無害なmultipartフォームを送信し、HTTP 403ではなくAPI内のHTTP 401まで進むことを確認しました。これはVinextのCSRF拒否を通過して`route.ts`へ届いたことを表します。
+
+### 身体分析の一連動作確認
+
+ブラウザでテスト画像を正面・横・背面の3枚として設定し、ログイン済み状態で身体分析APIへ送信しました。
+
+TypeScriptバックエンドがClerk認証と画像検査を行い、Python APIが画像内部を確認して仮の分析JSONを返しました。
+
+TypeScriptが返却JSONを検品し、Neonの`body_analyses`へ`completed`状態で分析全体、`body_analysis_areas`へ肩の部位別結果1件を保存しました。
+
+スマホ版では保存済みの仮分析結果・理想との差・肩のスコアと提案が結果画面へ表示されることを確認しました。
+
+このテストで保存したのは分析JSONだけで、テストに使用した画像自体はNeonや画像ストレージへ保存していません。
+
+実際に`POST /analyze`を呼び、HTTP 200と、全体説明・理想との差・肩の部位別結果を含むJSONが返ることを確認しました。
+
+この段階では画像や個人情報をPythonへ送信していません。
+
+## TypeScriptからPython分析APIへ接続する
+
+### なぜTypeScriptを間に置くのか
+
+フロントエンドからPythonへ直接送らず、最初にTypeScriptバックエンドでClerk認証・入力確認・アクセス制御を行います。
+
+Pythonは画像分析へ集中し、ユーザー認証やNeonへの保存はTypeScriptが担当します。
+
+### Python APIの接続先
+
+`process.env.PYTHON_ANALYSIS_URL`は、環境変数からPython分析APIのURLを読み取ります。
+
+環境変数を使うと、開発環境と本番環境で接続先が変わっても、処理コードを書き換えずに対応できます。
+
+`?? "http://127.0.0.1:8000"`は、環境変数が設定されていない開発中だけ、Mac上のPython APIを使用する指定です。
+
+`127.0.0.1`は同じMac自身、`8000`はUvicornで起動したPythonサービスのポート番号です。
+
+```text
+TypeScriptバックエンド
+  ↓ http://127.0.0.1:8000/analyze
+Python FastAPI
+  ↓ 分析結果JSON
+TypeScriptバックエンド
+```
+
+### `fetch()`でPythonへHTTP通信する
+
+TypeScript側の`POST()`は、最初に`getClerkUserId(request)`でClerkトークンを検証します。
+
+未ログインならHTTP 401を返し、Python APIを呼びません。これによりTypeScriptが分析機能の正規の入口になります。
+
+`fetch(`${pythonAnalysisUrl}/analyze`, { method: "POST" })`は、Pythonの`POST /analyze`へHTTPリクエストを送ります。
+
+### TypeScriptで3枚の画像を中継する
+
+`await request.formData()`は、フロントから届いた`multipart/form-data`を読み取り、フォーム内の文字や画像を取り出せる形にします。
+
+`requestFormData.get("front_image")`は、`front_image`という名前で送信された正面画像を1件取り出します。横は`side_image`、背面は`back_image`を使います。
+
+`.get()`の結果には文字列・ファイル・`null`の可能性があるため、`instanceof File`で3つすべてがファイルか確認します。
+
+画像が不足している場合はHTTP 400を返し、Pythonの分析処理を呼びません。
+
+`new FormData()`はPythonへ渡す新しいフォームデータを作ります。
+
+`pythonFormData.append("front_image", frontImage)`は、Python側の引数名と同じ名前を付けて正面画像を追加します。
+
+`body: pythonFormData`は、作成した3枚入りのフォームデータを`fetch()`の通信本文としてPythonへ送ります。
+
+この処理は画像をTypeScriptへ永続保存するものではなく、認証済みの通信からPythonへ画像を中継する処理です。
+
+### 画像形式と容量を送信前に確認する
+
+`allowedImageTypes`は、Pythonへ送信してよいJPEG・PNG・WebPのMIMEタイプを`Set`へまとめます。
+
+`Set`の`.has(image.type)`は、現在の画像形式が許可一覧に含まれているか確認します。
+
+`maxImageSizeBytes = 10 * 1024 * 1024`は、1枚の上限である10MBをバイト単位で表した値です。
+
+`bodyImages`へ正面・横・背面をまとめることで、同じ検査コードを3回書かずに済みます。
+
+`bodyImages.some(...)`は、3枚のうち1枚でも禁止形式・空ファイル・容量超過に当てはまるか確認します。
+
+形式が不正な場合のHTTP 415は「対応していないメディア形式」、容量超過時のHTTP 413は「送信データが大きすぎる」という意味です。
+
+検査は`fetch()`より前へ置きます。先にPythonへ送ってから検査すると、安全確認として機能しないためです。
+
+iPhoneのHEICは初期版では直接許可せず、フロント側でJPEGへ変換してから送る想定です。
+
+`await`はPythonから応答が返るまで次の処理を待ちます。
+
+`pythonResponse.ok`は、PythonのHTTPステータスが200番台なら`true`になります。
+
+`!pythonResponse.ok`ならPython側で失敗しているため、`throw`で通常処理を止めて`catch`へ移動します。
+
+`await pythonResponse.json()`は、Pythonから届いたJSONをTypeScriptで扱えるJavaScriptオブジェクトへ変換します。
+
+最後に`Response.json({ analysis: analysisResult })`で、分析結果をフロントエンドへ中継します。
+
+```text
+フロント → TypeScriptのPOST
+             ↓ Clerk認証
+           fetch()
+             ↓
+           PythonのPOST /analyze
+             ↓ JSON
+           pythonResponse.json()
+             ↓
+           フロントへ返却
+```
+
+### 覚える単語
+
+- `fetch()`：別のAPIへHTTP通信するJavaScriptの機能
+- `response.ok`：HTTP通信が成功したかを表す値
+- `.json()`：JSONをJavaScriptのデータへ変換する
+- 中継：受け取った情報を別の相手へ渡すこと
+
+### TypeScript側でもPythonのJSONを検品する
+
+`type BodyAreaResult`と`type BodyAnalysisResult`は、Pythonから受け取る予定のJSON形式をTypeScriptへ教えます。
+
+ただしTypeScriptの型は実行時に消えるため、外部APIから届いた実物を`isBodyAnalysisResult()`で検査します。
+
+引数を`unknown`にすることで、検査前のデータを安全な型として扱いません。
+
+戻り値の`value is BodyAnalysisResult`は型述語と呼び、関数が`true`を返した後は、TypeScriptがその値を`BodyAnalysisResult`として扱えます。
+
+最初にJSON全体がオブジェクトであり、`null`ではないことを確認します。
+
+`value as Partial<BodyAnalysisResult>`は、各項目が存在しない可能性を残した状態で一時的に分析結果型として扱う指定です。
+
+`.every()`は、配列内のすべての要素が条件を満たした場合だけ`true`を返します。
+
+今回の`areas.every()`では、全部位について部位名・優先度・観察・提案が文字列で、スコアが1〜10の整数か確認します。
+
+`.some()`が「1件でも条件に合うか」なのに対し、`.every()`は「全件が条件に合うか」を確認します。
+
+### 覚える単語
+
+- 型述語：検査後の値の型をTypeScriptへ伝える`value is 型`の書き方
+- `Partial<型>`：その型の全項目を一時的に任意項目として扱う
+- `.every()`：配列の全要素が条件を満たすか確認する
+- 実行時検査：アプリ動作中に実際の値を確認すること
+
+`pythonResponse.json()`の直後に`isBodyAnalysisResult(analysisResult)`を実行し、Pythonの返却JSONを検品します。
+
+先頭の`!`により、検査結果が`false`の場合に`throw`して処理を止めます。
+
+この検査をNeon保存より前に置くことで、不完全な分析結果や想定外の値をDBへ残しません。
+
+### 身体分析保存で使うDB機能
+
+`eq`は、ログイン中のClerk IDとNeonの`users.clerkUserId`が一致する本人を検索するために使います。
+
+`getDb`はNeonへ接続し、`bodyAnalyses`は分析全体、`bodyAnalysisAreas`は部位別結果の保存先として使います。
+
+`users`は、Clerkの認証ユーザーをNeonの内部ユーザーIDへ変換するために使います。
+
+### Python分析結果をNeonへ保存する
+
+Clerk IDからNeonの`users.id`を探す部分は、トレーニング記録APIと同じ共通パターンです。
+
+PythonのJSONを検品した後、`.insert(bodyAnalyses)`で分析全体を本人の親データとして保存します。
+
+`status: "completed"`は分析成功、`analyzedAt: new Date()`は分析完了日時を表します。
+
+`.returning({ id: bodyAnalyses.id })`で作成した分析IDを受け取り、部位別結果の`analysisId`へ使用します。
+
+`analysisResult.areas.map()`は、Python形式の`body_part`などを、Drizzle形式の`bodyPart`などへ変換します。
+
+部位が0件の場合は空配列を一括保存しないよう、`areas.length > 0`のときだけ保存します。
+
+最後にHTTP 201、保存した`bodyAnalysisId`、検品済みの分析結果をフロントへ返します。
+
+```text
+Clerk ID → Neon users.id
+                 ↓
+        body_analysesへ親を保存
+                 ↓ 作成したanalysis.id
+        body_analysis_areasへ部位を保存
+                 ↓
+        IDと分析JSONをフロントへ返す
+```
+
+## トレーニング記録：実施種目の子テーブル
+
+### どこに書くコードか
+
+担当ファイルは`db/schema.ts`で、`trainingSessions`より下に書きます。
+
+使用言語はTypeScriptで、Drizzleを使ってNeon PostgreSQLの`training_exercises`テーブルを定義しています。
+
+### 何をする場所か
+
+`trainingExercises`は、1回のトレーニングで実施した種目を保存します。
+
+例えば1つの`trainingSessions`に、ベンチプレス、インクラインプレス、ケーブルフライの3件を結び付けられます。
+
+### 親テーブルとの結び付き
+
+```ts
+sessionId: uuid("session_id")
+  .notNull()
+  .references(() => trainingSessions.id, {
+    onDelete: "cascade",
+  }),
+```
+
+`sessionId`には、どのトレーニングで実施した種目なのかを表す`trainingSessions.id`を保存します。
+
+1件の親`trainingSessions`に対して、複数件の子`trainingExercises`を持てます。これを1対多の関係と呼びます。
+
+親のトレーニング記録を削除した場合、`cascade`によって関連する実施種目も削除されます。
+
+### 種目情報の意味
+
+`exerciseId`は、フロントエンドの種目一覧にある種目を識別する固定IDです。
+
+`exerciseName`は、「ベンチプレス」などの画面に表示する種目名です。
+
+IDと名前を両方保存することで、種目一覧の名前が将来変更されても、過去に記録した当時の名前を残せます。
+
+`bodyPart`は「胸」「背中」「肩」などの大きな部位を保存します。
+
+`bodyArea`は「上部」「中部」「下部」などの細かい場所を任意で保存します。
+
+`bodyArea`に`notNull()`がないため、細かい場所を持たない種目は空でも保存できます。
+
+### 表示順の意味
+
+```ts
+displayOrder: integer("display_order")
+  .notNull()
+  .default(0),
+```
+
+`displayOrder`は、ユーザーが実施した種目を画面へ並べる順番です。
+
+`default(0)`は、順番が渡されなかった場合に0を初期値として保存します。
+
+### 覚える単語
+
+- 親テーブル：全体を表すデータ
+- 子テーブル：親に含まれる詳細データ
+- 1対多：1件の親に複数件の子が結び付く関係
+- `sessionId`：子から親を特定するためのID
+- `default(0)`：未指定の場合に0を保存する
+
+## トレーニング記録：重量・回数のセットテーブル
+
+### どこに書くコードか
+
+担当ファイルは`db/schema.ts`で、`trainingExercises`より下に書きます。
+
+`trainingSets`はTypeScriptとDrizzleで定義し、Neon PostgreSQLでは`training_sets`テーブルになります。
+
+### 何をする場所か
+
+このテーブルは「ベンチプレスの1セット目・60kg・10回」のような、トレーニング記録の最小単位を保存します。
+
+1件の`trainingExercises`に対して複数件の`trainingSets`を結び付けられます。
+
+### 種目との結び付き
+
+```ts
+trainingExerciseId: uuid("training_exercise_id")
+  .notNull()
+  .references(() => trainingExercises.id, {
+    onDelete: "cascade",
+  }),
+```
+
+`trainingExerciseId`は、このセットがどの実施種目に属するかを表します。
+
+例えば3セットすべてへ同じベンチプレスの`trainingExercises.id`を保存することで、3件を同じ種目としてまとめられます。
+
+種目を削除した場合は、`cascade`によって関連するセットも一緒に削除されます。
+
+### 各入力値の意味
+
+`setNumber`は、1セット目、2セット目のような順番を整数で保存します。
+
+`setNumber`には`notNull()`があるため必須です。
+
+`weightKg`は重量をkg単位で保存し、`real()`を使うため12.5kgのような小数も扱えます。
+
+`reps`は回数を整数で保存します。
+
+`weightKg`と`reps`には`notNull()`がないため、自重種目や記録途中の場合は空でも保存できます。
+
+`createdAt`は、このセットがデータベースへ登録された日時です。
+
+### 3段階の関係
+
+```text
+trainingSessions（1回のトレーニング）
+└─ trainingExercises（実施した種目）
+   └─ trainingSets（各セットの重量・回数）
+```
+
+このようにデータを分けることで、種目数やセット数がユーザーごとに違っても柔軟に保存できます。
+
+### 覚える単語
+
+- `trainingExerciseId`：セットから実施種目を特定するID
+- `setNumber`：セットの順番
+- `real()`：小数を含む数値を保存する型
+- 最小単位：これ以上分けずに1件として保存するデータ
+
+## Drizzleのテーブル設計をNeonへ反映する
+
+### 何をする作業か
+
+`db/schema.ts`へ書いたTypeScriptはデータベースの設計図であり、書いただけではNeonにテーブルは作られません。
+
+Drizzle Kitを使い、設計図と現在のNeonを比較して実際のテーブルを作ります。
+
+### SQLファイルを生成する
+
+```bash
+npm run db:generate
+```
+
+このコマンドは`db/schema.ts`の変更を読み取り、`drizzle-postgres`へPostgreSQL用のSQLファイルを生成します。
+
+今回は`0004_acoustic_metal_master.sql`が生成されました。
+
+### 現在の設計を直接反映する
+
+```bash
+npx drizzle-kit push
+```
+
+`push`は、現在の`db/schema.ts`とNeonの状態を比較し、不足しているテーブルや列を直接反映します。
+
+今回はマイグレーション履歴と実際のDB状態にずれがあったため、`migrate`ではなく`push`を使いました。
+
+`[✓] Pulling schema from database...`は、DrizzleがNeonの現在の設計を読み込めたことを表します。
+
+`[✓] Changes applied`は、必要な変更をNeonへ反映できたことを表します。
+
+`@neondatabase/serverless can only connect... through a websocket`は、リモートDBへWebSocketで接続するという注意であり、今回のエラーではありません。
+
+### コマンドを実行する場所
+
+Drizzleの設定ファイルは`musslepas/drizzle.config.ts`にあるため、`mobile`ではなく`musslepas`直下で実行します。
+
+```bash
+cd /Users/yuuta/Desktop/musslepas
+```
+
+### 今回Neonに作成されたテーブル
+
+- `training_sessions`：1回分のトレーニング
+- `training_exercises`：その日に実施した種目
+- `training_sets`：各セットの重量と回数
+
+### 覚える単語
+
+- スキーマ：データベースの構造を表す設計図
+- SQL：PostgreSQLへテーブル作成などを指示する言語
+- マイグレーション：DBの構造を安全に新しい形へ変更する作業
+- `generate`：スキーマからSQLファイルを生成する
+- `push`：現在のスキーマをDBへ直接反映する
+
+## トレーニング記録保存API：受信JSONの型
+
+### `schema.ts`と`route.ts`の違い
+
+`db/schema.ts`は、データベースへ何をどの形で保存するかを決める設計図です。
+
+例えば、トレーニング記録へ`id`、`userId`、実施日時、時間、調子、メモなどの列を用意すると定義します。
+
+`app/api/training-records/route.ts`は、フロントエンドから通信を受け取り、認証・入力確認・DB保存・結果の返却を行う処理です。
+
+```text
+schema.ts = 記録用紙にどの項目を用意するか設計する
+route.ts  = 記録用紙を受け取り、確認して保管する
+```
+
+今回の処理の流れは次のとおりです。
+
+```text
+フロントエンドからPOSTが届く
+        ↓
+route.tsがログインを確認する
+        ↓
+JSONを受け取って入力値を確認する
+        ↓
+schema.tsで定義したテーブルへ保存する
+        ↓
+route.tsが成功またはエラーをフロントへ返す
+```
+
+`schema.ts`だけでは、フロントエンドから通信を受け取れません。
+
+`route.ts`だけでは、保存先のテーブル構造がないためデータを保存できません。
+
+そのため、データベース機能には「保存場所を決めるschema」と「保存処理を行うroute」の両方が必要です。
+
+### どこに書くコードか
+
+担当ファイルは`app/api/training-records/route.ts`です。
+
+このファイルはTypeScriptで書き、フロントエンドから届くトレーニング記録を受け取ってNeonへ保存するAPIになります。
+
+### 今回何をしたか
+
+まだデータベース保存は行わず、フロントエンドから受け取るJSONの形を3つの`type`で定義しました。
+
+`type`は「このデータには、どの名前の値がどの型で入るか」をTypeScriptへ教える設計図です。
+
+### `TrainingSetInput`
+
+`TrainingSetInput`は1セット分の入力を表します。
+
+`setNumber: number`はセット番号で、`?`がないため必須です。
+
+`weightKg?: number | null`は重量で、数値・未指定・空欄を受け取れます。
+
+`reps?: number | null`は回数で、数値・未指定・空欄を受け取れます。
+
+### `TrainingExerciseInput`
+
+`TrainingExerciseInput`は、ベンチプレスなど1種目分の入力を表します。
+
+`exerciseId`は種目一覧の固定ID、`exerciseName`は画面に表示する種目名です。
+
+`bodyPart`は胸や背中などの部位、`bodyArea`は上部や下部などの細かい場所です。
+
+`sets: TrainingSetInput[]`は、その種目に含まれる複数セットを配列で受け取ります。
+
+### `CreateTrainingRecordInput`
+
+`CreateTrainingRecordInput`は、1回分のトレーニング全体を表します。
+
+`performedAt`は実施日時、`durationMinutes`は時間、`conditionScore`は調子、`memo`はメモです。
+
+`exercises: TrainingExerciseInput[]`は、1回のトレーニングに含まれる複数種目を受け取ります。
+
+### `?`と`null`の違い
+
+`?`は、そのプロパティ自体がJSONになくてもよいことを表します。
+
+`null`は、プロパティはあるが入力値が空であることを表します。
+
+```ts
+weightKg?: number | null;
+```
+
+この形では、重量として数値、プロパティなし、`null`の3種類を受け取れます。
+
+### 覚える単語
+
+- `type`：データの形を定義するTypeScriptの文法
+- `string`：文字列
+- `number`：数値
+- `?`：省略可能なプロパティ
+- `null`：値が空であることを明示する値
+- `[]`：複数の値を並べる配列
+- JSON：フロントエンドとバックエンド間でデータを渡す形式
+
+### トレーニング記録APIのimport
+
+`import`は、別ファイルやライブラリにある機能を現在の`route.ts`で使えるようにするTypeScriptの文法です。
+
+`import { eq } from "drizzle-orm"`は、データベースの列と値が等しいかを比較する`eq()`を読み込みます。
+
+`desc()`は、日時や数値を大きいものから小さいものへ降順で並べます。トレーニング履歴では、最新の実施日時を先頭に表示するために使います。
+
+例えば`eq(users.clerkUserId, clerkUserId)`は、DBのClerkユーザーIDとログイン中のIDが同じユーザーを検索します。
+
+`getClerkUserId`は、フロントエンドから届いたClerkトークンを確認し、ログイン中のユーザーIDを取得します。
+
+`getDb`は、APIからNeon PostgreSQLを操作するための共通接続を取得します。
+
+`trainingSessions`は1回分全体、`trainingExercises`は実施種目、`trainingSets`は各セットの保存に使います。
+
+`users`は、Clerkでログインしている人に対応するNeonユーザーを検索するために使います。
+
+波括弧を使った`import { A, B }`は、同じファイルから必要な機能だけを複数読み込む書き方です。
+
+### 数値を保存前に確認する共通関数
+
+フロントエンドから届く値は改ざんや入力ミスの可能性があるため、TypeScriptの型だけを信用せず、APIでも実際の値を確認します。
+
+`isOptionalNumberInRange`は、重量など小数を許可する数値に使います。
+
+`value: unknown`の`unknown`は、受け取った時点では型を信用していないことを表します。
+
+`value === undefined`はプロパティが送信されなかった場合、`value === null`は空欄として送信された場合を許可します。
+
+`typeof value === "number"`は、文字列の`"60"`ではなく数値の`60`であることを確認します。
+
+`Number.isFinite(value)`は、通常の数値ではない`NaN`や`Infinity`を除外します。
+
+`value >= minimum && value <= maximum`は、値が最小値以上かつ最大値以下であることを確認します。
+
+`isOptionalIntegerInRange`は、回数・セット番号・時間・調子など整数だけを許可する値に使います。
+
+`Number.isInteger(value)`は、`10`なら`true`、`10.5`なら`false`を返します。
+
+重量には12.5kgのような小数があるため`isOptionalNumberInRange`を使い、回数には10.5回を保存しないため`isOptionalIntegerInRange`を使います。
+
+`return`の中で使う`||`は「どれか1つが正しい」、`&&`は「すべて正しい」という意味です。
+
+### 覚える単語
+
+- バリデーション：保存前に入力値が正しいか確認する処理
+- `unknown`：まだ型を信用していない値
+- `Number.isFinite()`：通常の有限な数値か確認する
+- `Number.isInteger()`：整数か確認する
+- `||`：または
+- `&&`：かつ
+
+### トレーニング全体の入力チェック
+
+`Array.isArray(input.exercises)`は、`exercises`が本当に配列か確認します。
+
+先頭の`!`は結果を反対にするため、`!Array.isArray(...)`は「配列ではない」という意味です。
+
+`input.exercises.length === 0`は、配列の中に種目が1件もない状態を表します。
+
+`durationMinutes`は1〜300分、`conditionScore`は1〜10だけを許可します。どちらも任意入力なので、`undefined`と`null`も許可されます。
+
+メモは、未送信と空欄を許可し、値がある場合だけ文字列かつ1000文字以内か確認します。
+
+複数のエラー条件を`||`でつないでいるため、どれか1つでも問題があれば処理を止めます。
+
+`Response.json(..., { status: 400 })`は、フロントエンドへ「通信は届いたが、送信内容が正しくない」と返します。
+
+この確認をDB保存より前に置くことで、不正な値をNeonへ保存しません。
+
+コードの字下げは処理結果を変えませんが、どの括弧に含まれるコードか見やすくするために使います。最後にフォーマッターで整えられます。
+
+### `some()`で不正な種目を探す
+
+`input.exercises.some(...)`は、種目配列を先頭から確認し、条件に当てはまる種目が1件でもあれば`true`を返します。
+
+今回は条件の中へ「不正な状態」を並べているため、変数名を`hasInvalidExercise`（不正な種目がある）にしています。
+
+`(exercise) =>`の`exercise`には、確認中の種目が1件ずつ順番に入ります。
+
+`typeof exercise.exerciseName !== "string"`は、種目名が文字列ではない場合を検出します。
+
+`exercise.exerciseName.trim() === ""`は、前後の空白を取り除いた結果が空文字か確認します。空白だけの名前も保存しません。
+
+`Number.isInteger(exercise.displayOrder)`は、表示順が整数か確認します。
+
+`exercise.displayOrder < 0`は、表示順がマイナスになっていないか確認します。
+
+`Array.isArray(exercise.sets)`はセット一覧が配列か、`exercise.sets.length === 0`はセットが0件ではないかを確認します。
+
+`hasInvalidExercise`が`true`なら、HTTP 400を返してDB保存へ進みません。
+
+この処理は`input`を作った`try`の中、全体チェックより下、成功レスポンスより上へ置きます。`catch`はエラー発生後の処理なので、通常の入力チェックは置きません。
+
+### 覚える単語
+
+- `.some()`：配列内に条件を満たす要素が1件でもあるか調べる
+- `.trim()`：文字列の前後にある空白を取り除く
+- `""`：文字が1つもない空文字
+- スコープ：変数を使用できる範囲
+
+### 二重の`some()`で全種目の全セットを確認する
+
+トレーニングのJSONは「種目の配列」の中に「セットの配列」が入る入れ子構造です。
+
+外側の`input.exercises.some()`は、ベンチプレスなどの種目を1件ずつ確認します。
+
+内側の`exercise.sets.some()`は、現在確認している種目のセットを1件ずつ確認します。
+
+`set`には、1セット目・60kg・10回のようなセットデータが1件ずつ入ります。
+
+`!Number.isInteger(set.setNumber) || set.setNumber < 1`は、セット番号が整数ではない場合と、1未満の場合を不正と判断します。
+
+重量は小数を許可して0〜1000kg、回数は整数だけを許可して0〜1000回にしています。
+
+内側の`some()`が不正なセットを1件見つけると`true`になり、外側の`some()`も`true`になります。
+
+その結果を`hasInvalidSet`へ保存し、`true`ならHTTP 400を返します。
+
+```text
+全種目を確認
+└─ 現在の種目の全セットを確認
+   └─ 不正なセットを1件でも発見 → 保存を中止
+```
+
+### 覚える単語
+
+- 入れ子：データや処理の中に別のデータや処理が入っている構造
+- 外側の配列：今回の場合は種目一覧
+- 内側の配列：今回の場合は各種目のセット一覧
+
+### ClerkユーザーをNeonユーザーへ変換する検索
+
+ClerkのユーザーIDは認証サービス側のIDで、トレーニング記録の外部キーにはNeonの`users.id`を使用します。
+
+そのため、保存前に`users.clerkUserId`とログイン中の`clerkUserId`が一致するユーザーを検索します。
+
+`const db = getDb()`は、Neonを操作するDrizzleの接続を取得します。
+
+`.select({ id: users.id })`は、ユーザー情報すべてではなく、今回必要な`id`だけを取得します。
+
+`.from(users)`は、検索対象を`users`テーブルに指定します。
+
+`.where(eq(users.clerkUserId, clerkUserId))`は、DBに保存されたClerk IDとログイン中のClerk IDが等しい行だけに絞ります。
+
+`.limit(1)`は、検索結果を最大1件に制限します。Clerk IDはユーザーごとに一意なので1件だけで十分です。
+
+Drizzleの検索結果は配列で返るため、`matchedUsers[0]`で先頭のユーザーを取り出します。
+
+`matchedUsers[0] ?? null`は、先頭のデータが存在すればそのデータ、存在しなければ`null`に統一します。
+
+`if (!user)`はユーザーが見つからなかった場合で、HTTP 404を返して保存を中止します。
+
+```text
+Clerkのuser ID
+      ↓ users.clerkUserIdと比較
+Neonのusers.idを取得
+      ↓
+本人のトレーニング記録へ保存
+```
+
+### 覚える単語
+
+- `.select()`：取得する列を指定する
+- `.from()`：検索するテーブルを指定する
+- `.where()`：検索条件を指定する
+- `eq()`：2つの値が等しいか比較する
+- `.limit(1)`：取得件数を最大1件にする
+- `404`：対象のデータが見つからないことを表すHTTPステータス
+
+### 実施日時を`Date`へ変換する
+
+JSONから届く日時は文字列なので、PostgreSQLの`timestamp`へ保存する前にJavaScriptの`Date`へ変換します。
+
+`input.performedAt === undefined ? new Date() : ...`は三項演算子です。
+
+三項演算子は`条件 ? 条件が正しい場合 : 条件が違う場合`の順番で読みます。
+
+日時が送信されなかった場合は、`new Date()`で現在日時を作ります。
+
+日時が文字列なら、`new Date(input.performedAt)`で日時データへ変換します。
+
+文字列でもなく未指定でもない場合は、異常な値として`null`にします。
+
+`performedAt.getTime()`は日時をミリ秒の数値へ変換します。不正な日時の場合は`NaN`になります。
+
+`Number.isNaN()`で`NaN`か確認し、不正な日時ならHTTP 400を返します。
+
+### 覚える単語
+
+- `Date`：JavaScriptで日時を扱うオブジェクト
+- `new Date()`：現在日時を作る
+- 三項演算子：条件によって2つの値から1つを選ぶ書き方
+- `.getTime()`：日時をミリ秒の数値に変換する
+- `NaN`：正しい数値へ変換できなかった状態
+- `Number.isNaN()`：値が`NaN`か確認する
+
+### `training_sessions`へ親記録を保存する
+
+`db.insert(trainingSessions)`は、保存先を`training_sessions`テーブルに指定します。
+
+`.values({...})`の波括弧内には、各列へ保存する値を書きます。
+
+`userId: user.id`によって、ログイン中の本人とトレーニング記録を結び付けます。
+
+`input.durationMinutes ?? null`は、左側が`undefined`または`null`なら右側の`null`を使用します。
+
+`??`はNull合体演算子と呼び、未入力値を統一するときに使います。数値の`0`はそのまま残ります。
+
+`input.memo?.trim()`の`?.`はオプショナルチェーンです。メモが存在するときだけ`trim()`を実行し、未入力ならエラーにせず`undefined`を返します。
+
+`input.memo?.trim() || null`は、メモが未入力または空文字なら`null`を保存します。
+
+`.returning({ id: trainingSessions.id })`は、保存して作られた親記録のIDだけを返すようPostgreSQLへ指示します。
+
+Drizzleの`returning()`も配列で返るため、`createdSessions[0] ?? null`で先頭を取り出します。
+
+作成結果がなければ`throw new Error()`で処理を中断し、外側の`catch`へ移動します。
+
+取得した`session.id`は、次に実施種目を親トレーニングへ結び付けるために使用します。
+
+### 覚える単語
+
+- `.insert()`：データの保存先テーブルを指定する
+- `.values()`：保存する値を指定する
+- `.returning()`：保存後にDBから値を返してもらう
+- `??`：左側が`undefined`か`null`なら右側を使う
+- `?.`：値が存在する場合だけ後ろの処理を行う
+- `throw`：エラーを発生させて通常処理を中断する
+
+### `for...of`で複数種目を保存する
+
+`for (const exercise of input.exercises)`は、`input.exercises`の種目を1件ずつ`exercise`へ入れて処理を繰り返します。
+
+例えば3種目ある場合、波括弧内の保存処理が3回実行されます。
+
+`await`をループ内で使うことで、現在の種目保存が完了してから次の種目へ進みます。
+
+`sessionId: session.id`は、保存中の全種目を先ほど作った同じ親トレーニングへ結び付けます。
+
+種目ID・種目名・部位には`trim()`を使い、前後の不要な空白を取り除いて保存します。
+
+`bodyArea`は任意入力なので、空文字の場合は`null`へ統一します。
+
+`.returning({ id: trainingExercises.id })`で作成された実施種目のIDを受け取ります。
+
+この`createdExercise.id`を使い、次にその種目のセットを`training_sets`へ結び付けます。
+
+```text
+session.id
+  └─ 種目を保存 → createdExercise.id
+                      └─ 次にセットを保存
+```
+
+### 覚える単語
+
+- `for...of`：配列の要素を1件ずつ取り出して繰り返す
+- ループ：同じ処理を繰り返す仕組み
+- `const exercise`：現在処理している1種目を入れる変数
+
+### `.map()`でセットをDB保存用の形へ変換する
+
+`exercise.sets.map((set) => ({ ... }))`は、現在の種目に含まれる各セットを、DBへ保存するオブジェクトへ変換します。
+
+`.map()`は元の配列を1件ずつ処理し、同じ件数の新しい配列を作るメソッドです。
+
+`set`には、現在変換している1セット分のデータが入ります。
+
+丸括弧で囲んだ`({ ... })`は、アロー関数からオブジェクトをそのまま返す書き方です。
+
+`trainingExerciseId: createdExercise.id`を全セットへ入れることで、作成した実施種目と各セットを結び付けます。
+
+`setNumber`はセット番号、`weightKg`は重量、`reps`は回数として保存します。
+
+重量と回数は任意入力なので、`?? null`で未入力値を`null`へ統一します。
+
+`.values()`へオブジェクトの配列を渡すと、複数セットを1回のDB通信でまとめて保存できます。
+
+```text
+元のセット配列
+[1セット目, 2セット目, 3セット目]
+          ↓ map()
+DB保存用配列
+[{...}, {...}, {...}]
+          ↓ insert().values()
+3セットをまとめて保存
+```
+
+### 覚える単語
+
+- `.map()`：配列の各要素を変換して新しい配列を作る
+- アロー関数：`(値) => 処理`の形で書く関数
+- オブジェクト：名前と値を組み合わせたデータ
+- 一括保存：複数件を1回のDB通信で保存すること
+
+### トレーニング記録APIの成功レスポンス
+
+すべての保存が完了すると、`trainingSessionId: session.id`をフロントエンドへ返します。
+
+HTTPステータス`201`は、新しいデータの作成に成功したことを表します。
+
+受信した`input`全体は返さず、フロントエンドが保存完了を確認するために必要な親記録IDだけを返します。
+
+### 認証なしのAPI動作確認
+
+認証トークンを付けずに`POST /api/training-records`を呼ぶと、HTTP 401と`ログインが必要です`が返ることを確認しました。
+
+これはAPIに接続できており、未ログインの人がトレーニング記録を保存できないよう認証処理が機能している状態です。
+
+## トレーニング履歴取得API
+
+### `GET()`の役割
+
+同じ`app/api/training-records/route.ts`に`GET()`を書くと、`GET /api/training-records`で本人の履歴を取得できます。
+
+`POST()`は新しい記録の保存、`GET()`は保存済み記録の取得を担当します。
+
+どちらも最初に`getClerkUserId(request)`を実行し、本人のデータだけを扱います。
+
+### 本人の履歴を検索する
+
+`.innerJoin(users, eq(trainingSessions.userId, users.id))`は、トレーニング記録とユーザーを共通のIDで結び付けます。
+
+その後、`.where(eq(users.clerkUserId, clerkUserId))`でログイン中のClerkユーザーに属する記録だけへ絞ります。
+
+`.orderBy(desc(trainingSessions.performedAt))`は実施日時を新しい順に並べます。
+
+`.limit(50)`は1回の取得を最大50件に制限し、データが増えた場合の通信量を抑えます。
+
+### 各履歴に種目を追加する
+
+`sessions.map(async (session) => {...})`は、各トレーニング履歴を1件ずつ処理し、それぞれに属する種目を検索します。
+
+`async`を付ける理由は、関数内でDB検索の`await`を使うためです。
+
+非同期の`map()`が返すものは、完成データではなくPromiseの配列です。
+
+`Promise.all(...)`は、配列内にあるすべてのPromiseが完了するまで待ち、完成したデータの配列を返します。
+
+`...session`はスプレッド構文で、元の履歴が持つID・日時・時間・調子・メモを新しいオブジェクトへ展開します。
+
+その後に`exercises`を書くことで、元の履歴情報へ種目一覧を追加します。
+
+```text
+session
+{ id, performedAt, memo }
+        ↓ ...session と exercises
+record
+{ id, performedAt, memo, exercises }
+```
+
+最後は`records: sessions`ではなく`records`を返します。`sessions`は種目追加前、`records`は種目追加後だからです。
+
+### 覚える単語
+
+- `GET`：データを取得するHTTP通信
+- `innerJoin()`：共通する値で2つのテーブルを結ぶ
+- `desc()`：大きい順・新しい順に並べる
+- `Promise`：まだ完了していない非同期処理の結果
+- `Promise.all()`：複数の非同期処理がすべて終わるまで待つ
+- スプレッド構文`...`：オブジェクトや配列の中身を展開する
+
+### HTTPメソッドの基本
+
+`GET`は、Neonに保存されている情報を取得し、バックエンドからフロントエンドへ渡します。
+
+`POST`は、フロントエンドから新しい情報を受け取り、バックエンドがNeonへ保存します。
+
+`PATCH`は、すでに保存されている情報の一部を変更します。
+
+`DELETE`は、保存済みの情報を削除します。
+
+```text
+GET    : Neon → バックエンド → フロント
+POST   : フロント → バックエンド → Neonへ新規保存
+PATCH  : フロント → バックエンド → Neonの既存データを変更
+DELETE : フロント → バックエンド → Neonの既存データを削除
+```
+
+GETでもフロントからClerkトークンを受け取り、誰のデータを取得するか判断します。
+
+### 各種目へセット一覧を追加する
+
+種目を取得した後、`exercises.map(async (exercise) => {...})`で種目を1件ずつ処理します。
+
+現在の`exercise.id`と`trainingSets.trainingExerciseId`が一致するセットだけを`.where(eq(...))`で取得します。
+
+`.orderBy(trainingSets.setNumber)`は、セットを1セット目、2セット目、3セット目の順に並べます。
+
+`return { ...exercise, sets }`は、種目ID・種目名・部位などの情報へセット一覧を追加します。
+
+完成したセット付き種目の配列を`exercisesWithSets`へ保存します。
+
+最後に`return { ...session, exercises: exercisesWithSets }`で、トレーニング全体へセット付きの種目一覧を追加します。
+
+```text
+トレーニング全体
+└─ 種目一覧
+   ├─ 種目1
+   │  └─ セット一覧
+   └─ 種目2
+      └─ セット一覧
+```
+
+外側の`Promise.all()`は全トレーニングの処理完了を待ち、内側の`Promise.all()`は現在のトレーニングに含まれる全種目の処理完了を待ちます。
+
+## Python身体分析からOpenAIを使う準備
+
+### 使用するライブラリ
+
+`openai`は、PythonからOpenAI APIへ画像を送り、分析結果を受け取る公式ライブラリです。
+
+`python-dotenv`は、秘密情報をコードへ直接書かず、`.env.local`から`OPENAI_API_KEY`を読み込むために使います。
+
+Pythonを使う理由は、`Pillow`による画像検査や、将来のOpenCV・独自AIモデルなど、画像処理向けの機能を追加しやすいからです。
+
+### `.env.local`の読み込み
+
+`Path(__file__)`は、現在実行している`main.py`の場所を表します。
+
+`.resolve()`は、その場所を省略のない絶対パスへ変換します。
+
+`.parents[2]`は、`python-analysis/app/main.py`からプロジェクト直下の`musslepas`まで戻ります。
+
+`/ ".env.local"`は、戻った場所へ`.env.local`というファイル名をつなげます。
+
+`load_dotenv(ENV_FILE_PATH)`は、`.env.local`内の環境変数をPythonから利用できる状態にします。
+
+`openai_client = OpenAI()`は、読み込んだ`OPENAI_API_KEY`を使うOpenAI APIの受付窓口を作ります。この行だけではAPI通信を行わないため、まだ分析料金は発生しません。
+
+### 画像をBase64データURLへ変換する
+
+`image_to_data_url(image)`は、検査済み画像をOpenAIへ直接送れる文字列へ変換する関数です。
+
+`await image.read()`は、アップロード画像の中身をバイトデータとして読み込みます。
+
+`await image.seek(0)`は、読み取り位置を先頭へ戻し、後続処理でも同じ画像を読めるようにします。
+
+`base64.b64encode(image_bytes)`は、画像のバイトデータをBase64形式へ変換します。
+
+`.decode("utf-8")`は、変換結果をPythonの文字列として扱えるようにします。
+
+`f"data:{image.content_type};base64,..."`は、画像形式とBase64本体を組み合わせ、OpenAIが画像として認識できるデータURLを作ります。
+
+`front_image_url`、`side_image_url`、`back_image_url`には、正面・横・背面をそれぞれ変換した結果が入ります。この段階では変換のみで、まだOpenAI APIへの送信は行いません。
+
+```text
+UploadFile
+   ↓ read()
+画像のバイトデータ
+   ↓ base64.b64encode()
+Base64文字列
+   ↓ data:画像形式;base64, を追加
+OpenAIへ渡せる画像データURL
+```
+
+### 覚える単語
+
+- `Path`：ファイルやフォルダの場所を安全に扱うPythonの機能
+- 環境変数：APIキーなど、コードから分けて管理する設定値
+- APIクライアント：外部APIへリクエストを送るための窓口
+- `Base64`：画像などのバイナリデータを文字列で表現する形式
+- データURL：ファイル内容とファイル形式を1本の文字列にまとめた形式
+
+## 身体分析を1ユーザー1日1回に制限する
+
+### なぜTypeScriptバックエンドで判定するのか
+
+`app/api/body-analysis/route.ts`はClerk認証後のユーザーIDを取得できるため、誰が分析しようとしているかを判定できます。
+
+PythonやOpenAIへ画像を送る前にNeonを確認すれば、当日2回目のリクエストでOpenAI料金が発生するのを防げます。
+
+現在のルールは、日本時間の0時から翌日の0時までを同じ1日として扱います。
+
+### 日本時間の範囲を作る
+
+`japanTimeOffsetMilliseconds`は、日本時間がUTCより9時間進んでいることをミリ秒で表します。
+
+`getJapanDayRange(now)`は、現在日時を受け取り、日本時間の今日0時を表す`start`と翌日0時を表す`end`を返します。
+
+Neonの`timestamp with time zone`は世界共通の時刻として比較するため、日本時間の境界をUTCの`Date`へ変換してから検索します。
+
+### 今日の完了済み分析を検索する
+
+`and(...)`は、中に書いたすべての条件を満たす分析だけを探します。
+
+`eq(bodyAnalyses.userId, user.id)`は、ログイン中の本人の分析だけへ絞ります。
+
+`eq(bodyAnalyses.status, "completed")`は、正常に完了した分析だけを1回として数えます。
+
+`gte(bodyAnalyses.analyzedAt, start)`は、今日の0時以降という条件です。
+
+`lt(bodyAnalyses.analyzedAt, end)`は、翌日の0時より前という条件です。
+
+`.limit(1)`は、分析済みか判断するには1件見つかれば十分なので、取得量を抑えます。
+
+### 2回目を止める
+
+`todayAnalyses.length > 0`は、今日すでに完了した分析が1件以上あることを表します。
+
+その場合はHTTP 429とエラーメッセージを返し、画像読込・Python・OpenAIの処理へ進みません。
+
+`nextAvailableAt`は、次に分析できる日本時間の翌日0時をUTC形式でフロントへ伝えます。
+
+`Retry-After`ヘッダーは、次に試せるまでの秒数を通信上の情報として返します。
+
+```text
+Clerkで本人確認
+   ↓
+Neonで今日の完了済み分析を検索
+   ├─ あり → HTTP 429で終了
+   └─ なし → 画像検査 → Python → OpenAI
+```
+
+### 覚える単語
+
+- `gte`：greater than or equalの略で、指定値以上
+- `lt`：less thanの略で、指定値より小さい
+- HTTP 429：利用回数が制限を超えたことを示すステータス
+- `Retry-After`：次に再試行できるまでの時間を示すレスポンスヘッダー
+
+## OpenAIによる実際の身体画像分析
+
+### OpenAIへ画像3枚を送る
+
+`openai_client = AsyncOpenAI()`は、OpenAI APIとの通信を行う非同期クライアントです。
+
+同期版ではなく`AsyncOpenAI`を使う理由は、OpenAIの返答を待っている間もFastAPIがほかの処理を扱えるようにするためです。
+
+`await openai_client.responses.parse(...)`が、実際にOpenAIへ画像分析を依頼する中心処理です。この処理が実行された時点でAPI利用が発生します。
+
+`model="gpt-5.6"`は、画像を理解できるOpenAIモデルを指定しています。
+
+`instructions=BODY_ANALYSIS_INSTRUCTIONS`は、身体分析の目的、評価方法、医療診断をしないことなどのルールをAIへ渡します。
+
+`input`の`content`には、正面・横・背面の説明と、それぞれのBase64データURLを順番に入れます。
+
+`type: "input_text"`は、次の画像がどの方向から撮影されたものかを説明する文章です。
+
+`type: "input_image"`は、OpenAIへ画像入力を渡す項目です。
+
+`detail: "low"`は、最初の運用で画像処理コストを抑える設定です。筋肉の細部が不足する場合は、費用とのバランスを確認して`high`へ変更します。
+
+`text_format=BodyAnalysisResponse`は、自由な文章ではなく、`summary`、`goal_difference`、`areas`を持つ決まった形式で結果を返すよう指定します。
+
+`store=False`は、APIレスポンスを後から取得する用途でOpenAI側に保存しない設定です。
+
+### 分析結果を安全に返す
+
+`response.output_parsed`には、`BodyAnalysisResponse`の形として検査された分析結果が入ります。
+
+`output_parsed is None`は、AIから決まった形式の結果を取得できなかった状態です。その場合はHTTP 502として処理を止めます。
+
+正常な場合は`return response.output_parsed`で、PythonからTypeScriptバックエンドへ分析結果JSONを返します。
+
+```text
+検査済み画像3枚
+   ↓ Base64データURL
+OpenAI Responses API
+   ↓ BodyAnalysisResponseで形式を指定
+Pydantic検査済みJSON
+   ↓
+TypeScriptバックエンド
+```
+
+### 実通信テスト
+
+2026年8月13日に、個人の身体写真ではなくプロジェクト内の生成済み体型画像3枚を使って実通信を1回確認しました。
+
+Pythonの`POST /analyze`はHTTP 200を返し、要約・理想体型との差・部位別評価が`BodyAnalysisResponse`形式で返りました。
+
+テスト画像は本当の正面・横・背面の組み合わせではなかったため、AIは横面・背面を確認できないことを結果内に明記しました。これは、不足している画像情報を勝手に断定しないルールが機能していることを示します。
+
+### スマホからNeon保存までの通し確認
+
+2026年8月13日に、スマホ版の身体分析画面から生成済み画像3枚を選択し、TypeScript、Python、OpenAI、Neon、スマホ表示までを通して確認しました。
+
+以前の仮結果は削除せず、`status`を`mock`へ変更してテスト記録として残しました。1日1回判定は`completed`だけを数えるため、本物の分析を新しく1件実行できました。
+
+新しい分析はNeonの`body_analyses`へ`completed`として保存され、分析IDは`dab3a674-3d1d-41cf-b00c-06b35f84376d`です。
+
+部位別結果も`body_analysis_areas`へ6件保存され、スマホ画面に要約・理想体型との差・各部位のスコア・観察結果・おすすめが表示されました。
+
+身体写真そのものはNeonへ保存しておらず、OpenAIが返した構造化分析結果だけを保存しています。
+
+```text
+スマホで画像3枚を選択
+   ↓ Clerkトークン付きPOST
+TypeScriptバックエンド
+   ↓ 1日1回判定・画像検査
+Python FastAPI
+   ↓ 画像検査・OpenAI分析
+構造化された分析JSON
+   ↓
+TypeScriptで形式確認
+   ↓
+Neonへ分析全体と部位別結果を保存
+   ↓
+スマホへ表示
+```
+
+## 身体分析用に本人の理想体型と身体情報を取得する
+
+### 使用するテーブル
+
+理想体型は`users.goalBodyType`、身長・体重・体脂肪率は`user_profiles`に保存されています。
+
+身体分析APIでは既存のClerk本人確認後に、同じ本人の2テーブルを結合して必要な項目だけ取得します。新しいログイン処理を作っているのではありません。
+
+### `userProfiles`をimportする理由
+
+`userProfiles`を`@/db/schema`からimportすると、身体分析の`route.ts`からプロフィールテーブルの列を指定できます。
+
+### `.select({...})`の役割
+
+`id: users.id`は、分析結果を本人へ結び付けて保存するNeon内のユーザーIDです。
+
+`goalBodyType: users.goalBodyType`は、細マッチョ・逆三角形・フィジーク・バルクアップなどの目標です。
+
+`heightCm`、`weightKg`、`bodyFatPercentage`は、身体画像だけでは分からない本人の入力情報です。
+
+### `leftJoin()`の役割
+
+`.leftJoin(userProfiles, eq(userProfiles.userId, users.id))`は、`users.id`と`user_profiles.user_id`が同じデータを1件へまとめます。
+
+`leftJoin`を使うと、プロフィールがまだ存在しない場合でもユーザー自体は取得できます。その後の処理で「プロフィールが未登録です」という分かりやすいエラーを返せます。
+
+```text
+users
+・id
+・goalBodyType
+       ＋ user_idで結合
+user_profiles
+・heightCm
+・weightKg
+・bodyFatPercentage
+       ↓
+身体分析に必要な本人情報
+```
+
+### 覚える単語
+
+- `leftJoin()`：左側のデータを残したまま、共通IDを持つ別テーブルを結合する
+- 別名指定：`heightCm: userProfiles.heightCm`のように、取得結果の名前とDB列を対応させる書き方
+- 必要な列だけ取得：通信量と扱う個人情報を必要最小限にする考え方
+
+### AI分析前の必須確認
+
+`user.goalBodyType === null`、`user.heightCm === null`、`user.weightKg === null`は、AI分析に必要な本人情報が未設定か確認します。
+
+条件を`||`でつなぐと、3項目のうち1つでも不足している場合にHTTP 400を返し、Python・OpenAIを呼びません。
+
+体脂肪率は任意入力なので必須確認には含めません。
+
+### 画像と本人情報を同じFormDataへ入れる
+
+`pythonFormData`には正面・横・背面画像だけでなく、理想体型・身長・体重・任意の体脂肪率も追加します。
+
+`FormData.append("goal_body_type", user.goalBodyType)`は、Pythonが`goal_body_type`という名前で理想体型を取り出せるようにします。
+
+`FormData`へ画像以外の数値を入れる場合は、`String(user.heightCm)`のように文字列へ変換します。
+
+体脂肪率は`!== null`で登録済みか確認し、登録されている場合だけ追加します。未入力時に空文字を送らないためです。
+
+```text
+pythonFormData
+├─ front_image
+├─ side_image
+├─ back_image
+├─ goal_body_type
+├─ height_cm
+├─ weight_kg
+└─ body_fat_percentage（任意）
+```
+
+### 覚える単語
+
+- `FormData`：画像と文字列を同じHTTPリクエストで送る形式
+- `String()`：数値などを文字列へ変換するJavaScriptの関数
+- `!== null`：値が未設定の`null`ではないことを確認する比較
+
+## Pythonで理想体型と身体情報を受け取る
+
+### `File`と`Form`の違い
+
+FastAPIの`File(...)`は、正面・横・背面の画像ファイルを受け取ります。
+
+`Form(...)`は、同じ`FormData`に入っている理想体型・身長・体重などの文字列を受け取ります。
+
+TypeScript側では数値を`String()`で送っていますが、Python側で型を`float`にするとFastAPIが数値へ自動変換します。
+
+### 引数の型と制限
+
+`goal_body_type: str`は理想体型を文字列として受け取ります。
+
+`height_cm: float`と`weight_kg: float`は身長・体重を小数として受け取ります。
+
+`body_fat_percentage: float | None`は、体脂肪率が数値または未入力の`None`であることを表します。
+
+`Form(...)`内の`...`は必須項目です。`Form(None)`は未入力を許可します。
+
+`ge`は指定数値以上、`le`は指定数値以下だけを許可します。
+
+FastAPIが型変換や範囲確認に失敗した場合はHTTP 422を返し、画像検査やOpenAI分析へ進みません。
+
+### 覚える単語
+
+- `Form()`：multipart/form-data内の画像以外の項目を受け取るFastAPIの機能
+- `float`：小数を扱うPythonの数値型
+- `None`：Pythonで値がない状態
+- `ge`：greater than or equalの略で、指定値以上
+- `le`：less than or equalの略で、指定値以下
+
+## PythonでAIへ渡すユーザー情報を文章にまとめる
+
+対象ファイルは`python-analysis/app/main.py`です。
+
+この部分は、TypeScriptバックエンドから受け取った理想体型・身長・体重・体脂肪率を、OpenAIが理解しやすい1つの文章へまとめます。
+
+### 任意の体脂肪率を表示用の文字列にする
+
+```python
+body_fat_text = (
+    f"{body_fat_percentage}%"
+    if body_fat_percentage is not None
+    else "未入力"
+)
+```
+
+`body_fat_text = (`は、AIへ渡す体脂肪率の文章を`body_fat_text`へ保存します。
+
+`f"{body_fat_percentage}%"`は、数値の後ろへ`%`を付けた文字列を作ります。
+
+`if body_fat_percentage is not None`は、体脂肪率が入力されているか確認します。
+
+`else "未入力"`は、体脂肪率が任意項目で未入力だった場合に`未入力`という文章を使います。
+
+この書き方は、`条件が成立した場合の値 if 条件 else 成立しない場合の値`というPythonの条件式です。
+
+### 身体情報を1つの文章へまとめる
+
+```python
+user_body_context = (
+    "今回分析するユーザー情報です。\n"
+    f"理想体型: {goal_body_type}\n"
+    f"身長: {height_cm}cm\n"
+    f"体重: {weight_kg}kg\n"
+    f"体脂肪率: {body_fat_text}\n"
+    "画像とこの情報を比較して、"
+    "理想体型との差を説明してください。"
+)
+```
+
+`user_body_context = (`は、ユーザーごとに内容が変わる身体情報を1つの変数へ保存します。
+
+`f"理想体型: {goal_body_type}\n"`は、`{}`の位置へ実際の理想体型を入れます。
+
+身長・体重・体脂肪率も同じ方法で実際の値を文章へ入れます。
+
+`\n`は改行を表し、各情報を別の行にしてAIが読み取りやすい形にします。
+
+丸括弧の中で文字列を続けて書くと、Pythonがそれらを自動的に1つの文字列としてつなぎます。
+
+最後の2行は、画像だけを見るのではなく、設定済みの理想体型と比較する目的をAIへ伝えます。
+
+### `instructions`と`input`の役割の違い
+
+分析方法や出力時の禁止事項など、全ユーザーで共通する固定ルールは`instructions`へ書きます。
+
+理想体型・身長・体重など、分析するたびに変わる本人情報は`input`の`content`へ入れます。
+
+```text
+instructions
+└─ 全ユーザー共通の分析ルール
+
+input.content
+├─ user_body_context（本人の目標・身体情報）
+├─ 正面画像
+├─ 横画像
+└─ 背面画像
+```
+
+OpenAIの画像入力では、1つの`content`配列へ`input_text`と複数の`input_image`を並べられます。
+
+そのため、身体情報の文章と3枚の画像を同じリクエストに入れると、AIが同じ分析対象の情報として比較できます。
+
+### `user_body_context`をOpenAIへ実際に渡す部分
+
+```python
+{
+    "type": "input_text",
+    "text": user_body_context,
+},
+```
+
+この辞書は、`responses.parse()`の`input`にある`content`配列の先頭へ入れます。
+
+`"type": "input_text"`は、この項目が画像ではなく文章であることをOpenAIへ伝えます。
+
+`"text": user_body_context`は、理想体型・身長・体重・体脂肪率をまとめた文章を実際の入力として指定します。
+
+この後ろへ正面・横・背面の`input_image`が続くため、身体情報と3枚の画像が1回のOpenAI APIリクエストで送信されます。
+
+ここでデータをNeonへ保存しているわけではありません。PythonからOpenAIへ分析材料を送っている部分です。
+
+OpenAIから返った分析結果は、後続のTypeScriptバックエンドが受け取り、本人の分析結果としてNeonへ保存します。
+
+```text
+Python
+├─ user_body_context
+├─ 正面画像
+├─ 横画像
+└─ 背面画像
+        ↓ 1回のAPIリクエスト
+OpenAI
+        ↓ 構造化された分析結果
+Python → TypeScriptバックエンド → Neon → フロントエンド
+```
+
+### 覚える単語
+
+- `f"..."`：変数の値を`{}`へ埋め込めるPythonの文字列
+- `is not None`：値が未入力の`None`ではないことを確認する
+- Pythonの条件式：条件によって保存する値を1行で切り替える書き方
+- `\n`：文字列内の改行
+- `instructions`：AIが常に守る固定ルール
+- `input`：今回のリクエストでAIへ渡す内容
+- `input_text`：OpenAIへ文章を渡す入力形式
+- `input_image`：OpenAIへ画像を渡す入力形式
+
+## このアプリでNeonを使う理由
+
+### Neon・PostgreSQL・Drizzleの関係
+
+Neonは、このアプリのデータをインターネット上で長期間保存するデータベースサービスです。
+
+Neonの中では、一般的なリレーショナルデータベースであるPostgreSQLが動いています。
+
+Drizzleは、TypeScriptからPostgreSQLのテーブルを定義・検索・保存するための道具です。
+
+```text
+route.ts
+   ↓ Drizzleで検索・保存
+Neon
+└─ PostgreSQL
+   ├─ users
+   ├─ user_profiles
+   ├─ training_sessions
+   ├─ body_analyses
+   └─ 今後のAIチャット履歴
+```
+
+### データを長期間保存できる
+
+ReactやPythonのサーバーを停止・再起動しても、Neonへ保存したユーザー情報やトレーニング記録は消えません。
+
+そのため、身体分析結果、過去の重量、AIチャット履歴などをユーザーごとの長期記憶として利用できます。
+
+### 小規模開発時の費用を抑えやすい
+
+Neonには、一定時間アクセスがない場合にデータベースの計算部分を停止するScale to Zeroがあります。
+
+停止中も保存データは残り、次のアクセス時に自動で再開します。
+
+開発中や利用者が少ない初期段階で、常にサーバーを動かし続ける費用を抑えやすくなります。
+
+ただし、自動停止後の最初のアクセスは、再開のため少し遅くなる場合があります。
+
+### 利用者が増えた場合に対応しやすい
+
+Autoscalingは、データベースの利用量に応じて計算能力を調整する仕組みです。
+
+利用者が増えた場合は、接続プールを使って大量の接続を効率よくまとめることもできます。
+
+### データ同士を安全に結び付けられる
+
+PostgreSQLでは、ユーザーIDを共通のキーとして本人の情報を結び付けられます。
+
+```text
+本人のusers.id
+├─ プロフィール
+├─ 理想体型
+├─ トレーニング記録
+├─ 身体分析結果
+├─ AI生成メニュー
+└─ AIチャット履歴
+```
+
+外部キーや本人確認を組み合わせることで、別ユーザーのデータが混ざるのを防ぎます。
+
+### データベースのブランチを作れる
+
+Neonのブランチは、本番データベースとは分離された環境でテーブル変更などを試す機能です。
+
+変更を安全に確認してから本番側へ反映できるため、利用者が増えた後の機能追加にも役立ちます。
+
+### PostgreSQLなので将来移行しやすい
+
+Neon独自形式だけに依存するデータベースではなくPostgreSQLなので、必要になった場合は別のPostgreSQL環境へ移行しやすい構成です。
+
+### セキュリティ上の注意
+
+`DATABASE_URL`はデータベースへ直接接続できる秘密情報なので、フロントエンドやGitHubへ公開してはいけません。
+
+フロントエンドは必ずTypeScriptバックエンドのAPIを経由し、本人確認後に必要なデータだけを取得・保存します。
+
+### 覚える単語
+
+- Neon：クラウド上でPostgreSQLを利用するサービス
+- PostgreSQL：表同士を関連付けて保存できるデータベース
+- Drizzle：TypeScriptからPostgreSQLを操作するORM
+- Scale to Zero：未使用時に計算部分を停止して費用を抑える仕組み
+- Autoscaling：利用量に合わせて計算能力を調整する仕組み
+- 接続プール：多数のDB接続をまとめて効率よく再利用する仕組み
+- DBブランチ：本番と分離したデータベース環境で変更を試す仕組み
+
+### 覚える単語
+
+- `AsyncOpenAI`：OpenAI APIを非同期で呼び出すPythonクライアント
+- `responses.parse()`：入力をモデルへ送り、指定した構造で結果を受け取る処理
+- Structured Outputs：AIの出力を決められたJSON構造へそろえる機能
+- `output_parsed`：指定したPydantic型として検査・変換された結果
+- HTTP 502：外部サービスから正常な結果を受け取れなかったことを示すステータス
