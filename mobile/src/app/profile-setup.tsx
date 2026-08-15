@@ -252,7 +252,7 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', justifyContent: 'space-between' },
   eyebrow: { color: '#FFF1B8', fontSize: 11, fontWeight: '600', letterSpacing: 1.6 },
   step: { color: '#737B75', fontSize: 11, fontWeight: '600', letterSpacing: 1.2 },
-  title: { fontFamily: 'Yu Mincho', marginTop: 24, color: '#F4F6F3', fontSize: 32, fontWeight: '700' },
+  title: { marginTop: 24, color: '#F4F6F3', fontSize: 32, fontWeight: '700' },
   lead: { marginTop: 9, marginBottom: 22, color: '#9DA69F', fontSize: 14, lineHeight: 21 },
   card: {
     marginBottom: 14,
@@ -263,7 +263,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#151515',
   },
   cardHeadingRow: { flexDirection: 'row', justifyContent: 'space-between' },
-  cardTitle: { fontFamily: 'Yu Mincho', color: '#F4F6F3', fontSize: 16, fontWeight: '700' },
+  cardTitle: { color: '#F4F6F3', fontSize: 16, fontWeight: '700' },
   cardHint: { marginTop: 4, color: '#737B75', fontSize: 11 },
   optionalBadge: { color: '#737B75', fontSize: 10, fontWeight: '600' },
   measurementRow: { flexDirection: 'row', gap: 12, marginTop: 18 },

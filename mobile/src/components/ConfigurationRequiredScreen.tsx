@@ -24,7 +24,7 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#0A0A0A' },
   safeArea: { flex: 1, justifyContent: 'center', paddingHorizontal: 24 },
   eyebrow: { color: '#FFF1B8', fontSize: 11, fontWeight: '600', letterSpacing: 1.8 },
-  title: { fontFamily: 'Yu Mincho', marginTop: 10, color: '#F4F6F3', fontSize: 30, fontWeight: '700' },
+  title: { marginTop: 10, color: '#F4F6F3', fontSize: 30, fontWeight: '700' },
   description: { marginTop: 14, color: '#9DA69F', fontSize: 14, lineHeight: 22 },
   notice: {
     marginTop: 24,

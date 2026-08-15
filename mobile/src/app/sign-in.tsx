@@ -272,7 +272,7 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1 },
   content: { flex: 1, justifyContent: 'center', paddingHorizontal: 24 },
   eyebrow: { color: '#FFF1B8', fontSize: 11, fontWeight: '600', letterSpacing: 1.8 },
-  title: { fontFamily: 'Yu Mincho', marginTop: 10, color: '#F4F6F3', fontSize: 38, fontWeight: '700' },
+  title: { marginTop: 10, color: '#F4F6F3', fontSize: 38, fontWeight: '700' },
   description: { marginTop: 12, color: '#A5ADA7', fontSize: 14, lineHeight: 22 },
   form: { marginTop: 30 },
   input: {

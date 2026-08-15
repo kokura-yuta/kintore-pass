@@ -171,7 +171,7 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   eyebrow: { color: '#FFF1B8', fontSize: 11, fontWeight: '600', letterSpacing: 1.6 },
   step: { color: '#737B75', fontSize: 11, fontWeight: '600', letterSpacing: 1.2 },
-  title: { fontFamily: 'Yu Mincho', marginTop: 24, color: '#F4F6F3', fontSize: 32, fontWeight: '700' },
+  title: { marginTop: 24, color: '#F4F6F3', fontSize: 32, fontWeight: '700' },
   description: { marginTop: 9, color: '#9DA69F', fontSize: 14, lineHeight: 21 },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 11, marginTop: 24 },
   dividerRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginVertical: 24 },

@@ -87,7 +87,7 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1 },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 12 },
   eyebrow: { color: '#FFF1B8', fontSize: 9, fontWeight: '700', letterSpacing: 1.4 },
-  title: { fontFamily: 'Yu Mincho', marginTop: 4, color: '#F4F6F3', fontSize: 25, fontWeight: '700' },
+  title: { marginTop: 4, color: '#F4F6F3', fontSize: 25, fontWeight: '700' },
   closeButton: { paddingHorizontal: 13, paddingVertical: 9, borderWidth: 1, borderColor: '#3A3A3A', borderRadius: 20 },
   closeText: { color: '#FFF1B8', fontSize: 12, fontWeight: '600' },
   searchInput: { minHeight: 51, marginHorizontal: 20, marginTop: 19, paddingHorizontal: 15, borderWidth: 1, borderColor: '#3A3A3A', borderRadius: 14, backgroundColor: '#151515', color: '#F4F6F3', fontSize: 14 },

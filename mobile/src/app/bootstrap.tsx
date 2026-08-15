@@ -123,7 +123,7 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1 },
   centerContent: { flex: 1, justifyContent: 'center', paddingHorizontal: 24 },
   eyebrow: { color: '#FFF1B8', fontSize: 11, fontWeight: '600', letterSpacing: 1.6 },
-  title: { fontFamily: 'Yu Mincho', marginTop: 10, color: '#F4F6F3', fontSize: 32, fontWeight: '700' },
+  title: { marginTop: 10, color: '#F4F6F3', fontSize: 32, fontWeight: '700' },
   description: { marginTop: 14, color: '#9DA69F', fontSize: 14, lineHeight: 22 },
   primaryButton: {
     minHeight: 52,

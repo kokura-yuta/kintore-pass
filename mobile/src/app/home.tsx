@@ -218,7 +218,7 @@ const styles = StyleSheet.create({
   },
   menuNumber: { color: '#0A0A0A', fontSize: 11, fontWeight: '700' },
   targetLabel: { marginTop: 22, color: '#737B75', fontSize: 10, fontWeight: '600' },
-  targetArea: { fontFamily: 'Yu Mincho', marginTop: 5, color: '#FFF1B8', fontSize: 18, fontWeight: '700' },
+  targetArea: { marginTop: 5, color: '#FFF1B8', fontSize: 18, fontWeight: '700' },
   reason: { marginTop: 8, color: '#8E978F', fontSize: 12, lineHeight: 19 },
   exerciseList: { marginTop: 18, borderTopWidth: 1, borderTopColor: '#303030' },
   exerciseRow: {

@@ -145,7 +145,7 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', justifyContent: 'space-between' },
   eyebrow: { color: '#FFF1B8', fontSize: 11, fontWeight: '600', letterSpacing: 1.6 },
   step: { color: '#737B75', fontSize: 11, fontWeight: '600', letterSpacing: 1.2 },
-  title: { fontFamily: 'Yu Mincho', marginTop: 24, color: '#F4F6F3', fontSize: 31, fontWeight: '700' },
+  title: { marginTop: 24, color: '#F4F6F3', fontSize: 31, fontWeight: '700' },
   lead: { marginTop: 10, color: '#9DA69F', fontSize: 14, lineHeight: 22 },
   card: {
     marginTop: 24,
@@ -184,7 +184,7 @@ const styles = StyleSheet.create({
   textButton: { alignItems: 'center', paddingVertical: 17 },
   textButtonLabel: { color: '#FFF1B8', fontSize: 13, fontWeight: '600' },
   loadingArea: { flex: 1, alignItems: 'center', justifyContent: 'center', minHeight: 540 },
-  loadingTitle: { fontFamily: 'Yu Mincho', marginTop: 22, color: '#F4F6F3', fontSize: 23, fontWeight: '700' },
+  loadingTitle: { marginTop: 22, color: '#F4F6F3', fontSize: 23, fontWeight: '700' },
   loadingText: { marginTop: 10, color: '#737B75', fontSize: 13 },
   resultEyebrow: { marginTop: 24, color: '#FFF1B8', fontSize: 11, fontWeight: '700', letterSpacing: 1.4 },
   metricRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 24 },
