@@ -60,7 +60,8 @@ export default function BootstrapScreen() {
     setStatus('loading');
     setErrorMessage('');
     setCanUseDevelopmentBypass(false);
-    void loadBootstrap();
+    // 即座に同じエラーへ戻る場合でも、再試行したことが画面で分かるようにする。
+    setTimeout(() => void loadBootstrap(), 350);
   }
 
   if (isLoaded && !isSignedIn) {
@@ -94,7 +95,8 @@ export default function BootstrapScreen() {
                   <Text style={styles.developmentButtonText}>開発用に初回設定へ進む</Text>
                 </Pressable>
                 <Text style={styles.developmentNote}>
-                  開発中だけ表示されます。本番ではbootstrap APIの結果を使用します。
+                  API接続先を設定した場合はExpoを再起動してから再試行してください。
+                  開発中は下のボタンから初回設定を確認できます。
                 </Text>
               </>
             ) : null}
