@@ -21,12 +21,35 @@ export default function HomeScreen() {
   const router = useRouter();
   const { isLoaded, isSignedIn } = useAuth({ treatPendingAsSignedOut: false });
   const { goalBody } = useOnboarding();
-  const { setDraft } = useTrainingDraft();
+  const { latestGeneratedMenu, setDraft } = useTrainingDraft();
+  const generatedMenu = latestGeneratedMenu?.menu ?? null;
+  const displayedExercises = generatedMenu
+    ? generatedMenu.exercises.map((exercise) => ({
+        exerciseId: exercise.exerciseId,
+        name: exercise.name,
+        prescription: `${exercise.weightKg ? `${exercise.weightKg}kg・` : ''}${exercise.reps}回 × ${exercise.setCount}セット`,
+        sets: Array.from({ length: exercise.setCount }, () => ({ weightKg: exercise.weightKg, reps: exercise.reps })),
+      }))
+    : homePreview.exercises;
+  const displayedMenu = {
+    menuId: generatedMenu?.menuId ?? 'preview-menu-today',
+    targetArea: generatedMenu?.targetArea ?? homePreview.targetArea,
+    reason: generatedMenu?.reason ?? homePreview.reason,
+    recommendedMinutes: generatedMenu?.estimatedMinutes ?? homePreview.recommendedMinutes,
+    conditionScore: latestGeneratedMenu?.condition ?? homePreview.conditionScore,
+    conditionLabel: latestGeneratedMenu
+      ? latestGeneratedMenu.condition >= 8 ? 'GOOD' : latestGeneratedMenu.condition >= 5 ? 'NORMAL' : 'LIGHT'
+      : homePreview.conditionLabel,
+    aiMessage: latestGeneratedMenu
+      ? `今日の調子${latestGeneratedMenu.condition}/10と過去の記録をもとに、${generatedMenu?.targetArea}のメニューを作成しました。`
+      : homePreview.aiMessage,
+    exercises: displayedExercises,
+  };
 
   function startTraining() {
     setDraft({
-      menuId: 'preview-menu-today',
-      exercises: homePreview.exercises.map((exercise) => ({
+      menuId: displayedMenu.menuId,
+      exercises: displayedMenu.exercises.map((exercise) => ({
         exerciseId: exercise.exerciseId,
         sets: exercise.sets,
       })),
@@ -55,7 +78,7 @@ export default function HomeScreen() {
 
           <View style={styles.coachCard}>
             <Text style={styles.cardEyebrow}>AI COACH</Text>
-            <Text style={styles.coachMessage}>{homePreview.aiMessage}</Text>
+            <Text style={styles.coachMessage}>{displayedMenu.aiMessage}</Text>
           </View>
 
           <View style={styles.menuCard}>
@@ -70,12 +93,12 @@ export default function HomeScreen() {
             </View>
 
             <Text style={styles.targetLabel}>おすすめ部位</Text>
-            <Text style={styles.targetArea}>{homePreview.targetArea}</Text>
-            <Text style={styles.reason}>{homePreview.reason}</Text>
+            <Text style={styles.targetArea}>{displayedMenu.targetArea}</Text>
+            <Text style={styles.reason}>{displayedMenu.reason}</Text>
 
             <View style={styles.exerciseList}>
-              {homePreview.exercises.map((exercise, index) => (
-                <View key={exercise.name} style={[styles.exerciseRow, index === homePreview.exercises.length - 1 && styles.lastExercise]}>
+              {displayedMenu.exercises.map((exercise, index) => (
+                <View key={exercise.name} style={[styles.exerciseRow, index === displayedMenu.exercises.length - 1 && styles.lastExercise]}>
                   <View style={styles.exerciseIndex}>
                     <Text style={styles.exerciseIndexText}>{String(index + 1).padStart(2, '0')}</Text>
                   </View>
@@ -89,14 +112,14 @@ export default function HomeScreen() {
           <View style={styles.statusRow}>
             <View style={styles.statusCard}>
               <Text style={styles.statusLabel}>推奨時間</Text>
-              <Text style={styles.statusValue}>{homePreview.recommendedMinutes}<Text style={styles.statusUnit}> 分</Text></Text>
+              <Text style={styles.statusValue}>{displayedMenu.recommendedMinutes}<Text style={styles.statusUnit}> 分</Text></Text>
               <Text style={styles.statusHint}>準備運動を含む</Text>
             </View>
             <View style={styles.statusCard}>
               <Text style={styles.statusLabel}>コンディション</Text>
-              <Text style={styles.conditionValue}>{homePreview.conditionLabel}</Text>
+              <Text style={styles.conditionValue}>{displayedMenu.conditionLabel}</Text>
               <View style={styles.conditionTrack}>
-                <View style={[styles.conditionBar, { width: `${homePreview.conditionScore * 10}%` }]} />
+                <View style={[styles.conditionBar, { width: `${displayedMenu.conditionScore * 10}%` }]} />
               </View>
             </View>
           </View>
@@ -118,64 +141,64 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#0B0D0C' },
+  screen: { flex: 1, backgroundColor: '#0A0A0A' },
   safeArea: { flex: 1 },
   content: { paddingHorizontal: 18, paddingTop: 16, paddingBottom: 28 },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  brand: { color: '#F4F6F3', fontSize: 22, fontWeight: '900', letterSpacing: -1 },
-  brandAccent: { color: '#B6F24B' },
+  brand: { color: '#F4F6F3', fontSize: 22, fontWeight: '700', letterSpacing: -1 },
+  brandAccent: { color: '#FFF1B8' },
   date: { marginTop: 4, color: '#737B75', fontSize: 11, fontWeight: '700' },
   goalPill: {
     maxWidth: '48%',
     paddingHorizontal: 13,
     paddingVertical: 9,
     borderWidth: 1,
-    borderColor: '#2C312D',
+    borderColor: '#303030',
     borderRadius: 22,
-    backgroundColor: '#151816',
+    backgroundColor: '#151515',
   },
-  goalLabel: { color: '#737B75', fontSize: 8, fontWeight: '900', letterSpacing: 1.2 },
-  goalValue: { marginTop: 2, color: '#E8EBE8', fontSize: 11, fontWeight: '900' },
+  goalLabel: { color: '#737B75', fontSize: 8, fontWeight: '700', letterSpacing: 1.2 },
+  goalValue: { marginTop: 2, color: '#E8EBE8', fontSize: 11, fontWeight: '700' },
   coachCard: {
     marginTop: 22,
     padding: 18,
     borderLeftWidth: 3,
-    borderLeftColor: '#B6F24B',
+    borderLeftColor: '#F6D365',
     borderRadius: 14,
-    backgroundColor: '#171B17',
+    backgroundColor: '#181818',
   },
-  cardEyebrow: { color: '#B6F24B', fontSize: 9, fontWeight: '900', letterSpacing: 1.5 },
-  coachMessage: { marginTop: 9, color: '#F4F6F3', fontSize: 16, fontWeight: '800', lineHeight: 25 },
+  cardEyebrow: { color: '#FFF1B8', fontSize: 9, fontWeight: '700', letterSpacing: 1.5 },
+  coachMessage: { marginTop: 9, color: '#F4F6F3', fontSize: 16, fontWeight: '600', lineHeight: 25 },
   menuCard: {
     marginTop: 14,
     padding: 18,
     borderWidth: 1,
-    borderColor: '#2C312D',
+    borderColor: '#303030',
     borderRadius: 18,
-    backgroundColor: '#121512',
+    backgroundColor: '#121212',
   },
   menuHeading: { flexDirection: 'row', justifyContent: 'space-between' },
   menuHeadingCopy: { flex: 1 },
-  menuTitle: { marginTop: 6, color: '#F4F6F3', fontSize: 25, fontWeight: '900' },
+  menuTitle: { marginTop: 6, color: '#F4F6F3', fontSize: 25, fontWeight: '700' },
   menuNumberBadge: {
     width: 38,
     height: 38,
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 19,
-    backgroundColor: '#B6F24B',
+    backgroundColor: '#F6D365',
   },
-  menuNumber: { color: '#0B0D0C', fontSize: 11, fontWeight: '900' },
-  targetLabel: { marginTop: 22, color: '#737B75', fontSize: 10, fontWeight: '800' },
-  targetArea: { marginTop: 5, color: '#B6F24B', fontSize: 18, fontWeight: '900' },
+  menuNumber: { color: '#0A0A0A', fontSize: 11, fontWeight: '700' },
+  targetLabel: { marginTop: 22, color: '#737B75', fontSize: 10, fontWeight: '600' },
+  targetArea: { fontFamily: 'Yu Mincho', marginTop: 5, color: '#FFF1B8', fontSize: 18, fontWeight: '700' },
   reason: { marginTop: 8, color: '#8E978F', fontSize: 12, lineHeight: 19 },
-  exerciseList: { marginTop: 18, borderTopWidth: 1, borderTopColor: '#2C312D' },
+  exerciseList: { marginTop: 18, borderTopWidth: 1, borderTopColor: '#303030' },
   exerciseRow: {
     minHeight: 58,
     flexDirection: 'row',
     alignItems: 'center',
     borderBottomWidth: 1,
-    borderBottomColor: '#2C312D',
+    borderBottomColor: '#303030',
   },
   lastExercise: { borderBottomWidth: 0 },
   exerciseIndex: {
@@ -184,10 +207,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 8,
-    backgroundColor: '#222722',
+    backgroundColor: '#272727',
   },
-  exerciseIndexText: { color: '#B6F24B', fontSize: 9, fontWeight: '900' },
-  exerciseName: { flex: 1, marginLeft: 10, color: '#E8EBE8', fontSize: 12, fontWeight: '800' },
+  exerciseIndexText: { color: '#FFF1B8', fontSize: 9, fontWeight: '700' },
+  exerciseName: { flex: 1, marginLeft: 10, color: '#E8EBE8', fontSize: 12, fontWeight: '600' },
   prescription: { color: '#7F8881', fontSize: 10, fontWeight: '700' },
   statusRow: { flexDirection: 'row', gap: 11, marginTop: 14 },
   statusCard: {
@@ -195,17 +218,17 @@ const styles = StyleSheet.create({
     minHeight: 118,
     padding: 15,
     borderWidth: 1,
-    borderColor: '#2C312D',
+    borderColor: '#303030',
     borderRadius: 16,
-    backgroundColor: '#151816',
+    backgroundColor: '#151515',
   },
-  statusLabel: { color: '#737B75', fontSize: 10, fontWeight: '800' },
-  statusValue: { marginTop: 10, color: '#F4F6F3', fontSize: 25, fontWeight: '900' },
+  statusLabel: { color: '#737B75', fontSize: 10, fontWeight: '600' },
+  statusValue: { marginTop: 10, color: '#F4F6F3', fontSize: 25, fontWeight: '700' },
   statusUnit: { color: '#9DA69F', fontSize: 11 },
   statusHint: { marginTop: 6, color: '#697169', fontSize: 9 },
-  conditionValue: { marginTop: 10, color: '#B6F24B', fontSize: 21, fontWeight: '900' },
+  conditionValue: { marginTop: 10, color: '#FFF1B8', fontSize: 21, fontWeight: '700' },
   conditionTrack: { height: 4, marginTop: 12, overflow: 'hidden', borderRadius: 2, backgroundColor: '#303630' },
-  conditionBar: { height: '100%', borderRadius: 2, backgroundColor: '#B6F24B' },
+  conditionBar: { height: '100%', borderRadius: 2, backgroundColor: '#F6D365' },
   startButton: {
     minHeight: 68,
     flexDirection: 'row',
@@ -214,10 +237,10 @@ const styles = StyleSheet.create({
     marginTop: 14,
     paddingHorizontal: 19,
     borderRadius: 17,
-    backgroundColor: '#B6F24B',
+    backgroundColor: '#F6D365',
   },
-  startLabel: { color: '#344315', fontSize: 8, fontWeight: '900', letterSpacing: 1.4 },
-  startText: { marginTop: 4, color: '#0B0D0C', fontSize: 16, fontWeight: '900' },
-  startArrow: { color: '#0B0D0C', fontSize: 24, fontWeight: '900' },
+  startLabel: { color: '#514500', fontSize: 8, fontWeight: '700', letterSpacing: 1.4 },
+  startText: { marginTop: 4, color: '#0A0A0A', fontSize: 16, fontWeight: '700' },
+  startArrow: { color: '#0A0A0A', fontSize: 24, fontWeight: '700' },
   previewNote: { marginTop: 13, color: '#59605A', fontSize: 9, textAlign: 'center' },
 });

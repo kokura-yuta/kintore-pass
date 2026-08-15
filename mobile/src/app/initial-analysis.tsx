@@ -81,7 +81,7 @@ export default function InitialAnalysisScreen() {
 
           {status === 'loading' ? (
             <View style={styles.loadingArea}>
-              <ActivityIndicator color="#B6F24B" size="large" />
+              <ActivityIndicator color="#F6D365" size="large" />
               <Text style={styles.loadingTitle}>データを分析しています</Text>
               <Text style={styles.loadingText}>目標とトレーニング条件を整理しています…</Text>
             </View>
@@ -139,34 +139,34 @@ function SummaryRow({ label, value, withBorder = true }: { label: string; value:
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#0B0D0C' },
+  screen: { flex: 1, backgroundColor: '#0A0A0A' },
   safeArea: { flex: 1 },
   content: { flexGrow: 1, paddingHorizontal: 20, paddingTop: 18, paddingBottom: 46 },
   header: { flexDirection: 'row', justifyContent: 'space-between' },
-  eyebrow: { color: '#B6F24B', fontSize: 11, fontWeight: '800', letterSpacing: 1.6 },
-  step: { color: '#737B75', fontSize: 11, fontWeight: '800', letterSpacing: 1.2 },
-  title: { marginTop: 24, color: '#F4F6F3', fontSize: 31, fontWeight: '900' },
+  eyebrow: { color: '#FFF1B8', fontSize: 11, fontWeight: '600', letterSpacing: 1.6 },
+  step: { color: '#737B75', fontSize: 11, fontWeight: '600', letterSpacing: 1.2 },
+  title: { fontFamily: 'Yu Mincho', marginTop: 24, color: '#F4F6F3', fontSize: 31, fontWeight: '700' },
   lead: { marginTop: 10, color: '#9DA69F', fontSize: 14, lineHeight: 22 },
   card: {
     marginTop: 24,
     padding: 17,
     borderWidth: 1,
-    borderColor: '#2C312D',
+    borderColor: '#303030',
     borderRadius: 17,
-    backgroundColor: '#151816',
+    backgroundColor: '#151515',
   },
-  cardEyebrow: { marginBottom: 6, color: '#B6F24B', fontSize: 10, fontWeight: '900', letterSpacing: 1.4 },
+  cardEyebrow: { marginBottom: 6, color: '#FFF1B8', fontSize: 10, fontWeight: '700', letterSpacing: 1.4 },
   summaryRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     gap: 16,
     paddingVertical: 14,
     borderBottomWidth: 1,
-    borderBottomColor: '#2C312D',
+    borderBottomColor: '#303030',
   },
   lastSummaryRow: { borderBottomWidth: 0, paddingBottom: 2 },
   summaryLabel: { color: '#737B75', fontSize: 12 },
-  summaryValue: { flex: 1, color: '#F4F6F3', fontSize: 12, fontWeight: '800', textAlign: 'right' },
+  summaryValue: { flex: 1, color: '#F4F6F3', fontSize: 12, fontWeight: '600', textAlign: 'right' },
   error: { marginTop: 12, color: '#FF7676', fontSize: 12, lineHeight: 18 },
   primaryButton: {
     minHeight: 54,
@@ -176,30 +176,30 @@ const styles = StyleSheet.create({
     marginTop: 20,
     paddingHorizontal: 18,
     borderRadius: 15,
-    backgroundColor: '#B6F24B',
+    backgroundColor: '#F6D365',
   },
   disabledButton: { opacity: 0.4 },
-  primaryButtonText: { color: '#0B0D0C', fontSize: 15, fontWeight: '900' },
-  primaryArrow: { color: '#0B0D0C', fontSize: 20, fontWeight: '900' },
+  primaryButtonText: { color: '#0A0A0A', fontSize: 15, fontWeight: '700' },
+  primaryArrow: { color: '#0A0A0A', fontSize: 20, fontWeight: '700' },
   textButton: { alignItems: 'center', paddingVertical: 17 },
-  textButtonLabel: { color: '#B6F24B', fontSize: 13, fontWeight: '800' },
+  textButtonLabel: { color: '#FFF1B8', fontSize: 13, fontWeight: '600' },
   loadingArea: { flex: 1, alignItems: 'center', justifyContent: 'center', minHeight: 540 },
-  loadingTitle: { marginTop: 22, color: '#F4F6F3', fontSize: 23, fontWeight: '900' },
+  loadingTitle: { fontFamily: 'Yu Mincho', marginTop: 22, color: '#F4F6F3', fontSize: 23, fontWeight: '700' },
   loadingText: { marginTop: 10, color: '#737B75', fontSize: 13 },
-  resultEyebrow: { marginTop: 24, color: '#B6F24B', fontSize: 11, fontWeight: '900', letterSpacing: 1.4 },
+  resultEyebrow: { marginTop: 24, color: '#FFF1B8', fontSize: 11, fontWeight: '700', letterSpacing: 1.4 },
   metricRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 24 },
   adviceCard: {
     marginTop: 14,
     padding: 17,
     borderWidth: 1,
-    borderColor: '#2C312D',
+    borderColor: '#303030',
     borderRadius: 16,
-    backgroundColor: '#151816',
+    backgroundColor: '#151515',
   },
-  adviceNumber: { color: '#B6F24B', fontSize: 10, fontWeight: '900', letterSpacing: 1.2 },
-  adviceTitle: { marginTop: 8, color: '#F4F6F3', fontSize: 16, fontWeight: '900' },
+  adviceNumber: { color: '#FFF1B8', fontSize: 10, fontWeight: '700', letterSpacing: 1.2 },
+  adviceTitle: { marginTop: 8, color: '#F4F6F3', fontSize: 16, fontWeight: '700' },
   adviceText: { marginTop: 8, color: '#9DA69F', fontSize: 13, lineHeight: 21 },
-  previewNotice: { marginTop: 15, padding: 14, borderRadius: 13, backgroundColor: '#20251F' },
-  previewNoticeTitle: { color: '#B6F24B', fontSize: 11, fontWeight: '900' },
+  previewNotice: { marginTop: 15, padding: 14, borderRadius: 13, backgroundColor: '#222222' },
+  previewNoticeTitle: { color: '#FFF1B8', fontSize: 11, fontWeight: '700' },
   previewNoticeText: { marginTop: 5, color: '#899189', fontSize: 11, lineHeight: 17 },
 });

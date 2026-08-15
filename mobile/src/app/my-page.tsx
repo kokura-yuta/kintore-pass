@@ -128,7 +128,7 @@ export default function MyPageScreen() {
 
             {savedMessage ? <Text style={styles.success}>{savedMessage}</Text> : null}
             <Pressable disabled={isSaving} onPress={saveProfile} style={[styles.saveButton, isSaving && styles.disabledButton]}>
-              {isSaving ? <ActivityIndicator color="#0B0D0C" /> : <Text style={styles.saveText}>プロフィールを保存</Text>}
+              {isSaving ? <ActivityIndicator color="#0A0A0A" /> : <Text style={styles.saveText}>プロフィールを保存</Text>}
             </Pressable>
             <Text style={styles.previewNote}>現在はフロントエンド内の仮保存です。プロフィールAPI接続後にサーバー保存へ切り替えます。</Text>
           </ScrollView>
@@ -152,35 +152,35 @@ function OptionChip({ label, onPress, selected }: { label: string; onPress: () =
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#0B0D0C' },
+  screen: { flex: 1, backgroundColor: '#0A0A0A' },
   safeArea: { flex: 1 },
   content: { paddingHorizontal: 18, paddingTop: 17, paddingBottom: 30 },
-  eyebrow: { color: '#B6F24B', fontSize: 9, fontWeight: '900', letterSpacing: 1.5 },
-  title: { marginTop: 5, color: '#F4F6F3', fontSize: 29, fontWeight: '900' },
+  eyebrow: { color: '#FFF1B8', fontSize: 9, fontWeight: '700', letterSpacing: 1.5 },
+  title: { fontFamily: 'Yu Mincho', marginTop: 5, color: '#F4F6F3', fontSize: 29, fontWeight: '700' },
   account: { marginTop: 6, color: '#737B75', fontSize: 11 },
   shortcutRow: { flexDirection: 'row', gap: 8, marginTop: 20 },
-  shortcutCard: { flex: 1, minHeight: 72, padding: 11, borderWidth: 1, borderColor: '#2C312D', borderRadius: 14, backgroundColor: '#151816' },
-  shortcutLabel: { color: '#E8EBE8', fontSize: 11, fontWeight: '900' },
-  shortcutValue: { marginTop: 9, color: '#697169', fontSize: 8, fontWeight: '800' },
-  activeShortcut: { color: '#B6F24B' },
-  card: { marginTop: 13, padding: 16, borderWidth: 1, borderColor: '#2C312D', borderRadius: 17, backgroundColor: '#151816' },
+  shortcutCard: { flex: 1, minHeight: 72, padding: 11, borderWidth: 1, borderColor: '#303030', borderRadius: 14, backgroundColor: '#151515' },
+  shortcutLabel: { color: '#E8EBE8', fontSize: 11, fontWeight: '700' },
+  shortcutValue: { marginTop: 9, color: '#697169', fontSize: 8, fontWeight: '600' },
+  activeShortcut: { color: '#FFF1B8' },
+  card: { marginTop: 13, padding: 16, borderWidth: 1, borderColor: '#303030', borderRadius: 17, backgroundColor: '#151515' },
   cardHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  cardTitle: { color: '#F4F6F3', fontSize: 16, fontWeight: '900' },
-  goalValue: { marginTop: 6, color: '#B6F24B', fontSize: 14, fontWeight: '900' },
-  outlineButton: { paddingHorizontal: 14, paddingVertical: 9, borderWidth: 1, borderColor: '#B6F24B', borderRadius: 11 },
-  outlineButtonText: { color: '#B6F24B', fontSize: 11, fontWeight: '900' },
+  cardTitle: { fontFamily: 'Yu Mincho', color: '#F4F6F3', fontSize: 16, fontWeight: '700' },
+  goalValue: { marginTop: 6, color: '#FFF1B8', fontSize: 14, fontWeight: '700' },
+  outlineButton: { paddingHorizontal: 14, paddingVertical: 9, borderWidth: 1, borderColor: '#F6D365', borderRadius: 11 },
+  outlineButtonText: { color: '#FFF1B8', fontSize: 11, fontWeight: '700' },
   measurementRow: { flexDirection: 'row', gap: 10, marginTop: 17 },
   singleField: { marginTop: 17 },
-  optionTitle: { marginTop: 20, color: '#C9CECA', fontSize: 11, fontWeight: '800' },
+  optionTitle: { marginTop: 20, color: '#C9CECA', fontSize: 11, fontWeight: '600' },
   optional: { color: '#697169', fontSize: 9 },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 9 },
-  chip: { minWidth: 55, alignItems: 'center', paddingHorizontal: 12, paddingVertical: 10, borderWidth: 1, borderColor: '#343A35', borderRadius: 20, backgroundColor: '#0B0D0C' },
-  selectedChip: { borderColor: '#B6F24B', backgroundColor: '#B6F24B' },
-  chipText: { color: '#A5ADA7', fontSize: 11, fontWeight: '800' },
-  selectedChipText: { color: '#0B0D0C' },
-  success: { marginTop: 13, color: '#B6F24B', fontSize: 12, fontWeight: '800' },
-  saveButton: { minHeight: 55, alignItems: 'center', justifyContent: 'center', marginTop: 14, borderRadius: 15, backgroundColor: '#B6F24B' },
+  chip: { minWidth: 55, alignItems: 'center', paddingHorizontal: 12, paddingVertical: 10, borderWidth: 1, borderColor: '#3A3A3A', borderRadius: 20, backgroundColor: '#0A0A0A' },
+  selectedChip: { borderColor: '#F6D365', backgroundColor: '#F6D365' },
+  chipText: { color: '#A5ADA7', fontSize: 11, fontWeight: '600' },
+  selectedChipText: { color: '#0A0A0A' },
+  success: { marginTop: 13, color: '#FFF1B8', fontSize: 12, fontWeight: '600' },
+  saveButton: { minHeight: 55, alignItems: 'center', justifyContent: 'center', marginTop: 14, borderRadius: 15, backgroundColor: '#F6D365' },
   disabledButton: { opacity: 0.5 },
-  saveText: { color: '#0B0D0C', fontSize: 15, fontWeight: '900' },
+  saveText: { color: '#0A0A0A', fontSize: 15, fontWeight: '700' },
   previewNote: { marginTop: 12, color: '#59605A', fontSize: 9, lineHeight: 15, textAlign: 'center' },
 });

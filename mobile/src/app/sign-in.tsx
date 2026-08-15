@@ -221,7 +221,7 @@ export default function SignInScreen() {
               ]}
             >
               {isSubmitting ? (
-                <ActivityIndicator color="#0B0D0C" />
+                <ActivityIndicator color="#0A0A0A" />
               ) : (
                 <Text style={styles.primaryButtonText}>
                   {step === 'email' ? '認証コードを送る' : 'ログインする'}
@@ -244,24 +244,24 @@ export default function SignInScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#0B0D0C' },
+  screen: { flex: 1, backgroundColor: '#0A0A0A' },
   safeArea: { flex: 1 },
   content: { flex: 1, justifyContent: 'center', paddingHorizontal: 24 },
-  eyebrow: { color: '#B6F24B', fontSize: 11, fontWeight: '800', letterSpacing: 1.8 },
-  title: { marginTop: 10, color: '#F4F6F3', fontSize: 38, fontWeight: '900' },
+  eyebrow: { color: '#FFF1B8', fontSize: 11, fontWeight: '600', letterSpacing: 1.8 },
+  title: { fontFamily: 'Yu Mincho', marginTop: 10, color: '#F4F6F3', fontSize: 38, fontWeight: '700' },
   description: { marginTop: 12, color: '#A5ADA7', fontSize: 14, lineHeight: 22 },
   form: { marginTop: 30 },
   input: {
     minHeight: 56,
     paddingHorizontal: 16,
     borderWidth: 1,
-    borderColor: '#343A35',
+    borderColor: '#3A3A3A',
     borderRadius: 14,
-    backgroundColor: '#151816',
+    backgroundColor: '#151515',
     color: '#F4F6F3',
     fontSize: 16,
   },
-  codeInput: { fontSize: 25, fontWeight: '800', letterSpacing: 8, textAlign: 'center' },
+  codeInput: { fontSize: 25, fontWeight: '600', letterSpacing: 8, textAlign: 'center' },
   error: { marginTop: 12, color: '#FF7676', fontSize: 13, lineHeight: 19 },
   captcha: { minHeight: 1, marginTop: 8 },
   primaryButton: {
@@ -270,12 +270,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginTop: 16,
     borderRadius: 14,
-    backgroundColor: '#B6F24B',
+    backgroundColor: '#F6D365',
   },
   disabledButton: { opacity: 0.45 },
   pressedButton: { opacity: 0.8 },
-  primaryButtonText: { color: '#0B0D0C', fontSize: 15, fontWeight: '900' },
+  primaryButtonText: { color: '#0A0A0A', fontSize: 15, fontWeight: '700' },
   textButton: { alignItems: 'center', paddingVertical: 16 },
-  textButtonLabel: { color: '#B6F24B', fontSize: 14, fontWeight: '700' },
+  textButtonLabel: { color: '#FFF1B8', fontSize: 14, fontWeight: '700' },
   note: { marginTop: 24, color: '#697169', fontSize: 12, lineHeight: 18, textAlign: 'center' },
 });

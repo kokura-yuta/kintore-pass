@@ -72,7 +72,7 @@ export default function BootstrapScreen() {
       <SafeAreaView style={styles.safeArea}>
         {status === 'loading' ? (
           <View style={styles.centerContent}>
-            <ActivityIndicator size="large" color="#B6F24B" />
+            <ActivityIndicator size="large" color="#F6D365" />
             <Text style={styles.description}>ユーザー情報を読み込んでいます…</Text>
           </View>
         ) : null}
@@ -119,11 +119,11 @@ export default function BootstrapScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#0B0D0C' },
+  screen: { flex: 1, backgroundColor: '#0A0A0A' },
   safeArea: { flex: 1 },
   centerContent: { flex: 1, justifyContent: 'center', paddingHorizontal: 24 },
-  eyebrow: { color: '#B6F24B', fontSize: 11, fontWeight: '800', letterSpacing: 1.6 },
-  title: { marginTop: 10, color: '#F4F6F3', fontSize: 32, fontWeight: '900' },
+  eyebrow: { color: '#FFF1B8', fontSize: 11, fontWeight: '600', letterSpacing: 1.6 },
+  title: { fontFamily: 'Yu Mincho', marginTop: 10, color: '#F4F6F3', fontSize: 32, fontWeight: '700' },
   description: { marginTop: 14, color: '#9DA69F', fontSize: 14, lineHeight: 22 },
   primaryButton: {
     minHeight: 52,
@@ -131,19 +131,19 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginTop: 24,
     borderRadius: 14,
-    backgroundColor: '#B6F24B',
+    backgroundColor: '#F6D365',
   },
-  primaryButtonText: { color: '#0B0D0C', fontSize: 15, fontWeight: '900' },
+  primaryButtonText: { color: '#0A0A0A', fontSize: 15, fontWeight: '700' },
   developmentButton: {
     minHeight: 52,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 12,
     borderWidth: 1,
-    borderColor: '#B6F24B',
+    borderColor: '#F6D365',
     borderRadius: 14,
   },
-  developmentButtonText: { color: '#B6F24B', fontSize: 14, fontWeight: '900' },
+  developmentButtonText: { color: '#FFF1B8', fontSize: 14, fontWeight: '700' },
   developmentNote: {
     marginTop: 12,
     color: '#697169',

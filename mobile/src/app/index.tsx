@@ -33,7 +33,7 @@ export default function StartScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: '#0B0D0C',
+    backgroundColor: '#0A0A0A',
   },
   safeArea: {
     flex: 1,
@@ -45,7 +45,7 @@ const styles = StyleSheet.create({
   },
   eyebrow: {
     marginBottom: 14,
-    color: '#B6F24B',
+    color: '#FFF1B8',
     fontSize: 11,
     fontWeight: '700',
     letterSpacing: 1.8,
@@ -53,11 +53,11 @@ const styles = StyleSheet.create({
   title: {
     color: '#F4F6F3',
     fontSize: 52,
-    fontWeight: '900',
+    fontWeight: '700',
     letterSpacing: -3,
   },
   accent: {
-    color: '#B6F24B',
+    color: '#FFF1B8',
   },
   message: {
     marginTop: 18,
@@ -79,6 +79,6 @@ const styles = StyleSheet.create({
     width: '70%',
     height: '100%',
     borderRadius: 2,
-    backgroundColor: '#B6F24B',
+    backgroundColor: '#F6D365',
   },
 });

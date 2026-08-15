@@ -43,12 +43,12 @@ export function BottomNavigation() {
 const styles = StyleSheet.create({
   safeArea: {
     borderTopWidth: 1,
-    borderTopColor: '#272C28',
-    backgroundColor: '#111411',
+    borderTopColor: '#2C2924',
+    backgroundColor: '#111111',
   },
   navigation: { height: 64, flexDirection: 'row', alignItems: 'stretch' },
   item: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 4 },
-  icon: { color: '#737B75', fontSize: 19, fontWeight: '800' },
-  label: { color: '#737B75', fontSize: 9, fontWeight: '800' },
-  active: { color: '#B6F24B' },
+  icon: { color: '#737B75', fontSize: 19, fontWeight: '600' },
+  label: { color: '#737B75', fontSize: 9, fontWeight: '600' },
+  active: { color: '#FFF1B8' },
 });

@@ -21,20 +21,20 @@ export function ConfigurationRequiredScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#0B0D0C' },
+  screen: { flex: 1, backgroundColor: '#0A0A0A' },
   safeArea: { flex: 1, justifyContent: 'center', paddingHorizontal: 24 },
-  eyebrow: { color: '#B6F24B', fontSize: 11, fontWeight: '800', letterSpacing: 1.8 },
-  title: { marginTop: 10, color: '#F4F6F3', fontSize: 30, fontWeight: '900' },
+  eyebrow: { color: '#FFF1B8', fontSize: 11, fontWeight: '600', letterSpacing: 1.8 },
+  title: { fontFamily: 'Yu Mincho', marginTop: 10, color: '#F4F6F3', fontSize: 30, fontWeight: '700' },
   description: { marginTop: 14, color: '#9DA69F', fontSize: 14, lineHeight: 22 },
   notice: {
     marginTop: 24,
     padding: 18,
     borderWidth: 1,
-    borderColor: '#2C312D',
+    borderColor: '#303030',
     borderRadius: 14,
     backgroundColor: '#141715',
   },
   noticeLabel: { color: '#9DA69F', fontSize: 11 },
-  code: { marginTop: 8, color: '#B6F24B', fontSize: 12, fontWeight: '700' },
+  code: { marginTop: 8, color: '#FFF1B8', fontSize: 12, fontWeight: '700' },
   warning: { marginTop: 16, color: '#FF8D98', fontSize: 12 },
 });

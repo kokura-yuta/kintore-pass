@@ -7,7 +7,7 @@
     "icon": "./assets/images/icon.png",
     "scheme": "kintorepas",
     "userInterfaceStyle": "dark",
-    "backgroundColor": "#0B0D0C",
+    "backgroundColor": "#0A0A0A",
     "ios": {
       "icon": "./assets/expo.icon",
       "bundleIdentifier": "com.yoshida.kintorepas",
@@ -31,7 +31,7 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#0B0D0C"
+          "backgroundColor": "#0A0A0A"
         }
       ],
       "@clerk/expo",
