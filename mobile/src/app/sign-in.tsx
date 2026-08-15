@@ -1,6 +1,6 @@
 import { useAuth, useSignIn, useSignUp } from '@clerk/expo';
 import { Redirect, useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -47,6 +47,7 @@ export default function SignInScreen() {
   const [code, setCode] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const submissionLock = useRef(false);
 
   if (isAuthLoaded && isSignedIn) {
     return <Redirect href="/bootstrap" />;
@@ -55,7 +56,8 @@ export default function SignInScreen() {
   const isReady = isAuthLoaded && Boolean(signIn) && Boolean(signUp);
 
   async function sendCode() {
-    if (!isReady || !signIn || !signUp) return;
+    // 認証機能が未準備または別の送信処理中なら二重実行しない
+    if (!isReady || !signIn || !signUp || submissionLock.current) return;
 
     const normalizedEmail = email.trim().toLowerCase();
     if (!/^\S+@\S+\.\S+$/.test(normalizedEmail)) {
@@ -63,12 +65,20 @@ export default function SignInScreen() {
       return;
     }
 
+    // Reactの画面更新より先にロックし、Enterとボタンの同時送信を防ぐ
+    submissionLock.current = true;
     setIsSubmitting(true);
     setErrorMessage('');
 
     try {
+      // 前回途中で止まったClerkのログイン・登録状態を消して新しく始める
+      await signIn.reset();
+      await signUp.reset();
+
+      // まず入力されたメールアドレスが登録済みユーザーか確認する
       const createResult = await signIn.create({ identifier: normalizedEmail });
 
+      // 未登録なら新規登録用、登録済みならログイン用の認証コードを送る
       if (createResult.error) {
         if (getErrorCode(createResult.error) !== 'form_identifier_not_found') {
           throw createResult.error;
@@ -91,12 +101,14 @@ export default function SignInScreen() {
     } catch (error) {
       setErrorMessage(getErrorMessage(error as ClerkErrorLike));
     } finally {
+      submissionLock.current = false;
       setIsSubmitting(false);
     }
   }
 
   async function verifyCode() {
-    if (!isReady || !signIn || !signUp) return;
+    // 認証機能が未準備または確認処理中ならコードを二重送信しない
+    if (!isReady || !signIn || !signUp || submissionLock.current) return;
 
     const normalizedCode = code.replace(/\D/g, '');
     if (normalizedCode.length !== 6) {
@@ -104,53 +116,65 @@ export default function SignInScreen() {
       return;
     }
 
+    // コード確認を即座にロックして使用済みコードの再送信を防ぐ
+    submissionLock.current = true;
     setIsSubmitting(true);
     setErrorMessage('');
 
     try {
+      // 新規登録ではsignUp側でコードを確認し、ユーザーとセッションを作成する
       if (authMode === 'sign-up') {
-        const verifyResult = await signUp.verifications.verifyEmailCode({ code: normalizedCode });
+        const verifyResult = await signUp.verifications.verifyEmailCode({
+          code: normalizedCode,
+        });
         if (verifyResult.error) throw verifyResult.error;
+
+        if (signUp.status !== 'complete' || !signUp.createdSessionId) {
+          throw new Error('新規登録を完了できませんでした。もう一度お試しください。');
+        }
 
         const finalizeResult = await signUp.finalize();
         if (finalizeResult.error) throw finalizeResult.error;
       } else {
+        // 登録済みユーザーではsignIn側でコードを確認してセッションを作成する
         const verifyResult = await signIn.emailCode.verifyCode({ code: normalizedCode });
-        if (verifyResult.error) {
-          if (getErrorCode(verifyResult.error) !== 'sign_up_if_missing_transfer') {
-            throw verifyResult.error;
-          }
+        if (verifyResult.error) throw verifyResult.error;
 
-          const transferResult = await signUp.create({ transfer: true });
-          if (transferResult.error) throw transferResult.error;
-
-          const finalizeSignUpResult = await signUp.finalize();
-          if (finalizeSignUpResult.error) throw finalizeSignUpResult.error;
-        } else {
-          if (signIn.status !== 'complete') {
-            throw new Error('ログインを完了できませんでした。もう一度お試しください。');
-          }
-
-          const finalizeResult = await signIn.finalize();
-          if (finalizeResult.error) throw finalizeResult.error;
+        if (signIn.status !== 'complete') {
+          throw new Error('ログインを完了できませんでした。もう一度お試しください。');
         }
+
+        // 確認済みログインを有効なClerkセッションとして確定する
+        const finalizeResult = await signIn.finalize();
+        if (finalizeResult.error) throw finalizeResult.error;
       }
 
       router.replace('/bootstrap');
     } catch (error) {
       setErrorMessage(getErrorMessage(error as ClerkErrorLike));
     } finally {
+      submissionLock.current = false;
       setIsSubmitting(false);
     }
   }
 
-  function changeEmail() {
+  async function changeEmail() {
+    if (!signIn || !signUp || submissionLock.current) return;
+
+    submissionLock.current = true;
+    setIsSubmitting(true);
     setStep('email');
-    setAuthMode('sign-in');
     setCode('');
     setErrorMessage('');
-    void signIn?.reset();
-    void signUp?.reset();
+
+    try {
+      // メール入力へ戻る前に現在のClerk認証状態を完全に消す
+      await signIn.reset();
+      await signUp.reset();
+    } finally {
+      submissionLock.current = false;
+      setIsSubmitting(false);
+    }
   }
 
   return (

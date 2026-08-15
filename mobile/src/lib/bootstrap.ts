@@ -6,8 +6,8 @@ export type BootstrapResponse = {
 };
 
 export function fetchBootstrap(token: string) {
-  return apiRequest<BootstrapResponse>('/api/bootstrap', {
-    method: 'GET',
+  return apiRequest<BootstrapResponse>('/api/users/bootstrap', {
+    method: 'POST',
     token,
   });
 }

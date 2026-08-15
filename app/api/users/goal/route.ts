@@ -1,9 +1,9 @@
 // TypeScriptで認証済みユーザーが選んだ理想体型をNeon PostgreSQLへ保存するAPI
-// ログイン中のメールアドレスと一致するユーザーだけを更新する比較機能
+// 検証済みのClerkユーザーIDと一致するユーザーだけを更新する比較機能
 import { eq } from "drizzle-orm";
 
 // 認証情報・DB接続・usersテーブルを理想体型の保存処理で使えるようにする場所
-import { getChatGPTUser } from "@/app/chatgpt-auth";
+import { getClerkUserId } from "@/app/lib/auth/clerk-auth";
 import { getDb } from "@/db";
 import { users } from "@/db/schema";
 
@@ -19,11 +19,12 @@ const allowedGoalBodyTypes = [
 export async function PATCH(request: Request) {
   // 認証・JSON読取・DB更新で発生するエラーをまとめて捕まえる
   try {
-    // サーバー側で確認されたログイン中のユーザー情報を取得する
-    const authenticatedUser = await getChatGPTUser();
+    // リクエストのClerkトークンを検証してログイン中のユーザーIDを取得する
+    const clerkUserId =
+      await getClerkUserId(request);
 
-    // 認証情報がない場合はDBを操作せずHTTP 401を返す
-    if (!authenticatedUser) {
+    // ClerkユーザーIDを取得できなければDBを操作せずHTTP 401を返す
+    if (!clerkUserId) {
       return Response.json(
         { error: "ログインが必要です。" },
         { status: 401 },
@@ -54,7 +55,7 @@ export async function PATCH(request: Request) {
     // Neon PostgreSQLを操作する共通のDB接続を取得する
     const db = getDb();
 
-    // ログイン中のユーザーだけを対象に理想体型と更新日時を変更する
+    // ClerkユーザーIDが一致する本人だけの理想体型と更新日時を変更する
     const updatedUsers = await db
       .update(users)
       .set({
@@ -63,8 +64,8 @@ export async function PATCH(request: Request) {
       })
       .where(
         eq(
-          users.email,
-          authenticatedUser.email,
+          users.clerkUserId,
+          clerkUserId,
         ),
       )
       .returning();

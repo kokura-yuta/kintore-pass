@@ -14,6 +14,10 @@ export const users = pgTable("users", {
   // ユーザーを重複なく識別するためのID
   id: uuid("id").defaultRandom().primaryKey(),
 
+  // ClerkのログインユーザーとNeon内のユーザーを重複なく結び付けるID
+  clerkUserId: text("clerk_user_id")
+    .unique(),
+
   // ログイン中のユーザーとDB内のデータを結び付ける認証情報
   email: text("email").notNull().unique(),
 
@@ -102,6 +106,147 @@ export const userProfiles = pgTable(
       .defaultNow(),
 
     updatedAt: timestamp("updated_at", {
+      withTimezone: true,
+    })
+      .notNull()
+      .defaultNow(),
+  },
+);
+
+// 1回分のトレーニング日時・時間・調子・メモをユーザーごとに保存するテーブル
+export const trainingSessions = pgTable("training_sessions", {
+  id: uuid("id").defaultRandom().primaryKey(),
+
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => users.id, {
+      onDelete: "cascade",
+    }),
+
+  performedAt: timestamp("performed_at", {
+    withTimezone: true,
+  })
+    .notNull()
+    .defaultNow(),
+
+  durationMinutes: integer("duration_minutes"),
+
+  conditionScore: integer("condition_score"),
+
+  memo: text("memo"),
+
+  createdAt: timestamp("created_at", {
+    withTimezone: true,
+  })
+    .notNull()
+    .defaultNow(),
+});
+
+// 1回のトレーニングで実施した種目をtrainingSessionsと結び付けて保存するテーブル
+export const trainingExercises = pgTable("training_exercises", {
+  id: uuid("id").defaultRandom().primaryKey(),
+
+  sessionId: uuid("session_id")
+    .notNull()
+    .references(() => trainingSessions.id, {
+      onDelete: "cascade",
+    }),
+
+  exerciseId: text("exercise_id").notNull(),
+
+  exerciseName: text("exercise_name").notNull(),
+
+  bodyPart: text("body_part").notNull(),
+
+  bodyArea: text("body_area"),
+
+  displayOrder: integer("display_order")
+    .notNull()
+    .default(0),
+
+  createdAt: timestamp("created_at", {
+    withTimezone: true,
+  })
+    .notNull()
+    .defaultNow(),
+});
+
+// 各種目で行ったセット番号・重量・回数をtrainingExercisesと結び付けて保存するテーブル
+export const trainingSets = pgTable("training_sets", {
+  id: uuid("id").defaultRandom().primaryKey(),
+
+  trainingExerciseId: uuid("training_exercise_id")
+    .notNull()
+    .references(() => trainingExercises.id, {
+      onDelete: "cascade",
+    }),
+
+  setNumber: integer("set_number").notNull(),
+
+  weightKg: real("weight_kg"),
+
+  reps: integer("reps"),
+
+  createdAt: timestamp("created_at", {
+    withTimezone: true,
+  })
+    .notNull()
+    .defaultNow(),
+});
+
+// Pythonによる1回分の身体分析結果をユーザーごとに保存する親テーブル
+export const bodyAnalyses = pgTable("body_analyses", {
+  id: uuid("id").defaultRandom().primaryKey(),
+
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => users.id, {
+      onDelete: "cascade",
+    }),
+
+  status: text("status")
+    .notNull()
+    .default("pending"),
+
+  summary: text("summary"),
+
+  goalDifference: text("goal_difference"),
+
+  analyzedAt: timestamp("analyzed_at", {
+    withTimezone: true,
+  }),
+
+  createdAt: timestamp("created_at", {
+    withTimezone: true,
+  })
+    .notNull()
+    .defaultNow(),
+});
+// 肩・胸・背中など、Pythonが返した部位別の分析結果を保存するテーブル
+export const bodyAnalysisAreas = pgTable(
+  "body_analysis_areas",
+  {
+    id: uuid("id")
+      .defaultRandom()
+      .primaryKey(),
+
+    analysisId: uuid("analysis_id")
+      .notNull()
+      .references(() => bodyAnalyses.id, {
+        onDelete: "cascade",
+      }),
+
+    bodyPart: text("body_part").notNull(),
+
+    score: integer("score"),
+
+    priority: text("priority"),
+
+    observation: text("observation"),
+
+    recommendation: text("recommendation"),
+
+    createdAt: timestamp("created_at", {
       withTimezone: true,
     })
       .notNull()
