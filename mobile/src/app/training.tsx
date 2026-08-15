@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useAuth } from '@clerk/expo';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -8,7 +9,9 @@ import { ExerciseRecordCard, type ExerciseRecord } from '@/components/ExerciseRe
 import { useTrainingDraft } from '@/contexts/TrainingDraftContext';
 import { useTrainingHistory } from '@/contexts/TrainingHistoryContext';
 import { exerciseCatalog, type ExerciseOption } from '@/lib/exerciseCatalog';
+import { ApiError } from '@/lib/api';
 import { previousRecordPreview, type PreviousSetPreview } from '@/lib/previousRecordPreview';
+import { createTrainingRecord } from '@/lib/trainingRecords';
 
 function createRecord(exercise: ExerciseOption): ExerciseRecord {
   return {
@@ -29,6 +32,7 @@ function formatLocalDate(date: Date) {
 }
 
 export default function TrainingScreen() {
+  const { getToken } = useAuth();
   const { draft } = useTrainingDraft();
   const { addRecord } = useTrainingHistory();
   const defaultExercises = ['bench-press', 'incline-dumbbell-press', 'side-raise']
@@ -103,25 +107,53 @@ export default function TrainingScreen() {
     }
     setErrorMessage('');
     setIsSaving(true);
-    await new Promise((resolve) => setTimeout(resolve, 650));
-    addRecord({
-      id: `training-${Date.now()}`,
-      performedOn: trainingDate,
-      menuId: draft?.menuId ?? null,
-      exercises: exercises.map((exercise) => ({
-        exerciseId: exercise.id,
-        name: exercise.name,
-        sets: exercise.sets.map((set) => ({
-          weightKg: set.weightKg || null,
-          reps: set.reps || null,
+    try {
+      const token = await getToken();
+      if (!token) {
+        throw new ApiError('ログインを確認できませんでした。もう一度ログインしてください。', 401);
+      }
+
+      const response = await createTrainingRecord(token, {
+        performedAt: new Date().toISOString(),
+        durationMinutes: trainingMinutes ? Number(trainingMinutes) : null,
+        conditionScore: condition,
+        memo: memo.trim() || null,
+        exercises: exercises.map((exercise, exerciseIndex) => ({
+          exerciseId: exercise.id,
+          exerciseName: exercise.name,
+          bodyPart: exercise.category,
+          bodyArea: null,
+          displayOrder: exerciseIndex,
+          sets: exercise.sets.map((set, setIndex) => ({
+            setNumber: setIndex + 1,
+            weightKg: set.weightKg ? Number(set.weightKg) : null,
+            reps: set.reps ? Number(set.reps) : null,
+          })),
         })),
-      })),
-      trainingMinutes: trainingMinutes ? Number(trainingMinutes) : null,
-      condition,
-      memo: memo.trim() || null,
-    });
-    setIsSaving(false);
-    setSuccessMessage('記録を保存し、カレンダーへ反映しました。');
+      });
+
+      addRecord({
+        id: response.trainingSessionId,
+        performedOn: trainingDate,
+        menuId: draft?.menuId ?? null,
+        exercises: exercises.map((exercise) => ({
+          exerciseId: exercise.id,
+          name: exercise.name,
+          sets: exercise.sets.map((set) => ({
+            weightKg: set.weightKg || null,
+            reps: set.reps || null,
+          })),
+        })),
+        trainingMinutes: trainingMinutes ? Number(trainingMinutes) : null,
+        condition,
+        memo: memo.trim() || null,
+      });
+      setSuccessMessage(`${response.message} カレンダーへ反映しました。`);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : '記録の保存に失敗しました。');
+    } finally {
+      setIsSaving(false);
+    }
   }
 
   return (
@@ -207,7 +239,7 @@ export default function TrainingScreen() {
           <Pressable disabled={isSaving} onPress={saveRecord} style={[styles.saveButton, isSaving && styles.disabledButton]}>
             {isSaving ? <ActivityIndicator color="#0A0A0A" /> : <Text style={styles.saveButtonText}>記録を保存</Text>}
           </Pressable>
-          <Text style={styles.previewNote}>現在は開発用確認です。履歴保存は記録API接続後に有効になります。</Text>
+          <Text style={styles.previewNote}>保存した記録は履歴とカレンダーへ反映されます。</Text>
         </ScrollView>
       </SafeAreaView>
 
