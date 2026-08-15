@@ -10,7 +10,7 @@ import { useTrainingDraft } from '@/contexts/TrainingDraftContext';
 import { useTrainingHistory } from '@/contexts/TrainingHistoryContext';
 import { exerciseCatalog, type ExerciseOption } from '@/lib/exerciseCatalog';
 import { ApiError } from '@/lib/api';
-import { previousRecordPreview, type PreviousSetPreview } from '@/lib/previousRecordPreview';
+import type { PreviousSetPreview } from '@/lib/previousRecordPreview';
 import { createTrainingRecord } from '@/lib/trainingRecords';
 
 function createRecord(exercise: ExerciseOption): ExerciseRecord {
@@ -34,7 +34,7 @@ function formatLocalDate(date: Date) {
 export default function TrainingScreen() {
   const { getToken } = useAuth();
   const { draft } = useTrainingDraft();
-  const { addRecord } = useTrainingHistory();
+  const { addRecord, records } = useTrainingHistory();
   const defaultExercises = ['bench-press', 'incline-dumbbell-press', 'side-raise']
     .map((id) => exerciseCatalog.find((exercise) => exercise.id === id))
     .filter((exercise): exercise is ExerciseOption => Boolean(exercise))
@@ -97,6 +97,18 @@ export default function TrainingScreen() {
       : exercise));
     setErrorMessage('');
     setSuccessMessage('');
+  }
+
+  function getPreviousSets(exerciseId: string): PreviousSetPreview[] | undefined {
+    const previousExercise = records
+      .flatMap((record) => record.exercises)
+      .find((exercise) => exercise.exerciseId === exerciseId);
+    if (!previousExercise) return undefined;
+
+    return previousExercise.sets.map((set) => ({
+      weightKg: set.weightKg ?? '',
+      reps: set.reps ?? '',
+    }));
   }
 
   async function saveRecord() {
@@ -186,8 +198,8 @@ export default function TrainingScreen() {
               onChangeSet={(setId, field, value) => updateSet(index, setId, field, value)}
               onRemove={() => setExercises((current) => current.filter((item) => item.id !== exercise.id))}
               onRemoveSet={(setId) => removeSet(index, setId)}
-              onUsePrevious={() => applyPreviousSets(index, previousRecordPreview[exercise.id] ?? [])}
-              previousSets={previousRecordPreview[exercise.id]}
+              onUsePrevious={() => applyPreviousSets(index, getPreviousSets(exercise.id) ?? [])}
+              previousSets={getPreviousSets(exercise.id)}
             />
           ))}
 

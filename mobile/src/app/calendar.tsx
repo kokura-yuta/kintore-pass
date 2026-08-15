@@ -1,6 +1,6 @@
 import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useTrainingHistory } from '@/contexts/TrainingHistoryContext';
@@ -18,7 +18,7 @@ function todayKey() {
 
 export default function CalendarScreen() {
   const router = useRouter();
-  const { records } = useTrainingHistory();
+  const { errorMessage, isLoading, records, reloadRecords } = useTrainingHistory();
   const today = new Date();
   const [visibleMonth, setVisibleMonth] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
   const [selectedDate, setSelectedDate] = useState(todayKey());
@@ -71,9 +71,17 @@ export default function CalendarScreen() {
           </View>
 
           <Text style={styles.selectedTitle}>{selectedDate.replaceAll('-', '.')} の記録</Text>
-          {selectedRecords.length === 0 ? (
-            <View style={styles.emptyCard}><Text style={styles.emptyTitle}>記録はありません</Text><Text style={styles.emptyText}>トレーニングを保存すると、この日に緑の印が付きます。</Text></View>
-          ) : selectedRecords.map((record, recordIndex) => (
+          {isLoading ? <ActivityIndicator color="#F6D365" style={styles.loading} /> : null}
+          {errorMessage ? (
+            <View style={styles.errorCard}>
+              <Text style={styles.errorText}>{errorMessage}</Text>
+              <Pressable onPress={() => void reloadRecords()}><Text style={styles.retryText}>もう一度読み込む</Text></Pressable>
+            </View>
+          ) : null}
+          {!isLoading && !errorMessage && selectedRecords.length === 0 ? (
+            <View style={styles.emptyCard}><Text style={styles.emptyTitle}>記録はありません</Text><Text style={styles.emptyText}>トレーニングを保存すると、この日に金色の印が付きます。</Text></View>
+          ) : null}
+          {!isLoading && !errorMessage ? selectedRecords.map((record, recordIndex) => (
             <View key={record.id} style={styles.recordCard}>
               <View style={styles.recordHeading}><Text style={styles.recordTitle}>トレーニング {recordIndex + 1}</Text><Text style={styles.recordMeta}>{record.trainingMinutes ? `${record.trainingMinutes}分` : '時間未入力'} ・ 調子 {record.condition ?? '—'}/10</Text></View>
               {record.exercises.map((exercise) => (
@@ -84,8 +92,8 @@ export default function CalendarScreen() {
               ))}
               {record.memo ? <Text style={styles.memo}>メモ：{record.memo}</Text> : null}
             </View>
-          ))}
-          <Text style={styles.previewNote}>現在は起動中のみ保持する確認用データです。API接続後はユーザーごとの履歴を取得します。</Text>
+          )) : null}
+          <Text style={styles.previewNote}>ログイン中のユーザーの保存済み記録を表示しています。</Text>
         </ScrollView>
       </SafeAreaView>
     </View>
@@ -131,4 +139,8 @@ const styles = StyleSheet.create({
   setSummary: { marginTop: 5, color: '#8E978F', fontSize: 9, lineHeight: 14 },
   memo: { marginTop: 12, color: '#A5ADA7', fontSize: 10, lineHeight: 16 },
   previewNote: { marginTop: 14, color: '#59605A', fontSize: 9, lineHeight: 15, textAlign: 'center' },
+  loading: { marginTop: 24 },
+  errorCard: { marginTop: 11, padding: 16, borderWidth: 1, borderColor: '#613535', borderRadius: 16, backgroundColor: '#201414' },
+  errorText: { color: '#FF9696', fontSize: 11, lineHeight: 17 },
+  retryText: { marginTop: 10, color: '#FFF1B8', fontSize: 11, fontWeight: '700' },
 });

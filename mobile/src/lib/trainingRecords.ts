@@ -28,10 +28,37 @@ export type CreateTrainingRecordResponse = {
   trainingSessionId: string;
 };
 
+export type TrainingRecordResponseItem = {
+  id: string;
+  performedAt: string;
+  durationMinutes: number | null;
+  conditionScore: number | null;
+  memo: string | null;
+  exercises: {
+    exerciseName: string;
+    sets: {
+      setNumber: number;
+      weightKg: number | null;
+      reps: number | null;
+    }[];
+  }[];
+};
+
+export type GetTrainingRecordsResponse = {
+  records: TrainingRecordResponseItem[];
+};
+
 export function createTrainingRecord(token: string, input: CreateTrainingRecordInput) {
   return apiRequest<CreateTrainingRecordResponse>('/api/training-records', {
     method: 'POST',
     token,
     body: JSON.stringify(input),
+  });
+}
+
+export function getTrainingRecords(token: string) {
+  return apiRequest<GetTrainingRecordsResponse>('/api/training-records', {
+    method: 'GET',
+    token,
   });
 }
