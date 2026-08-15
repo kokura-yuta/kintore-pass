@@ -5,7 +5,11 @@ export type GeneratedMenuExercise = {
   weightKg: string;
   reps: string;
   setCount: number;
+  source?: 'frequent' | 'recommended';
 };
+
+export type MenuTrainingStyle = 'full-body' | 'split' | 'ai';
+export type MenuBodyPart = '胸' | '背中' | '肩' | '腕' | '脚' | '腹筋';
 
 export type GeneratedMenuPreview = {
   menuId: string;
@@ -58,7 +62,69 @@ const menuVariants: GeneratedMenuPreview[] = [
   },
 ];
 
-export function getMenuPreview(condition: number, generation: number) {
+const fullBodyMenu: GeneratedMenuPreview = {
+  menuId: 'preview-full-body-menu',
+  targetArea: '全身',
+  estimatedMinutes: 65,
+  reason: '全身トレーニング設定に合わせて、胸・背中・脚を中心に一度で主要部位を鍛えられる構成にしました。',
+  advice: '種目数が多いため、各セットで限界まで追い込みすぎず、次の部位へ余力を残しましょう。',
+  exercises: [
+    { exerciseId: 'bench-press', name: 'ベンチプレス', equipment: 'バーベル', weightKg: '60', reps: '8', setCount: 3, source: 'frequent' },
+    { exerciseId: 'lat-pulldown', name: 'ラットプルダウン', equipment: 'ケーブル', weightKg: '45', reps: '10', setCount: 3, source: 'frequent' },
+    { exerciseId: 'leg-press', name: 'レッグプレス', equipment: 'マシン', weightKg: '80', reps: '10', setCount: 3, source: 'recommended' },
+    { exerciseId: 'side-raise', name: 'サイドレイズ', equipment: 'ダンベル', weightKg: '8', reps: '12', setCount: 2, source: 'recommended' },
+  ],
+};
+
+const splitMenus: Record<MenuBodyPart, GeneratedMenuPreview> = {
+  胸: {
+    menuId: 'preview-split-chest', targetArea: '胸', estimatedMinutes: 55,
+    reason: '胸を選択したため、過去によく行っているベンチプレスとインクラインプレスを優先し、補助種目を加えました。',
+    advice: '前回記録を基準に、フォームを保てる範囲で回数または重量を少しだけ伸ばしましょう。',
+    exercises: [
+      { exerciseId: 'bench-press', name: 'ベンチプレス', equipment: 'バーベル', weightKg: '60', reps: '8', setCount: 3, source: 'frequent' },
+      { exerciseId: 'incline-dumbbell-press', name: 'インクラインダンベルプレス', equipment: 'ダンベル', weightKg: '20', reps: '10', setCount: 3, source: 'frequent' },
+      { exerciseId: 'chest-press', name: 'チェストプレス', equipment: 'マシン', weightKg: '40', reps: '12', setCount: 3, source: 'recommended' },
+    ],
+  },
+  背中: { ...menuVariants[1], menuId: 'preview-split-back', targetArea: '背中', exercises: menuVariants[1].exercises.map((exercise, index) => ({ ...exercise, source: index < 2 ? 'frequent' : 'recommended' })) },
+  肩: {
+    menuId: 'preview-split-shoulders', targetArea: '肩', estimatedMinutes: 45, reason: '肩を選択したため、よく行うサイドレイズを軸に前・横・後ろをバランスよく鍛えます。', advice: '肩関節に違和感がある場合は可動域と重量を下げてください。',
+    exercises: [
+      { exerciseId: 'shoulder-press', name: 'ショルダープレス', equipment: 'ダンベル', weightKg: '16', reps: '10', setCount: 3, source: 'frequent' },
+      { exerciseId: 'side-raise', name: 'サイドレイズ', equipment: 'ダンベル', weightKg: '8', reps: '12', setCount: 3, source: 'frequent' },
+      { exerciseId: 'rear-delt-fly', name: 'リアデルトフライ', equipment: 'マシン', weightKg: '20', reps: '12', setCount: 3, source: 'recommended' },
+    ],
+  },
+  腕: {
+    menuId: 'preview-split-arms', targetArea: '腕', estimatedMinutes: 40, reason: '腕を選択したため、上腕二頭筋と上腕三頭筋を交互に鍛える構成です。', advice: '肘を固定し、反動を使わずに動かせる重量を選びましょう。',
+    exercises: [
+      { exerciseId: 'hammer-curl', name: 'ハンマーカール', equipment: 'ダンベル', weightKg: '10', reps: '10', setCount: 3, source: 'frequent' },
+      { exerciseId: 'cable-pushdown', name: 'ケーブルプレスダウン', equipment: 'ケーブル', weightKg: '20', reps: '12', setCount: 3, source: 'frequent' },
+      { exerciseId: 'barbell-curl', name: 'バーベルカール', equipment: 'バーベル', weightKg: '20', reps: '10', setCount: 3, source: 'recommended' },
+    ],
+  },
+  脚: {
+    menuId: 'preview-split-legs', targetArea: '脚', estimatedMinutes: 60, reason: '脚を選択したため、太ももの前後とふくらはぎをまとめて鍛えます。', advice: '膝とつま先の向きを揃え、深さよりも安定したフォームを優先してください。',
+    exercises: [
+      { exerciseId: 'squat', name: 'バックスクワット', equipment: 'バーベル', weightKg: '60', reps: '8', setCount: 3, source: 'frequent' },
+      { exerciseId: 'leg-press', name: 'レッグプレス', equipment: 'マシン', weightKg: '80', reps: '10', setCount: 3, source: 'frequent' },
+      { exerciseId: 'leg-curl', name: 'レッグカール', equipment: 'マシン', weightKg: '30', reps: '12', setCount: 3, source: 'recommended' },
+    ],
+  },
+  腹筋: {
+    menuId: 'preview-split-abs', targetArea: '腹筋', estimatedMinutes: 30, reason: '腹筋を選択したため、曲げる動きと姿勢を保つ動きを組み合わせます。', advice: '腰が反らない範囲で行い、呼吸を止めないようにしてください。',
+    exercises: [
+      { exerciseId: 'crunch', name: 'クランチ', equipment: '自重', weightKg: '', reps: '15', setCount: 3, source: 'frequent' },
+      { exerciseId: 'plank', name: 'プランク', equipment: '自重', weightKg: '', reps: '30', setCount: 3, source: 'frequent' },
+      { exerciseId: 'ab-wheel', name: 'アブローラー', equipment: 'アブローラー', weightKg: '', reps: '8', setCount: 3, source: 'recommended' },
+    ],
+  },
+};
+
+export function getMenuPreview(condition: number, generation: number, style: MenuTrainingStyle = 'ai', bodyPart: MenuBodyPart | null = null) {
   if (condition <= 4) return menuVariants[2];
+  if (style === 'full-body') return fullBodyMenu;
+  if (style === 'split' && bodyPart) return splitMenus[bodyPart];
   return menuVariants[generation % 2];
 }

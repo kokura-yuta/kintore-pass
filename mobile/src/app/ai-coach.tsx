@@ -4,6 +4,7 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { BottomNavigation } from '@/components/BottomNavigation';
+import { useOnboarding } from '@/contexts/OnboardingContext';
 import { useTrainingDraft } from '@/contexts/TrainingDraftContext';
 import { getMenuPreview, type GeneratedMenuPreview } from '@/lib/aiMenuPreview';
 
@@ -11,27 +12,33 @@ type GenerationStatus = 'condition' | 'loading' | 'result';
 
 export default function AiCoachScreen() {
   const router = useRouter();
-  const { setDraft, setLatestGeneratedMenu } = useTrainingDraft();
+  const { profile } = useOnboarding();
+  const { setDraft, setLatestGeneratedMenu, todayBodyPart } = useTrainingDraft();
   const [condition, setCondition] = useState<number | null>(null);
   const [generation, setGeneration] = useState(0);
   const [status, setStatus] = useState<GenerationStatus>('condition');
   const [menu, setMenu] = useState<GeneratedMenuPreview | null>(null);
   const [error, setError] = useState('');
+  const trainingStyle = profile.trainingStyle ?? 'ai';
 
   useEffect(() => {
     if (status !== 'loading' || !condition) return;
     const timer = setTimeout(() => {
-      const generatedMenu = getMenuPreview(condition, generation);
+      const generatedMenu = getMenuPreview(condition, generation, trainingStyle, todayBodyPart);
       setMenu(generatedMenu);
       setLatestGeneratedMenu({ menu: generatedMenu, condition });
       setStatus('result');
     }, 1400);
     return () => clearTimeout(timer);
-  }, [condition, generation, setLatestGeneratedMenu, status]);
+  }, [condition, generation, setLatestGeneratedMenu, status, todayBodyPart, trainingStyle]);
 
   function generateMenu() {
     if (!condition) {
       setError('今日の調子を1〜10で選択してください。');
+      return;
+    }
+    if (trainingStyle === 'split' && !todayBodyPart) {
+      setError('ホームで今日鍛える部位を選択してください。');
       return;
     }
     setError('');
@@ -82,7 +89,7 @@ export default function AiCoachScreen() {
               <View style={styles.targetCard}><Text style={styles.cardEyebrow}>RECOMMENDED AREA</Text><Text style={styles.targetArea}>{menu.targetArea}</Text><Text style={styles.reason}>{menu.reason}</Text></View>
               <View style={styles.timeRow}><Text style={styles.timeLabel}>推定トレーニング時間</Text><Text style={styles.timeValue}>{menu.estimatedMinutes}<Text style={styles.timeUnit}> 分</Text></Text></View>
               <Text style={styles.sectionTitle}>トレーニング種目</Text>
-              {menu.exercises.map((exercise, index) => <View key={exercise.exerciseId} style={styles.exerciseCard}><View style={styles.exerciseNumber}><Text style={styles.exerciseNumberText}>{String(index + 1).padStart(2, '0')}</Text></View><View style={styles.exerciseCopy}><Text style={styles.exerciseName}>{exercise.name}</Text><Text style={styles.equipment}>{exercise.equipment}</Text></View><View style={styles.prescription}><Text style={styles.prescriptionMain}>{exercise.weightKg ? `${exercise.weightKg}kg` : '自重'}</Text><Text style={styles.prescriptionSub}>{exercise.reps}回 × {exercise.setCount}セット</Text></View></View>)}
+              {menu.exercises.map((exercise, index) => <View key={exercise.exerciseId} style={styles.exerciseCard}><View style={styles.exerciseNumber}><Text style={styles.exerciseNumberText}>{String(index + 1).padStart(2, '0')}</Text></View><View style={styles.exerciseCopy}><View style={styles.exerciseNameRow}><Text style={styles.exerciseName}>{exercise.name}</Text>{exercise.source ? <View style={exercise.source === 'frequent' ? styles.frequentBadge : styles.recommendedBadge}><Text style={styles.sourceText}>{exercise.source === 'frequent' ? 'よく行う' : 'AI推奨'}</Text></View> : null}</View><Text style={styles.equipment}>{exercise.equipment}</Text></View><View style={styles.prescription}><Text style={styles.prescriptionMain}>{exercise.weightKg ? `${exercise.weightKg}kg` : '自重'}</Text><Text style={styles.prescriptionSub}>{exercise.reps}回 × {exercise.setCount}セット</Text></View></View>)}
               <View style={styles.adviceCard}><Text style={styles.adviceTitle}>AIからの注意点</Text><Text style={styles.adviceText}>{menu.advice}</Text></View>
               <Pressable onPress={startMenu} style={styles.primaryButton}><Text style={styles.primaryText}>このメニューで開始</Text><Text style={styles.primaryArrow}>›</Text></Pressable>
               <Pressable onPress={regenerateMenu} style={styles.secondaryButton}><Text style={styles.secondaryText}>メニューを再生成</Text></Pressable>
@@ -104,4 +111,5 @@ const styles = StyleSheet.create({
   primaryButton: { minHeight: 57, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 15, paddingHorizontal: 17, borderRadius: 15, backgroundColor: '#F6D365' }, primaryText: { color: '#0A0A0A', fontSize: 14, fontWeight: '700' }, primaryArrow: { color: '#0A0A0A', fontSize: 27 }, loadingArea: { flex: 1, minHeight: 500, alignItems: 'center', justifyContent: 'center' }, loadingTitle: { fontFamily: 'Yu Mincho', marginTop: 21, color: '#F4F6F3', fontSize: 22, fontWeight: '700' }, loadingText: { marginTop: 9, color: '#737B75', fontSize: 11 },
   targetCard: { marginTop: 19, padding: 17, borderLeftWidth: 3, borderLeftColor: '#F6D365', borderRadius: 16, backgroundColor: '#181818' }, cardEyebrow: { color: '#FFF1B8', fontSize: 8, fontWeight: '700', letterSpacing: 1.3 }, targetArea: { fontFamily: 'Yu Mincho', marginTop: 7, color: '#F4F6F3', fontSize: 22, fontWeight: '700' }, reason: { marginTop: 9, color: '#9DA69F', fontSize: 11, lineHeight: 18 }, timeRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 13, padding: 15, borderWidth: 1, borderColor: '#303030', borderRadius: 15, backgroundColor: '#151515' }, timeLabel: { color: '#8E978F', fontSize: 10, fontWeight: '600' }, timeValue: { color: '#F4F6F3', fontSize: 22, fontWeight: '700' }, timeUnit: { color: '#737B75', fontSize: 9 }, sectionTitle: { marginTop: 21, marginBottom: 10, color: '#F4F6F3', fontSize: 15, fontWeight: '700' },
   exerciseCard: { minHeight: 70, flexDirection: 'row', alignItems: 'center', marginBottom: 8, padding: 12, borderWidth: 1, borderColor: '#303030', borderRadius: 15, backgroundColor: '#151515' }, exerciseNumber: { width: 30, height: 30, alignItems: 'center', justifyContent: 'center', borderRadius: 9, backgroundColor: '#292929' }, exerciseNumberText: { color: '#FFF1B8', fontSize: 8, fontWeight: '700' }, exerciseCopy: { flex: 1, marginLeft: 10 }, exerciseName: { color: '#E8EBE8', fontSize: 11, fontWeight: '700' }, equipment: { marginTop: 4, color: '#697169', fontSize: 8 }, prescription: { alignItems: 'flex-end' }, prescriptionMain: { color: '#F4F6F3', fontSize: 12, fontWeight: '700' }, prescriptionSub: { marginTop: 4, color: '#8E978F', fontSize: 8 }, adviceCard: { marginTop: 7, padding: 15, borderRadius: 15, backgroundColor: '#222222' }, adviceTitle: { color: '#FFF1B8', fontSize: 10, fontWeight: '700' }, adviceText: { marginTop: 7, color: '#A5ADA7', fontSize: 10, lineHeight: 17 }, secondaryButton: { minHeight: 52, alignItems: 'center', justifyContent: 'center', marginTop: 10, borderWidth: 1, borderColor: '#F6D365', borderRadius: 14 }, secondaryText: { color: '#FFF1B8', fontSize: 12, fontWeight: '700' }, textButton: { alignItems: 'center', paddingVertical: 15 }, textButtonText: { color: '#8E978F', fontSize: 10, fontWeight: '600' }, previewNote: { color: '#59605A', fontSize: 9, lineHeight: 15, textAlign: 'center' },
+  exerciseNameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 }, frequentBadge: { paddingHorizontal: 6, paddingVertical: 3, borderRadius: 8, backgroundColor: '#332B00' }, recommendedBadge: { paddingHorizontal: 6, paddingVertical: 3, borderRadius: 8, backgroundColor: '#292929' }, sourceText: { color: '#FFF1B8', fontSize: 6, fontWeight: '700' },
 });

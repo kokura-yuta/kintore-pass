@@ -8,6 +8,9 @@ import { useOnboarding } from '@/contexts/OnboardingContext';
 import { useTrainingDraft } from '@/contexts/TrainingDraftContext';
 import { getGoalBodyLabel } from '@/lib/initialAnalysisPreview';
 import { homePreview } from '@/lib/homePreview';
+import { getMenuPreview, type MenuBodyPart } from '@/lib/aiMenuPreview';
+
+const selectableBodyParts: MenuBodyPart[] = ['胸', '背中', '肩', '腕', '脚', '腹筋'];
 
 function formatToday() {
   return new Intl.DateTimeFormat('ja-JP', {
@@ -20,8 +23,8 @@ function formatToday() {
 export default function HomeScreen() {
   const router = useRouter();
   const { isLoaded, isSignedIn } = useAuth({ treatPendingAsSignedOut: false });
-  const { goalBody } = useOnboarding();
-  const { latestGeneratedMenu, setDraft } = useTrainingDraft();
+  const { goalBody, profile } = useOnboarding();
+  const { latestGeneratedMenu, setDraft, setLatestGeneratedMenu, setTodayBodyPart, todayBodyPart } = useTrainingDraft();
   const generatedMenu = latestGeneratedMenu?.menu ?? null;
   const displayedExercises = generatedMenu
     ? generatedMenu.exercises.map((exercise) => ({
@@ -57,6 +60,13 @@ export default function HomeScreen() {
     router.push('/training' as Href);
   }
 
+  function selectTodayBodyPart(bodyPart: MenuBodyPart) {
+    const condition = latestGeneratedMenu?.condition ?? homePreview.conditionScore;
+    const menu = getMenuPreview(condition, 0, 'split', bodyPart);
+    setTodayBodyPart(bodyPart);
+    setLatestGeneratedMenu({ menu, condition });
+  }
+
   if (isLoaded && !isSignedIn) {
     return <Redirect href="/sign-in" />;
   }
@@ -75,6 +85,14 @@ export default function HomeScreen() {
               <Text numberOfLines={1} style={styles.goalValue}>{getGoalBodyLabel(goalBody)}</Text>
             </View>
           </View>
+
+          {profile.trainingStyle === 'split' ? (
+            <View style={styles.bodyPartCard}>
+              <View style={styles.bodyPartHeading}><Text style={styles.bodyPartTitle}>今日鍛える部位</Text><Text style={styles.bodyPartHint}>部位別トレーニング</Text></View>
+              <View style={styles.bodyPartRow}>{selectableBodyParts.map((bodyPart) => <Pressable key={bodyPart} onPress={() => selectTodayBodyPart(bodyPart)} style={[styles.bodyPartChip, todayBodyPart === bodyPart && styles.selectedBodyPartChip]}><Text style={[styles.bodyPartText, todayBodyPart === bodyPart && styles.selectedBodyPartText]}>{bodyPart}</Text></Pressable>)}</View>
+              {!todayBodyPart ? <Text style={styles.bodyPartNote}>部位を選ぶと、今日のメニューが切り替わります。</Text> : null}
+            </View>
+          ) : null}
 
           <View style={styles.coachCard}>
             <Text style={styles.cardEyebrow}>AI COACH</Text>
@@ -159,6 +177,16 @@ const styles = StyleSheet.create({
   },
   goalLabel: { color: '#737B75', fontSize: 8, fontWeight: '700', letterSpacing: 1.2 },
   goalValue: { marginTop: 2, color: '#E8EBE8', fontSize: 11, fontWeight: '700' },
+  bodyPartCard: { marginTop: 17, padding: 15, borderWidth: 1, borderColor: '#303030', borderRadius: 16, backgroundColor: '#151515' },
+  bodyPartHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  bodyPartTitle: { color: '#F4F6F3', fontSize: 13, fontWeight: '700' },
+  bodyPartHint: { color: '#697169', fontSize: 8, fontWeight: '600' },
+  bodyPartRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 12 },
+  bodyPartChip: { minWidth: 49, alignItems: 'center', paddingHorizontal: 10, paddingVertical: 9, borderWidth: 1, borderColor: '#3A3A3A', borderRadius: 16, backgroundColor: '#0A0A0A' },
+  selectedBodyPartChip: { borderColor: '#F6D365', backgroundColor: '#F6D365' },
+  bodyPartText: { color: '#A5ADA7', fontSize: 10, fontWeight: '600' },
+  selectedBodyPartText: { color: '#0A0A0A' },
+  bodyPartNote: { marginTop: 9, color: '#697169', fontSize: 8 },
   coachCard: {
     marginTop: 22,
     padding: 18,

@@ -6,7 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { BottomNavigation } from '@/components/BottomNavigation';
 import { ProfileNumberField } from '@/components/ProfileNumberField';
-import { type ProfileDraft, type TrainingLocation, useOnboarding } from '@/contexts/OnboardingContext';
+import { type ProfileDraft, type TrainingLocation, type TrainingStyle, useOnboarding } from '@/contexts/OnboardingContext';
 import { getGoalBodyLabel } from '@/lib/initialAnalysisPreview';
 
 const locations: { value: TrainingLocation; label: string }[] = [
@@ -17,8 +17,13 @@ const locations: { value: TrainingLocation; label: string }[] = [
 const weeklyOptions = [1, 2, 3, 4, 5, 6, 7];
 const minuteOptions = [20, 30, 45, 60, 90, 120, 150, 180];
 const weakPartOptions = ['胸', '背中', '肩', '腕', '脚', '腹筋'];
+const trainingStyleOptions: { value: TrainingStyle; label: string }[] = [
+  { value: 'full-body', label: '全身' },
+  { value: 'split', label: '部位別' },
+  { value: 'ai', label: 'AIにおまかせ' },
+];
 
-type Errors = Partial<Record<'heightCm' | 'weightKg' | 'bodyFatPercentage', string>>;
+type Errors = Partial<Record<'heightCm' | 'weightKg' | 'bodyFatPercentage' | 'trainingStyle', string>>;
 
 export default function MyPageScreen() {
   const router = useRouter();
@@ -35,6 +40,7 @@ export default function MyPageScreen() {
     if (field === 'heightCm' || field === 'weightKg' || field === 'bodyFatPercentage') {
       setErrors((current) => ({ ...current, [field]: undefined }));
     }
+    if (field === 'trainingStyle') setErrors((current) => ({ ...current, trainingStyle: undefined }));
   }
 
   function toggleWeakPart(bodyPart: string) {
@@ -54,6 +60,7 @@ export default function MyPageScreen() {
     if (!form.weightKg) nextErrors.weightKg = '体重を入力してください。';
     else if (weight < 30 || weight > 300) nextErrors.weightKg = '30〜300kgで入力してください。';
     if (form.bodyFatPercentage && (bodyFat < 2 || bodyFat > 70)) nextErrors.bodyFatPercentage = '2〜70%で入力してください。';
+    if (!form.trainingStyle) nextErrors.trainingStyle = 'トレーニング形式を選択してください。';
 
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return;
@@ -109,6 +116,12 @@ export default function MyPageScreen() {
               <View style={styles.chipRow}>
                 {locations.map((location) => <OptionChip key={location.value} label={location.label} onPress={() => updateField('trainingLocation', location.value)} selected={form.trainingLocation === location.value} />)}
               </View>
+
+              <OptionTitle label="トレーニング形式" />
+              <View style={styles.chipRow}>
+                {trainingStyleOptions.map((style) => <OptionChip key={style.value} label={style.label} onPress={() => updateField('trainingStyle', style.value)} selected={form.trainingStyle === style.value} />)}
+              </View>
+              {errors.trainingStyle ? <Text style={styles.fieldError}>{errors.trainingStyle}</Text> : null}
 
               <OptionTitle label="週にできる回数" optional />
               <View style={styles.chipRow}>
@@ -173,6 +186,7 @@ const styles = StyleSheet.create({
   singleField: { marginTop: 17 },
   optionTitle: { marginTop: 20, color: '#C9CECA', fontSize: 11, fontWeight: '600' },
   optional: { color: '#697169', fontSize: 9 },
+  fieldError: { marginTop: 7, color: '#FF7676', fontSize: 10 },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 9 },
   chip: { minWidth: 55, alignItems: 'center', paddingHorizontal: 12, paddingVertical: 10, borderWidth: 1, borderColor: '#3A3A3A', borderRadius: 20, backgroundColor: '#0A0A0A' },
   selectedChip: { borderColor: '#F6D365', backgroundColor: '#F6D365' },

@@ -5,6 +5,7 @@ export type GoalBodySelection =
   | { kind: 'custom-image'; imageUri: string; fileName: string | null };
 
 export type TrainingLocation = 'home' | 'gym' | 'both';
+export type TrainingStyle = 'full-body' | 'split' | 'ai';
 
 export type ProfileDraft = {
   heightCm: string;
@@ -13,6 +14,7 @@ export type ProfileDraft = {
   weeklyTrainingDays: number | null;
   availableMinutes: number | null;
   trainingLocation: TrainingLocation | null;
+  trainingStyle: TrainingStyle | null;
   weakBodyParts: string[];
 };
 
@@ -23,6 +25,7 @@ const initialProfile: ProfileDraft = {
   weeklyTrainingDays: null,
   availableMinutes: null,
   trainingLocation: null,
+  trainingStyle: null,
   weakBodyParts: [],
 };
 

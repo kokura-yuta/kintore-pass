@@ -15,6 +15,7 @@ import { ProfileNumberField } from '@/components/ProfileNumberField';
 import {
   type ProfileDraft,
   type TrainingLocation,
+  type TrainingStyle,
   useOnboarding,
 } from '@/contexts/OnboardingContext';
 
@@ -27,8 +28,13 @@ const locations: { value: TrainingLocation; label: string; description: string }
 const weeklyOptions = [1, 2, 3, 4, 5, 6, 7];
 const minuteOptions = [20, 30, 45, 60, 90, 120, 150, 180];
 const weakPartOptions = ['胸', '背中', '肩', '腕', '脚', '腹筋'];
+const trainingStyleOptions: { value: TrainingStyle; label: string }[] = [
+  { value: 'full-body', label: '全身' },
+  { value: 'split', label: '部位別' },
+  { value: 'ai', label: 'AIにおまかせ' },
+];
 
-type Errors = Partial<Record<'heightCm' | 'weightKg' | 'bodyFatPercentage', string>>;
+type Errors = Partial<Record<'heightCm' | 'weightKg' | 'bodyFatPercentage' | 'trainingStyle', string>>;
 
 export default function ProfileSetupScreen() {
   const router = useRouter();
@@ -41,6 +47,7 @@ export default function ProfileSetupScreen() {
     if (field === 'heightCm' || field === 'weightKg' || field === 'bodyFatPercentage') {
       setErrors((current) => ({ ...current, [field]: undefined }));
     }
+    if (field === 'trainingStyle') setErrors((current) => ({ ...current, trainingStyle: undefined }));
   }
 
   function toggleWeakPart(bodyPart: string) {
@@ -67,6 +74,7 @@ export default function ProfileSetupScreen() {
     if (form.bodyFatPercentage && (bodyFat < 2 || bodyFat > 70)) {
       nextErrors.bodyFatPercentage = '2〜70%で入力してください。';
     }
+    if (!form.trainingStyle) nextErrors.trainingStyle = 'トレーニング形式を選択してください。';
 
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return;
@@ -168,6 +176,16 @@ export default function ProfileSetupScreen() {
                 <Text style={styles.optionalBadge}>任意</Text>
               </View>
 
+              <Text style={styles.optionLabel}>トレーニング形式 <Text style={styles.requiredText}>必須</Text></Text>
+              <View style={styles.chipRow}>
+                {trainingStyleOptions.map((style) => (
+                  <Pressable key={style.value} onPress={() => updateField('trainingStyle', style.value)} style={[styles.chip, form.trainingStyle === style.value && styles.selectedChip]}>
+                    <Text style={[styles.chipText, form.trainingStyle === style.value && styles.selectedChipText]}>{style.label}</Text>
+                  </Pressable>
+                ))}
+              </View>
+              {errors.trainingStyle ? <Text style={styles.fieldError}>{errors.trainingStyle}</Text> : null}
+
               <Text style={styles.optionLabel}>週にできる回数</Text>
               <View style={styles.chipRow}>
                 {weeklyOptions.map((days) => (
@@ -266,6 +284,8 @@ const styles = StyleSheet.create({
   selectedOptionText: { color: '#0A0A0A' },
   selectedDescription: { color: '#3C433D' },
   optionLabel: { marginTop: 20, color: '#C9CECA', fontSize: 12, fontWeight: '600' },
+  requiredText: { color: '#FFF1B8', fontSize: 9, fontWeight: '700' },
+  fieldError: { marginTop: 7, color: '#FF7676', fontSize: 10 },
   sectionSpacing: { marginTop: 24 },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
   chip: {
