@@ -1,6 +1,6 @@
 import { useAuth, useSignIn, useSignUp } from '@clerk/expo';
 import { Redirect, useRouter } from 'expo-router';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -46,14 +46,23 @@ export default function SignInScreen() {
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [resendWaitSeconds, setResendWaitSeconds] = useState(0);
   const [errorMessage, setErrorMessage] = useState('');
   const submissionLock = useRef(false);
+
+  const isReady = isAuthLoaded && Boolean(signIn) && Boolean(signUp);
+
+  useEffect(() => {
+    if (resendWaitSeconds <= 0) return;
+    const timerId = setInterval(() => {
+      setResendWaitSeconds((current) => Math.max(0, current - 1));
+    }, 1000);
+    return () => clearInterval(timerId);
+  }, [resendWaitSeconds]);
 
   if (isAuthLoaded && isSignedIn) {
     return <Redirect href="/bootstrap" />;
   }
-
-  const isReady = isAuthLoaded && Boolean(signIn) && Boolean(signUp);
 
   async function sendCode() {
     // 認証機能が未準備または別の送信処理中なら二重実行しない
@@ -98,6 +107,31 @@ export default function SignInScreen() {
 
       setEmail(normalizedEmail);
       setStep('code');
+      setResendWaitSeconds(30);
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error as ClerkErrorLike));
+    } finally {
+      submissionLock.current = false;
+      setIsSubmitting(false);
+    }
+  }
+
+  async function resendCode() {
+    if (!isReady || !signIn || !signUp || submissionLock.current || resendWaitSeconds > 0) return;
+
+    submissionLock.current = true;
+    setIsSubmitting(true);
+    setErrorMessage('');
+    try {
+      if (authMode === 'sign-up') {
+        const result = await signUp.verifications.sendEmailCode();
+        if (result.error) throw result.error;
+      } else {
+        const result = await signIn.emailCode.sendCode();
+        if (result.error) throw result.error;
+      }
+      setCode('');
+      setResendWaitSeconds(30);
     } catch (error) {
       setErrorMessage(getErrorMessage(error as ClerkErrorLike));
     } finally {
@@ -254,9 +288,20 @@ export default function SignInScreen() {
             </Pressable>
 
             {step === 'code' ? (
-              <Pressable disabled={isSubmitting} onPress={changeEmail} style={styles.textButton}>
-                <Text style={styles.textButtonLabel}>メールアドレスを変更</Text>
-              </Pressable>
+              <View style={styles.codeActions}>
+                <Pressable
+                  disabled={isSubmitting || resendWaitSeconds > 0}
+                  onPress={resendCode}
+                  style={styles.textButton}
+                >
+                  <Text style={[styles.textButtonLabel, resendWaitSeconds > 0 && styles.disabledText]}>
+                    {resendWaitSeconds > 0 ? `認証コードを再送（${resendWaitSeconds}秒）` : '認証コードを再送'}
+                  </Text>
+                </Pressable>
+                <Pressable disabled={isSubmitting} onPress={changeEmail} style={styles.textButton}>
+                  <Text style={styles.textButtonLabel}>メールアドレスを変更</Text>
+                </Pressable>
+              </View>
             ) : null}
           </View>
 
@@ -301,5 +346,7 @@ const styles = StyleSheet.create({
   primaryButtonText: { color: '#0A0A0A', fontSize: 15, fontWeight: '700' },
   textButton: { alignItems: 'center', paddingVertical: 16 },
   textButtonLabel: { color: '#FFF1B8', fontSize: 14, fontWeight: '700' },
+  codeActions: { marginTop: 2 },
+  disabledText: { color: '#697169' },
   note: { marginTop: 24, color: '#697169', fontSize: 12, lineHeight: 18, textAlign: 'center' },
 });
