@@ -76,7 +76,7 @@ export default function MyPageScreen() {
     <View style={styles.screen}>
       <SafeAreaView edges={['top']} style={styles.safeArea}>
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.safeArea}>
-          <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+          <ScrollView automaticallyAdjustKeyboardInsets contentContainerStyle={styles.content} keyboardDismissMode="interactive" keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
             <Text style={styles.eyebrow}>MY PAGE</Text>
             <Text style={styles.title}>マイページ</Text>
             <Text style={styles.account}>{user?.primaryEmailAddress?.emailAddress ?? 'ログイン中のユーザー'}</Text>

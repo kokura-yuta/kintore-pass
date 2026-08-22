@@ -6,6 +6,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -218,6 +219,13 @@ export default function SignInScreen() {
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           style={styles.content}
         >
+          <ScrollView
+            automaticallyAdjustKeyboardInsets
+            contentContainerStyle={styles.scrollContent}
+            keyboardDismissMode="interactive"
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
           <Text style={styles.eyebrow}>MUSCLE PAS</Text>
           <Text style={styles.title}>{step === 'email' ? 'ログイン' : '認証コード'}</Text>
           <Text style={styles.description}>
@@ -305,7 +313,8 @@ export default function SignInScreen() {
             ) : null}
           </View>
 
-          <Text style={styles.note}>初めての方は認証後にアカウントが作成されます。</Text>
+            <Text style={styles.note}>初めての方は認証後にアカウントが作成されます。</Text>
+          </ScrollView>
         </KeyboardAvoidingView>
       </SafeAreaView>
     </View>
@@ -316,6 +325,7 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#0A0A0A' },
   safeArea: { flex: 1 },
   content: { flex: 1, justifyContent: 'center', paddingHorizontal: 24 },
+  scrollContent: { flexGrow: 1, justifyContent: 'center', paddingVertical: 24 },
   eyebrow: { color: '#FFF1B8', fontSize: 11, fontWeight: '600', letterSpacing: 1.8 },
   title: { marginTop: 10, color: '#F4F6F3', fontSize: 38, fontWeight: '700' },
   description: { marginTop: 12, color: '#A5ADA7', fontSize: 14, lineHeight: 22 },

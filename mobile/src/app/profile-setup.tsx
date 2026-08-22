@@ -91,7 +91,9 @@ export default function ProfileSetupScreen() {
           style={styles.safeArea}
         >
           <ScrollView
+            automaticallyAdjustKeyboardInsets
             contentContainerStyle={styles.content}
+            keyboardDismissMode="interactive"
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
           >

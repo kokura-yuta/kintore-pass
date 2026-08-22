@@ -2,6 +2,7 @@ import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import type { ExerciseOption } from '@/lib/exerciseCatalog';
 import type { PreviousSetPreview } from '@/lib/previousRecordPreview';
+import { sanitizeDecimalInput, sanitizeIntegerInput } from '@/lib/numberInput';
 
 export type SetRecord = {
   id: string;
@@ -66,8 +67,8 @@ export function ExerciseRecordCard({ exercise, index, onAddSet, onChangeSet, onR
           <View style={styles.setColumn}>
             <Text style={styles.setNumber}>{setIndex + 1}</Text>
           </View>
-          <RecordInput onChangeText={(value) => onChangeSet(set.id, 'weightKg', value)} unit="kg" value={set.weightKg} />
-          <RecordInput onChangeText={(value) => onChangeSet(set.id, 'reps', value)} unit="回" value={set.reps} />
+          <RecordInput inputType="decimal" onChangeText={(value) => onChangeSet(set.id, 'weightKg', value)} unit="kg" value={set.weightKg} />
+          <RecordInput inputType="integer" onChangeText={(value) => onChangeSet(set.id, 'reps', value)} unit="回" value={set.reps} />
           <Pressable
             accessibilityLabel={`${setIndex + 1}セット目を削除`}
             disabled={exercise.sets.length === 1}
@@ -86,13 +87,13 @@ export function ExerciseRecordCard({ exercise, index, onAddSet, onChangeSet, onR
   );
 }
 
-function RecordInput({ onChangeText, unit, value }: { onChangeText: (value: string) => void; unit: string; value: string }) {
+function RecordInput({ inputType, onChangeText, unit, value }: { inputType: 'decimal' | 'integer'; onChangeText: (value: string) => void; unit: string; value: string }) {
   return (
     <View style={styles.inputWrap}>
       <TextInput
-        inputMode="decimal"
-        keyboardType="decimal-pad"
-        onChangeText={(text) => onChangeText(text.replace(/[^0-9.]/g, ''))}
+        inputMode={inputType === 'decimal' ? 'decimal' : 'numeric'}
+        keyboardType={inputType === 'decimal' ? 'decimal-pad' : 'number-pad'}
+        onChangeText={(text) => onChangeText(inputType === 'decimal' ? sanitizeDecimalInput(text) : sanitizeIntegerInput(text))}
         placeholder="0"
         placeholderTextColor="#59605A"
         style={styles.input}
