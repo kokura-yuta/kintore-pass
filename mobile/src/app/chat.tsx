@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { BottomNavigation } from '@/components/BottomNavigation';
@@ -78,6 +78,19 @@ export default function ChatScreen() {
     if (resolvedActiveId === id) setActiveId(null);
   }
 
+  function confirmRemoveChat(id: string, title: string) {
+    const message = `「${title}」を削除します。この操作は取り消せません。`;
+    if (Platform.OS === 'web') {
+      if (globalThis.confirm(message)) removeChat(id);
+      return;
+    }
+
+    Alert.alert('チャットを削除しますか？', message, [
+      { text: 'キャンセル', style: 'cancel' },
+      { text: '削除', style: 'destructive', onPress: () => removeChat(id) },
+    ]);
+  }
+
   return (
     <View style={styles.screen}>
       <SafeAreaView edges={['top']} style={styles.safeArea}>
@@ -115,7 +128,7 @@ export default function ChatScreen() {
           <View style={styles.drawerHeader}><Text style={styles.drawerTitle}>チャット履歴</Text><Pressable onPress={() => setDrawerVisible(false)}><Text style={styles.closeText}>×</Text></Pressable></View>
           <Pressable onPress={startNewChat} style={styles.drawerNewButton}><Text style={styles.drawerNewText}>＋ 新しいチャット</Text></Pressable>
           <ScrollView contentContainerStyle={styles.chatList}>
-            {conversations.length === 0 ? <Text style={styles.emptyHistory}>過去のチャットはありません。</Text> : conversations.map((chat) => <View key={chat.id} style={[styles.chatRow, resolvedActiveId === chat.id && styles.activeChatRow]}><Pressable onPress={() => { setActiveId(chat.id); setDrawerVisible(false); }} style={styles.chatSelect}><Text numberOfLines={1} style={styles.chatTitle}>{chat.title}</Text><Text style={styles.chatMeta}>{chat.messages.length}メッセージ</Text></Pressable><Pressable accessibilityLabel={`${chat.title}を削除`} onPress={() => removeChat(chat.id)} style={styles.deleteButton}><Text style={styles.deleteText}>削除</Text></Pressable></View>)}
+            {conversations.length === 0 ? <Text style={styles.emptyHistory}>過去のチャットはありません。</Text> : conversations.map((chat) => <View key={chat.id} style={[styles.chatRow, resolvedActiveId === chat.id && styles.activeChatRow]}><Pressable onPress={() => { setActiveId(chat.id); setDrawerVisible(false); }} style={styles.chatSelect}><Text numberOfLines={1} style={styles.chatTitle}>{chat.title}</Text><Text style={styles.chatMeta}>{chat.messages.length}メッセージ</Text></Pressable><Pressable accessibilityLabel={`${chat.title}を削除`} accessibilityHint="確認後にチャット履歴を削除します" onPress={() => confirmRemoveChat(chat.id, chat.title)} style={styles.deleteButton}><Text style={styles.deleteText}>削除</Text></Pressable></View>)}
           </ScrollView>
           <Text style={styles.drawerNote}>現在は起動中のみ履歴を保持します。</Text>
         </SafeAreaView></View>
