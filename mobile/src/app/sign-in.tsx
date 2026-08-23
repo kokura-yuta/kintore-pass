@@ -1,5 +1,7 @@
-import { useAuth, useSignIn, useSignUp } from '@clerk/expo';
+import { useAuth, useSignIn, useSignUp, useSSO } from '@clerk/expo';
+import * as AuthSession from 'expo-auth-session';
 import { Redirect, useRouter } from 'expo-router';
+import * as WebBrowser from 'expo-web-browser';
 import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -16,6 +18,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 type Step = 'email' | 'code';
 type AuthMode = 'sign-in' | 'sign-up';
+type SocialProvider = 'google' | 'apple';
+
+WebBrowser.maybeCompleteAuthSession();
 
 type ClerkErrorLike = {
   errors?: { code?: string; message?: string; longMessage?: string }[];
@@ -42,12 +47,14 @@ export default function SignInScreen() {
   const { isLoaded: isAuthLoaded, isSignedIn } = useAuth({ treatPendingAsSignedOut: false });
   const { signIn } = useSignIn();
   const { signUp } = useSignUp();
+  const { startSSOFlow } = useSSO();
   const [step, setStep] = useState<Step>('email');
   const [authMode, setAuthMode] = useState<AuthMode>('sign-in');
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [resendWaitSeconds, setResendWaitSeconds] = useState(0);
+  const [socialProvider, setSocialProvider] = useState<SocialProvider | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
   const submissionLock = useRef(false);
 
@@ -113,6 +120,40 @@ export default function SignInScreen() {
       setErrorMessage(getErrorMessage(error as ClerkErrorLike));
     } finally {
       submissionLock.current = false;
+      setIsSubmitting(false);
+    }
+  }
+
+  async function signInWithSocial(provider: SocialProvider) {
+    if (!isReady || submissionLock.current) return;
+
+    submissionLock.current = true;
+    setSocialProvider(provider);
+    setIsSubmitting(true);
+    setErrorMessage('');
+    try {
+      const result = await startSSOFlow({
+        strategy: provider === 'google' ? 'oauth_google' : 'oauth_apple',
+        redirectUrl: Platform.OS === 'web'
+          ? undefined
+          : AuthSession.makeRedirectUri({ scheme: 'kintorepas', path: 'oauth-callback' }),
+      });
+
+      if (result.createdSessionId && result.setActive) {
+        await result.setActive({ session: result.createdSessionId });
+        router.replace('/bootstrap');
+        return;
+      }
+
+      const resultType = result.authSessionResult?.type;
+      if (resultType !== 'cancel' && resultType !== 'dismiss') {
+        setErrorMessage('ログインを完了できませんでした。Clerkのログイン設定を確認してください。');
+      }
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error as ClerkErrorLike));
+    } finally {
+      submissionLock.current = false;
+      setSocialProvider(null);
       setIsSubmitting(false);
     }
   }
@@ -236,6 +277,29 @@ export default function SignInScreen() {
 
           <View style={styles.form}>
             {step === 'email' ? (
+              <>
+                <Pressable
+                  disabled={!isReady || isSubmitting}
+                  onPress={() => signInWithSocial('apple')}
+                  style={[styles.socialButton, styles.appleButton, (!isReady || isSubmitting) && styles.disabledButton]}
+                >
+                  {socialProvider === 'apple' ? <ActivityIndicator color="#0A0A0A" /> : <Text style={styles.appleButtonText}>Appleで続ける</Text>}
+                </Pressable>
+                <Pressable
+                  disabled={!isReady || isSubmitting}
+                  onPress={() => signInWithSocial('google')}
+                  style={[styles.socialButton, styles.googleButton, (!isReady || isSubmitting) && styles.disabledButton]}
+                >
+                  {socialProvider === 'google' ? <ActivityIndicator color="#F4F6F3" /> : <Text style={styles.googleButtonText}>Googleで続ける</Text>}
+                </Pressable>
+                <View style={styles.dividerRow}>
+                  <View style={styles.dividerLine} />
+                  <Text style={styles.dividerText}>またはメール</Text>
+                  <View style={styles.dividerLine} />
+                </View>
+              </>
+            ) : null}
+            {step === 'email' ? (
               <TextInput
                 autoCapitalize="none"
                 autoComplete="email"
@@ -340,6 +404,14 @@ const styles = StyleSheet.create({
     color: '#F4F6F3',
     fontSize: 16,
   },
+  socialButton: { minHeight: 52, alignItems: 'center', justifyContent: 'center', marginBottom: 10, borderRadius: 14 },
+  appleButton: { backgroundColor: '#F4F6F3' },
+  appleButtonText: { color: '#0A0A0A', fontSize: 14, fontWeight: '700' },
+  googleButton: { borderWidth: 1, borderColor: '#3A3A3A', backgroundColor: '#151515' },
+  googleButtonText: { color: '#F4F6F3', fontSize: 14, fontWeight: '700' },
+  dividerRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginVertical: 10 },
+  dividerLine: { flex: 1, height: 1, backgroundColor: '#303030' },
+  dividerText: { color: '#697169', fontSize: 10 },
   codeInput: { fontSize: 25, fontWeight: '600', letterSpacing: 8, textAlign: 'center' },
   error: { marginTop: 12, color: '#FF7676', fontSize: 13, lineHeight: 19 },
   captcha: { minHeight: 1, marginTop: 8 },
