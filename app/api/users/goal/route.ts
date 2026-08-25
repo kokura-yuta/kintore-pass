@@ -15,6 +15,89 @@ const allowedGoalBodyTypes = [
   "バルクアップ",
 ];
 
+// GET通信を受け取り、ログイン中の本人が設定した理想体型を取得する
+export async function GET(
+  request: Request,
+) {
+  // 認証・DB検索中に発生したエラーをまとめて捕まえる
+  try {
+    // リクエストのClerk認証情報からログイン中のユーザーIDを取得する
+    const clerkUserId =
+      await getClerkUserId(request);
+
+    // ログインを確認できなければNeonを操作せず401を返す
+    if (!clerkUserId) {
+      return Response.json(
+        {
+          error: "ログインが必要です。",
+        },
+        {
+          status: 401,
+        },
+      );
+    }
+
+    // 保存済みの理想体型を取得するためにNeonへの接続を取得する
+    const db = getDb();
+
+    // ClerkユーザーIDが一致する本人の理想体型を最大1件取得する
+    const matchedUsers = await db
+      .select({
+        userId: users.id,
+        goalBodyType:
+          users.goalBodyType,
+      })
+      .from(users)
+      .where(
+        eq(
+          users.clerkUserId,
+          clerkUserId,
+        ),
+      )
+      .limit(1);
+
+    // 検索結果の先頭を取り出し、見つからなければnullにする
+    const user =
+      matchedUsers[0] ?? null;
+
+    // Neonに本人が登録されていなければ404を返す
+    if (!user) {
+      return Response.json(
+        {
+          error:
+            "ユーザー情報が見つかりません。",
+        },
+        {
+          status: 404,
+        },
+      );
+    }
+
+    // 保存済みの理想体型をフロントエンドへJSONで返す
+    return Response.json({
+      goalBodyType:
+        user.goalBodyType,
+    });
+  } catch (error) {
+    // 詳しいエラーを開発者用ログへ記録する
+    console.error(
+      "理想体型の取得に失敗しました。",
+      error,
+    );
+
+    // フロントエンドへ安全な共通エラーを返す
+    return Response.json(
+      {
+        error:
+          "理想体型を取得できませんでした。",
+      },
+      {
+        status: 500,
+      },
+    );
+  }
+}
+
 // PATCH通信を受け取り、登録済みユーザーの理想体型を変更する場所
 export async function PATCH(request: Request) {
   // 認証・JSON読取・DB更新で発生するエラーをまとめて捕まえる

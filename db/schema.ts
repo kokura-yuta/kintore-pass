@@ -1,6 +1,7 @@
 // PostgreSQLへユーザー情報と身体プロフィールを保存するテーブルの型を読み込む場所
 import {
   boolean,
+  index,
   integer,
   pgTable,
   real,
@@ -252,4 +253,163 @@ export const bodyAnalysisAreas = pgTable(
       .notNull()
       .defaultNow(),
   },
+);
+
+// OpenAIが生成した1回分のトレーニングメニューをユーザーごとに保存する親テーブル
+export const aiGeneratedMenus = pgTable(
+  "ai_generated_menus",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, {
+        onDelete: "cascade",
+      }),
+
+    recommendedBodyPart: text(
+      "recommended_body_part",
+    ).notNull(),
+
+    reason: text("reason").notNull(),
+
+    estimatedMinutes: integer(
+      "estimated_minutes",
+    ).notNull(),
+
+    advice: text("advice").array().notNull(),
+
+    conditionScore: integer("condition_score"),
+
+    requestNote: text("request_note"),
+
+    createdAt: timestamp("created_at", {
+      withTimezone: true,
+    })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    // 本人の最新メニューを新しい順で探しやすくする索引
+    index("ai_generated_menus_user_created_idx").on(
+      table.userId,
+      table.createdAt,
+    ),
+  ],
+);
+
+// AIメニューに含まれる種目・重量・回数・セット数を保存する子テーブル
+export const aiGeneratedMenuExercises = pgTable(
+  "ai_generated_menu_exercises",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+
+    menuId: uuid("menu_id")
+      .notNull()
+      .references(() => aiGeneratedMenus.id, {
+        onDelete: "cascade",
+      }),
+
+    exerciseName: text("exercise_name").notNull(),
+
+    bodyPart: text("body_part").notNull(),
+
+    bodyArea: text("body_area"),
+
+    targetWeightKg: real("target_weight_kg"),
+
+    targetReps: text("target_reps").notNull(),
+
+    sets: integer("sets").notNull(),
+
+    restSeconds: integer("rest_seconds").notNull(),
+
+    note: text("note").notNull(),
+
+    displayOrder: integer("display_order")
+      .notNull()
+      .default(0),
+
+    createdAt: timestamp("created_at", {
+      withTimezone: true,
+    })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    // 1つのメニューに属する種目を表示順で取得しやすくする索引
+    index("ai_menu_exercises_menu_order_idx").on(
+      table.menuId,
+      table.displayOrder,
+    ),
+  ],
+);
+
+// ユーザーごとのAIチャットルームを保存する親テーブル
+export const chatConversations = pgTable(
+  "chat_conversations",
+  {
+    id: uuid("id")
+      .defaultRandom()
+      .primaryKey(),
+
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, {
+        onDelete: "cascade",
+      }),
+
+    title: text("title")
+      .notNull()
+      .default("新しい相談"),
+
+    createdAt: timestamp("created_at", {
+      withTimezone: true,
+    })
+      .notNull()
+      .defaultNow(),
+
+    updatedAt: timestamp("updated_at", {
+      withTimezone: true,
+    })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("chat_conversations_user_updated_idx").on(
+      table.userId,
+      table.updatedAt,
+    ),
+  ],
+);
+// チャット内の利用者とAIのメッセージを保存する子テーブル
+export const chatMessages = pgTable(
+  "chat_messages",
+  {
+    id: uuid("id")
+      .defaultRandom()
+      .primaryKey(),
+
+    conversationId: uuid("conversation_id")
+      .notNull()
+      .references(() => chatConversations.id, {
+        onDelete: "cascade",
+      }),
+
+    role: text("role").notNull(),
+
+    content: text("content").notNull(),
+
+    createdAt: timestamp("created_at", {
+      withTimezone: true,
+    })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("chat_messages_conversation_created_idx").on(
+      table.conversationId,
+      table.createdAt,
+    ),
+  ],
 );

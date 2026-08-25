@@ -1,4 +1,4 @@
-# MUSCLE PATH コードガイド
+# MUSCLE PAS コードガイド
 
 このファイルは、**現在のコードがどこで何をしているかを理解するための説明書**です。
 
@@ -36,16 +36,35 @@
 
 | 機能 | 現在の状態 |
 | --- | --- |
-| 理想の体 | 4種類の画像表示、体型選択、localStorage保存、参考画像プレビューまで実装済み |
-| 身体分析 | 表示用カードのみ |
-| トレーニング記録 | 専用画面への遷移、190種目の固定カタログ、詳細部位カード、種目の「もっと見る」まで実装済み |
-| AIメニュー | 表示用カードのみ |
-| ダッシュボード | 表示用カードのみ |
-| AIチャット | 専用画面、入力、会話表示、バックエンド通信、OpenAIへの送信と回答表示まで実装済み |
+| Clerk認証 | メール認証、ログイン判定、未ログイン時の画面移動まで実装済み |
+| 初回設定 | 理想体型、身長・体重などの身体情報、完了状態をNeonへ保存・復元できる |
+| 理想の体 | 4種類の画像選択、参考画像プレビュー、選択結果のNeon保存・取得まで実装済み |
+| 身体分析 | 正面・横・背面画像をRender上のPythonへ送り、OpenAI分析、Neon保存、履歴表示まで実装済み。初回分析は任意 |
+| トレーニング記録 | 部位・詳細部位・種目・重量・回数・セットなどを入力し、本人の記録をNeonへ保存・取得できる |
+| AIメニュー | プロフィール・身体分析・最近の記録を基にOpenAIが生成し、Neonへ保存・再取得できる |
+| AIチャット | OpenAIとの会話、Neonへの保存、4つの本人データ取得Toolまで実通信確認済み。履歴の画面復元は接続中 |
+| Python分析API | Renderへ公開済み。ローカルでPythonサーバーを起動しなくても身体分析できる |
 
 OpenAIの回答は`aiResponse`へ保存し、`output_text`を`reply`としてフロントエンドへ返します。
 
 # 1. ファイル構成
+
+現在のアプリ本体は`mobile/`のExpo・React Native・TypeScriptです。ルートの`app/`は、スマホ版から呼ばれるTypeScriptバックエンドとAPIを担当します。
+
+```text
+mobile/src/app/                 スマホで利用者が見る各画面
+mobile/src/contexts/            複数画面で共有するState
+mobile/src/lib/                 スマホからバックエンドを呼ぶ通信処理
+
+app/api/                        Clerk認証付きTypeScript API
+app/lib/auth/                   Clerkの本人確認を共通化
+app/lib/ai/                     AI用データ、Prompt、Tool実行処理
+db/schema.ts                    Neonへ保存するテーブルの設計図
+
+python-analysis/app/main.py     身体画像を検査してOpenAIへ送るPython API
+```
+
+以下の構成は、開発初期に作ったWeb版プロトタイプの説明です。現在のスマホ版では、同じ役割を`mobile/src/`内のTypeScriptファイルが担当しています。
 
 ```text
 app/
@@ -2689,7 +2708,7 @@ PostgreSQLへ保存するだけではAIの長期記憶になりません。質�
 | `db/index.ts` | APIからNeon PostgreSQLへ接続する共通関数を提供する |
 | `drizzle.config.ts` | Drizzle KitへDB種類・スキーマ・接続先を伝える |
 | `drizzle-postgres/` | PostgreSQL用のテーブル変更履歴を保存する |
-| `app/api/.../route.js` | フロントエンドからの通信を受け取り、DBやAIを操作する |
+| `app/api/.../route.ts` | フロントエンドからの通信を受け取り、本人確認後にDBやAIを操作する |
 | `app/lib/ai/systemPrompt.js` | AIの役割・回答ルール・禁止事項を定義する |
 | `app/lib/auth/clerk-auth.ts` | Clerkトークンを検証し、本人のClerkユーザーIDを取得する |
 
@@ -2710,17 +2729,17 @@ drizzle.config.ts
 | 初回起動判定 | 初回設定が完了しているか返す | 初期化API実装済み・Neon接続テスト成功 |
 | ユーザー管理 | 認証情報とアプリ内ユーザーIDを結び付ける | 検索・新規登録API実装済み・Neon接続テスト成功 |
 | 理想体型 | 選択した目標体型をユーザーごとに保存・取得する | 保存API実装済み・Neon接続テスト成功 |
-| プロフィール | 身長・体重・体脂肪率・可能時間などを保存する | 身長・体重の必須化を設計済み・DB変更と保存APIは作業中 |
-| 身体分析 | 身体データと分析結果を日付付きで保存する | 未実装 |
-| トレーニング記録 | 種目・重量・回数・セット・時間・調子・メモを保存する | 未実装 |
-| 記録履歴 | 日付やユーザーIDで過去記録を取得する | 未実装 |
+| プロフィール | 身長・体重・体脂肪率・可能時間などを保存する | 保存・取得API実装済み。身長・体重のみ必須 |
+| 身体分析 | 3方向の写真をPythonとOpenAIで分析し、結果を日付付きで保存する | Render公開、Neon保存、履歴取得、AI Toolでの利用まで確認済み |
+| トレーニング記録 | 種目・重量・回数・セット・時間・調子・メモを保存する | 保存APIとNeon保存まで実装済み |
+| 記録履歴 | 日付やユーザーIDで過去記録を取得する | 本人の履歴取得とAI Toolでの利用を確認済み |
 | 体重記録 | 日付ごとの体重を保存し、グラフ用データを返す | 未実装 |
-| 画像保存 | 参考画像・身体写真をストレージへ保存する | 未実装 |
-| AIメニュー | 過去記録とプロフィールからメニューを生成・保存する | 未実装 |
-| AIチャット | OpenAIへ質問を送り、回答を返す | 基本通信まで実装済み |
-| チャット履歴 | ルーム・メッセージ・タイトルをユーザーごとに保存する | 未実装 |
-| AI Tool | AIが目標・記録・プロフィールを必要に応じて取得する | 未実装 |
-| 長期記憶 | 過去データを検索してAIへ渡し、回答と履歴を保存する | 未実装 |
+| 画像保存 | 身体写真は分析時に送信できる。本番用画像ストレージへの長期保存は未実装 |
+| AIメニュー | 過去記録とプロフィールからメニューを生成・保存する | OpenAI生成、Neon保存、再取得まで実装済み |
+| AIチャット | OpenAIへ質問を送り、回答を返す | スマホからの実通信とNeon保存を確認済み |
+| チャット履歴 | ルーム・メッセージ・タイトルをユーザーごとに保存する | Neon保存・GET API・アプリ再読み込み後の画面復元まで確認済み |
+| AI Tool | AIが目標・記録・プロフィールを必要に応じて取得する | 4つのToolを実装し、すべて実通信確認済み |
+| 長期記憶 | 過去データを検索してAIへ渡し、回答と履歴を保存する | 直近20件の会話と各機能データをAIへ渡せる。履歴画面の復元も確認済み |
 
 ### AI Toolへ渡す情報の方針
 
@@ -4980,15 +4999,16 @@ return Response.json(
 
 # 13. 現在まだ実装していないこと
 
-- 保存した目標体型を再読み込み後の選択表示へ反映する処理
 - 参考画像の永続保存とサーバーへのアップロード
-- 身体写真のAI分析
-- トレーニング記録の重量・回数・セット入力、保存、履歴表示
-- AIメニュー作成
-- AIが他機能の共通データを取得するTool
-- PostgreSQLの残りのテーブル、保存API、検索処理を使った長期記憶
+- 本番用画像ストレージへ身体写真を保存する処理
+- AI回答のMarkdownをスマホ画面で見やすく表示する処理
+- API利用回数、連続送信、入力文字数などの本番用制限
+- TypeScriptバックエンドの開発用デプロイと公開URLへの切り替え
+- 全機能の実端末通しテストとエラー処理の最終確認
+- App Store用ビルド、プライバシー表示、審査準備
+- 必要に応じた課金機能
 
-次は身長と体重の必須設定を、TypeScript上だけでなくNeon PostgreSQLの実テーブルへ反映します。
+現在の次工程は、AI回答のMarkdown表示と本番用の利用制限です。
 
 ## 12-13. 身長・体重をNeon側でも必須にする
 
@@ -7858,6 +7878,941 @@ Python → TypeScriptバックエンド → Neon → フロントエンド
 - `input_text`：OpenAIへ文章を渡す入力形式
 - `input_image`：OpenAIへ画像を渡す入力形式
 
+## 理想体型を含めた身体分析の動作確認
+
+### 確認した処理の流れ
+
+```text
+Neon
+├─ 理想体型：細マッチョ
+├─ 身長：175cm
+└─ 体重：70kg
+        ↓ TypeScriptバックエンドが取得
+FormData
+├─ goal_body_type
+├─ height_cm
+├─ weight_kg
+├─ front_image
+├─ side_image
+└─ back_image
+        ↓
+Python FastAPI
+        ↓ user_body_contextと画像3枚
+OpenAI
+        ↓ 決められたJSON形式
+Python → TypeScript → Neon保存 → 画面表示
+```
+
+生成した架空人物の正面・横・背面画像を使い、通信全体を確認しました。
+
+分析結果には`理想の「細マッチョ」と比べると`という比較が入り、`goal_body_type`がOpenAIまで届いていることを確認できました。
+
+結果画面への表示と`body_analyses`・`body_analysis_areas`への保存も成功しました。
+
+身体写真そのものはNeonへ保存せず、分析結果の文章と部位別評価だけを保存しています。
+
+### Pythonサーバーを再起動する理由
+
+`main.py`を変更しても、以前から動いているPythonプロセスが古いコードを読み込んだままの場合があります。
+
+その状態では新しく追加した`Form()`や`user_body_context`が実行されず、理想体型が未設定として分析される可能性があります。
+
+サーバーを停止して`uvicorn app.main:app --reload`で起動し直すと、最新の`main.py`が読み込まれます。
+
+`--reload`は、開発中にPythonファイルの変更を検知してサーバーを自動再起動する指定です。
+
+`Address already in use`は、同じ8000番ポートですでに別のPythonサーバーが動いていることを表します。
+
+### テスト結果と1日1回制限
+
+最初の古いコードによる生成画像テスト結果は削除せず、`status`を`test`として保存しました。
+
+本番の1日1回判定は`status = "completed"`の結果だけを数えるため、開発用テストを本番分析として数えないようにしています。
+
+最新コードによる成功結果は`completed`として保存され、同じ日本日付での通常分析はここから制限されます。
+
+### 覚える単語
+
+- プロセス：現在コンピューター上で動いているプログラム
+- ポート：サーバーへ接続するための番号。このPython APIでは8000番
+- `--reload`：ファイル変更時に開発サーバーを自動再起動する指定
+- `status = "test"`：開発用の分析結果であることを区別する状態
+- E2Eテスト：画面からAPI・AI・DB・画面表示まで全体を通して確認するテスト
+
+## AIへ渡す共通データの型
+
+対象ファイルは`app/lib/ai/getUserAiContext.ts`です。
+
+このファイルはOpenAIを直接呼ぶ場所ではなく、Neonに分かれている本人情報をAIが使いやすい1つのデータへまとめる場所です。
+
+`export type UserAiContext`は、AIメニューAPIとAIチャットAPIが共通で使用するデータの設計図です。
+
+`userId: string`は、Neon内で本人を識別する内部IDです。
+
+`goalBodyType: string | null`は、理想体型が文字列または未設定の`null`であることを表します。
+
+`profile: { ... } | null`は、プロフィールが作成済みなら中の身体情報を持ち、未作成なら`null`になることを表します。
+
+身長と体重はプロフィール内では必須なので`number`です。
+
+体脂肪率・週の回数・可能時間・場所・苦手部位は任意入力なので、それぞれの型へ`| null`を付けます。
+
+`weakBodyParts: string[] | null`の`string[]`は、`["胸", "背中"]`のように複数の文字列を持つ配列です。
+
+### 覚える単語
+
+- `type`：データがどんな項目と型を持つか決めるTypeScriptの設計図
+- `export`：別ファイルからもその型や機能を使えるようにする指定
+- `string`：文字列の型
+- `number`：数値の型
+- `string[]`：文字列を複数持つ配列の型
+- `| null`：値が未設定の場合も許可する型
+- ネスト：オブジェクトの中へ別のオブジェクトを入れて情報をまとめる構造
+
+### 最新の身体分析結果の型
+
+`latestBodyAnalysis`は、AIへ渡す最新の身体分析1件を表します。
+
+一度も分析していない利用者もいるため、分析全体へ`| null`を付けます。
+
+`summary`は身体全体の分析、`goalDifference`は理想体型との差です。
+
+`analyzedAt: Date | null`は、分析日時または日時未登録の`null`を表します。
+
+`areas: { ... }[]`は、肩・胸・背中など同じ形の部位別評価を複数持つ配列です。
+
+各部位には、部位名・1〜10の評価・優先度・観察内容・おすすめを入れます。
+
+これによりAIメニューは、最新分析で評価が低い部位や`priority = "high"`の部位を候補として使えます。
+
+### 覚える単語
+
+- `Date`：JavaScript・TypeScriptで日時を扱う型
+- `latest`：最新という意味
+- `areas`：複数の部位別評価をまとめる配列
+- `}[]`：同じオブジェクトの形を複数持つ配列型
+
+### 最近のトレーニング履歴の型
+
+`recentTrainingSessions`は、AIが参考にする最近のトレーニング記録を複数持つ配列です。
+
+履歴がない場合は異常ではないため、`null`ではなく空配列`[]`として扱います。
+
+1回のトレーニングには、実施日時・所要時間・調子・メモを入れます。
+
+その中の`exercises`には、その日に実施した複数の種目を入れます。
+
+さらに各種目の`sets`へ、セット番号・重量・回数を入れます。
+
+```text
+recentTrainingSessions
+└─ 1回のトレーニング
+   ├─ 実施日時・時間・調子・メモ
+   └─ exercises
+      └─ 1種目
+         ├─ 種目名・部位・細分部位
+         └─ sets
+            └─ セット番号・重量・回数
+```
+
+この入れ子構造により、AIは前回鍛えた部位だけでなく、ベンチプレスを何kgで何回行ったかまで確認できます。
+
+### 覚える単語
+
+- `recent`：最近のという意味
+- `session`：1回分のトレーニング記録
+- `exercise`：トレーニング種目
+- `set`：1種目の中で行った重量・回数のまとまり
+- 空配列`[]`：対象データが0件であることを安全に表す配列
+
+## NeonからAI用の本人データを取得する関数
+
+`getUserAiContext(clerkUserId)`は、認証後に取得したClerkユーザーIDを使い、Neonから本人のAI用データを集める非同期関数です。
+
+本人認証そのものは各APIの`route.ts`で行います。
+
+この関数は認証済みのClerk IDを受け取り、そのIDと一致する本人データをNeonから取得します。
+
+```text
+route.ts
+└─ Clerkトークンを検証してClerk IDを取得
+        ↓
+getUserAiContext.ts
+└─ Clerk IDと一致するNeonの本人データを取得
+```
+
+`Promise<UserAiContext | null>`は、非同期処理の完了後に`UserAiContext`または`null`を返すという型です。
+
+`Promise`は非同期処理後の結果、`|`は「または」、`null`は本人が見つからない状態を表します。
+
+`const db = getDb()`は、Drizzleを使ってNeon PostgreSQLを操作する接続を取得します。
+
+`.select({ ... })`は、本人データから必要な列だけを選びます。
+
+`.from(users)`は`users`テーブルを検索の中心にします。
+
+`.leftJoin(userProfiles, ...)`は、プロフィールが未作成でも`users`の本人情報を残しながら身体情報を結合します。
+
+`.where(eq(users.clerkUserId, clerkUserId))`は、認証済みClerk IDと一致する本人だけに絞ります。
+
+`.limit(1)`は取得件数を最大1件にします。
+
+`matchedUsers[0] ?? null`は、検索結果の先頭を取り出し、0件なら`null`へ統一します。
+
+`if (!user) return null`は、本人がNeonに存在しない場合に後続の検索を行わず終了します。
+
+現在の関数末尾にある`return null`は、関数が未完成の間だけTypeScriptエラーを防ぐ仮の返却です。
+
+### 本人認証と本人データ取得の違い
+
+- 本人認証：Clerkトークンが正しいかAPIの`route.ts`で確認する
+- 本人データ取得：認証済みIDと一致する情報をNeonから取得する
+
+この分担により、共通データ取得関数へ認証処理を何度も書く必要がありません。
+
+### 覚える単語
+
+- `async`：`await`を使える非同期関数にする指定
+- `Promise<T>`：非同期処理後に`T`型の結果を返すことを表す型
+- `await`：非同期処理が完了するまで待つ指定
+- 返り値：関数が`return`で呼び出し元へ渡す値
+- `.select()`：DBから取得する列を指定する処理
+- `.where()`：条件に一致するデータへ絞る処理
+- `.limit()`：取得する最大件数を決める処理
+
+### 最新の身体分析を取得するNeon検索
+
+本人検索と身体分析検索は同じDrizzleの基本形を使いますが、対象テーブルと取得内容が異なります。
+
+```text
+users＋user_profiles
+└─ 本人の目標・身体情報
+
+body_analyses
+└─ 本人の最新身体分析
+```
+
+`.from(bodyAnalyses)`は、身体分析全体を保存している`body_analyses`テーブルを検索対象にします。
+
+`and()`は、複数の条件をすべて満たす分析へ絞ります。
+
+1つ目の`eq()`は、分析の`userId`と本人の`userId`が一致することを確認します。
+
+2つ目の`eq()`は、`status`が`completed`の正常に完了した分析だけに絞ります。
+
+`.orderBy(desc(bodyAnalyses.analyzedAt))`は、分析日時を新しい順に並べます。
+
+`.limit(1)`によって、AIが使用する最新分析1件だけを取得します。
+
+`matchedAnalyses[0] ?? null`は、最新分析があれば先頭を取り出し、一度も分析していなければ`null`にします。
+
+### 覚える単語
+
+- `and()`：複数の条件をすべて満たすデータへ絞る
+- `.orderBy()`：取得結果の並び順を決める
+- `desc()`：大きい値・新しい日時から順番に並べる
+- `completed`：正常に処理が完了した分析の状態
+
+### 最新分析の部位別評価を取得する
+
+`body_analyses`には1回分の分析全体が保存され、`body_analysis_areas`には肩・胸・背中などの部位別評価が保存されています。
+
+`latestAnalysis.id`と`bodyAnalysisAreas.analysisId`を一致させることで、最新分析に属する部位だけを取得します。
+
+```text
+body_analyses.id
+        ＝
+body_analysis_areas.analysis_id
+```
+
+`latestAnalysis ? 検索 : []`はTypeScriptの三項演算子です。
+
+最新分析がある場合だけNeonを検索し、分析がない場合は安全な空配列`[]`を使用します。
+
+部位別評価からは、部位名・点数・優先度・観察内容・おすすめを取得します。
+
+これにより、AIは身体全体の文章だけでなく、評価が低い部位や優先度が高い部位を具体的に参照できます。
+
+### 三項演算子の基本形
+
+```ts
+条件 ? 条件が成立した場合 : 成立しない場合
+```
+
+### 覚える単語
+
+- 三項演算子：条件によって使用する値や処理を切り替える書き方
+- `analysisId`：部位別評価がどの分析に属するかを示すID
+- 空配列：対象が0件のときに使う、要素を持たない配列
+
+### 最近10回のトレーニング記録を取得する
+
+`.from(trainingSessions)`は、1回分の実施日時・時間・調子・メモを保存する`training_sessions`テーブルを検索します。
+
+`.where(eq(trainingSessions.userId, user.userId))`は、本人のトレーニング記録だけに絞ります。
+
+`.orderBy(desc(trainingSessions.performedAt))`は、実施日時が新しい順に並べます。
+
+`.limit(10)`は、共通AIデータへ入れる履歴を直近10回に制限します。
+
+過去の全履歴はNeonへ残しますが、毎回AIへ全件を渡すと料金・処理時間・不要な情報が増えるためです。
+
+```text
+Neonには全履歴を保存
+        ↓
+getUserAiContextでは最近10回を取得
+        ↓
+AIは最近のトレーニング傾向を判断
+```
+
+この段階の`recentSessions`には1回分の基本情報だけが入り、種目とセットは後続処理で結び付けます。
+
+### 覚える単語
+
+- `recentSessions`：最近のトレーニング記録を入れる配列
+- `performedAt`：トレーニングを実施した日時
+- `durationMinutes`：トレーニングに使った時間
+- `conditionScore`：その日の調子を表す数値
+- `.limit(10)`：取得結果を最大10件に制限する
+
+### 各トレーニング記録へ種目を追加する
+
+`recentSessions.map(async (session) => ...)`は、最近の記録を1件ずつ取り出し、それぞれに属する種目を検索します。
+
+`.map()`は配列の各要素を順番に処理し、処理後の新しい配列を作るメソッドです。
+
+今回の`session`には、現在処理している1回分のトレーニング記録が入ります。
+
+`eq(trainingExercises.sessionId, session.id)`は、現在のトレーニングIDと一致する種目だけに絞ります。
+
+`.orderBy(trainingExercises.displayOrder)`は、ユーザーが記録した種目順に並べます。
+
+`return { session, exercises }`は、1回分の基本情報とその日に行った種目を1つにまとめます。
+
+`async`を使った`.map()`の結果は、処理途中の`Promise`を複数持つ配列になります。
+
+`Promise.all()`は、そのすべての非同期検索が完了するまで待ち、通常の結果配列としてまとめます。
+
+```text
+recentSessions.map()
+├─ 1件目の種目を検索するPromise
+├─ 2件目の種目を検索するPromise
+└─ 3件目の種目を検索するPromise
+        ↓ Promise.all()
+すべての種目検索が完了した配列
+```
+
+### 覚える単語
+
+- `.map()`：配列の各要素を処理して新しい配列を作る
+- `async (session) =>`：1件ずつ非同期処理するアロー関数
+- `Promise.all()`：複数の非同期処理がすべて完了するまで待つ
+- `displayOrder`：種目を表示・記録した順番
+
+### セット取得を小さな関数へ分ける
+
+`getSetsForExercise(trainingExerciseId)`は、1種目のIDを受け取り、その種目に属するセット番号・重量・回数をNeonから取得します。
+
+長い入れ子処理からセット検索だけを分離することで、関数名を見るだけで目的を判断しやすくなります。
+
+`getDb()`は新しいデータベースを作る処理ではなく、同じ`DATABASE_URL`が示す既存のNeonを操作する接続を取得します。
+
+`.from(trainingSets)`は、Neon内に保存済みの`training_sets`テーブルを検索します。
+
+`eq(trainingSets.trainingExerciseId, trainingExerciseId)`は、関数へ渡された1種目に属するセットだけに絞ります。
+
+`return sets`は、検索したセット配列を呼び出し元へ返します。
+
+```text
+getSetsForExercise(種目ID)
+        ↓
+Neonのtraining_setsを検索
+        ↓
+その種目のセット配列を返す
+```
+
+### 覚える単語
+
+- ヘルパー関数：大きな処理の一部分を担当する小さな関数
+- 引数：関数を呼ぶときに渡す値
+- `return sets`：取得したセット配列を関数の呼び出し元へ返す
+
+### 集めた本人情報をAI用データとして返す
+
+`getUserAiContext()`の最後では、Neonから取得したプロフィール・身体分析・トレーニング履歴を1つのオブジェクトにまとめて返します。
+
+この`return`はOpenAIやフロントへ直接送信する処理ではなく、`getUserAiContext()`を呼び出したAIメニューAPIやAIチャットAPIへ結果を渡す処理です。
+
+- `userId: user.userId`：データが誰のものか識別するためのユーザーIDを入れる
+- `goalBodyType: user.goalBodyType`：細マッチョなど、設定済みの理想体型を入れる
+- `profileId !== null`：本人のプロフィールがNeonに存在するか確認する
+- `heightCm !== null && weightKg !== null`：必須の身長と体重が取得できたか確認する
+- `? { ... } : null`：プロフィールがそろっていれば中身を返し、なければ`null`を返す
+- `...latestAnalysis`：最新分析のID・概要・理想との差・分析日時をまとめて展開する
+- `areas: latestAnalysisAreas`：最新分析へ肩・胸・背中などの部位別評価を追加する
+- `recentTrainingSessions`：最近10回分の種目・重量・回数・セットを入れる
+
+```text
+Neonから本人情報を取得
+        ↓
+getUserAiContext()で1つにまとめる
+        ↓ return
+AIメニューAPIまたはAIチャットAPI
+        ↓
+必要な情報をOpenAIへ送る
+```
+
+`Promise<UserAiContext | null>`は、「成功時は`UserAiContext`形式のデータを返し、ユーザーが見つからない場合は`null`を返す非同期関数」という意味です。
+
+### AIメニューAPIで本人データを取得する
+
+`app/api/ai-menu/route.ts`は、フロントから今日のメニュー生成依頼を受け取るTypeScriptバックエンドの入口です。
+
+- `POST(request: Request)`：フロントから届いたPOST通信を受け取る
+- `getClerkUserId(request)`：通信に含まれるClerk認証情報を検証し、本人のClerkユーザーIDを取得する
+- `if (!clerkUserId)`：本人確認ができなければ、NeonやOpenAIを操作せず処理を止める
+- `status: 401`：ログインが必要であることをフロントへ伝える
+- `getUserAiContext(clerkUserId)`：本人のプロフィール・身体分析・トレーニング履歴をNeonから集める
+- `if (!aiContext)`：Neonに本人情報がなければ処理を止める
+- `status: 404`：必要なユーザー情報が見つからなかったことを伝える
+- `Response.json({ aiContext })`：OpenAI接続前の動作確認として、取得した本人データを一時的にJSONで返す
+- `try`：正常に実行したい認証・データ取得処理を囲む
+- `catch`：途中で起きた予想外のエラーを受け取る
+- `status: 500`：サーバー内部で問題が発生したことを伝える
+
+```text
+フロントからPOST
+        ↓
+Clerkの認証情報を検証
+        ↓
+Neonから本人のaiContextを取得
+        ↓
+現在は確認用JSONを返す
+        ↓
+今後はOpenAIへ渡して生成メニューを返す
+```
+
+ここで行う認証は再ログインではなく、ログイン済みの利用者が送った認証情報をAPI側でも検証し、他人のデータへアクセスさせないための本人確認です。
+
+### Clerkの利用者とNeonの利用者を紐づける仕組み
+
+Clerkのユーザー情報とNeonのユーザー情報を、メールアドレス・名前・プロフィールなどですべて比較しているわけではありません。
+
+Clerkで本人確認したあと、ClerkとNeonの両方に保存されている共通の`clerkUserId`を使って、Neonから本人のデータだけを検索します。
+
+```text
+フロントから認証情報付きの通信
+        ↓
+Clerkが認証情報を検証
+        ↓
+clerkUserId = "user_abc123"を取得
+        ↓
+Neonのusers.clerkUserIdから同じIDを検索
+        ↓
+一致したNeonユーザーの本人データを取得
+```
+
+```ts
+const clerkUserId =
+  await getClerkUserId(request);
+```
+
+このコードは、Clerkが検証したログイン中の本人のIDを取得します。
+
+```ts
+eq(users.clerkUserId, clerkUserId)
+```
+
+このコードは、Neonの`users.clerkUserId`と、Clerkから取得した`clerkUserId`が同じユーザーを検索する条件です。
+
+- Clerk：ログイン・新規登録・認証情報の検証を担当する
+- Neon：プロフィール・身体分析・トレーニング履歴などのアプリデータを保存する
+- `clerkUserId`：Clerkの利用者とNeonの利用者を結ぶ共通の識別番号
+- `eq(A, B)`：AとBが等しいデータだけに検索結果を絞るDrizzleの機能
+
+つまり、「Clerkで本人を確認し、そのClerk IDと一致するNeonユーザーの情報を取得する」という仕組みです。
+
+### AIメニューとAIチャットでのデータ取得方法の違い
+
+AIメニューは毎回必要な情報と返す内容がほぼ決まっているため、`getUserAiContext()`で本人情報を先にまとめ、`aiContext`としてOpenAIへ渡します。
+
+```text
+AIメニュー
+NeonからaiContextをまとめて取得
+        ↓
+OpenAIへ最初から渡す
+        ↓
+今日の部位・種目・重量・回数・セットを生成
+```
+
+AIチャットは利用者の質問によって必要な情報が異なるため、AIが質問内容を判断し、必要なツールだけを選んで実行する構成にします。
+
+```text
+AIチャット
+利用者から質問
+        ↓
+AIが必要な情報を判断
+        ↓
+必要な検索ツールを実行
+        ↓
+取得結果を使って回答
+```
+
+- AIメニュー：決まった本人情報を`aiContext`としてまとめて渡す
+- AIチャット：プロフィール・分析・履歴などを必要なときだけツールで取得する
+- `getUserAiContext()`：OpenAIのToolそのものではなく、AI用の本人情報をまとめるTypeScriptバックエンドの共通関数
+- Tool：AI自身が必要性を判断し、決められた入力でバックエンド機能を呼び出す仕組み
+
+AIチャット用ツールは、共通情報取得、履歴検索、最新分析取得、記録集計、設定変更の順に1つずつ作成します。
+
+### AIメニューをOpenAIへ送り、返信を受け取る
+
+`aiInput`は、`aiContext`からOpenAIの判断に必要な情報だけを選び、送信前の1つのオブジェクトへまとめたものです。
+
+この時点ではまだ送信しておらず、内部ユーザーIDのようにメニュー作成に不要な情報を除外しています。
+
+- `goalBodyType`：利用者の理想体型
+- `profile`：身長・体重・体脂肪率・回数・時間・場所・苦手部位
+- `latestBodyAnalysis`：最新の身体分析と部位別評価
+- `recentTrainingSessions`：最近10回の種目・重量・回数・セット
+
+`JSON.stringify(aiInput, null, 2)`は、TypeScriptのオブジェクトをOpenAIへ送れるJSON文字列へ変換します。
+
+`null`は値を置き換える特別な処理を使わない指定で、`2`は2文字分の字下げを入れてJSONを読みやすくする指定です。
+
+```ts
+const aiResponse =
+  await openai.responses.parse({
+    model: "gpt-5.6-luna",
+    instructions: menuPrompt,
+    input: JSON.stringify(aiInput),
+    text: {
+      format: zodTextFormat(
+        aiMenuSchema,
+        "training_menu",
+      ),
+    },
+  });
+```
+
+- `openai.responses.parse()`：OpenAIへ送信し、決めた形式として回答を受け取る
+- `instructions: menuPrompt`：メニューを作る目的・判断基準・安全ルールを送る
+- `input`：Neonから取得して整理した本人情報を送る
+- `text.format`：Zodで作ったAIメニューの出力形式を指定する
+- `await`：OpenAIの生成処理が完了して返信されるまで待つ
+- `const aiResponse =`：OpenAIから返った結果全体を変数へ保存する
+- `aiResponse.output_parsed`：形式確認を通過したAIメニューデータを取り出す
+- `Response.json({ menu: ... })`：生成されたメニューをJSON通信でフロントへ返す
+
+つまり、`await openai.responses.parse()`という1つの式が「OpenAIへ送信する」「返信を待つ」「決めた形式で返信を受け取る」の3つを担当します。
+
+```text
+aiInputを準備
+        ↓
+openai.responses.parse()で送信
+        ↓
+awaitで返信を待つ
+        ↓
+aiResponseへ返信を保存
+        ↓
+output_parsedをフロントへ返す
+```
+
+## AIメニューの決まったJSON形式
+
+### なぜ自由な文章ではなくJSON形式にするのか
+
+OpenAIが自由な文章だけを返すと、フロントは文章のどこが部位・種目・重量・回数なのかを安定して判別できません。
+
+`menuSchema.ts`で返却形式を決めると、フロントは`menu.recommendedBodyPart`や`exercise.targetWeightKg`のように、必要な項目を直接指定して表示できます。
+
+```text
+自由な文章
+「今日は胸がおすすめで、ベンチプレスを…」
+        ↓ 分解しにくい
+フロントのカード表示が不安定
+
+決まったJSON
+recommendedBodyPart: "胸"
+exercises: [...]
+        ↓ 項目を直接指定できる
+フロントのカードへ安定して表示
+```
+
+### `menuSchema.ts`の役割
+
+`app/lib/ai/menuSchema.ts`は、フロントから受け取る入力とOpenAIから受け取る出力の設計図を管理するTypeScriptファイルです。
+
+このファイルはOpenAIを呼び出さず、データの形を定義・検証することだけを担当します。
+
+#### フロント入力の設計図
+
+`aiMenuRequestSchema`は、AIメニュー生成時にフロントから任意で受け取る値を検証します。
+
+- `conditionScore`：今日の調子を1〜10の整数で受け取る
+- `.int()`：小数を許可しない
+- `.min(1)`：1未満を許可しない
+- `.max(10)`：10を超える値を許可しない
+- `.nullable()`：明示的な`null`を許可する
+- `.optional()`：項目自体が送られない場合も許可する
+- `note`：今日の痛み・疲労・希望などの任意メモ
+- `.trim()`：文字列の前後にある不要な空白を除く
+- `.max(500)`：極端に長い入力を防ぐため500文字までにする
+- `requestedBodyPart`：部位別トレーニングで今日選んだ胸・背中・肩・腕・脚・腹筋
+- `z.enum([ ... ])`：一覧に書いた文字だけを許可し、存在しない部位名を防ぐ
+
+#### OpenAI出力の設計図
+
+`aiMenuExerciseSchema`は、AIが返す1種目分の形を決めます。
+
+- `exerciseName`：ベンチプレスなどの種目名
+- `bodyPart`：胸・背中・脚などの大きな部位
+- `bodyArea`：上部・中部・下部などの細かい部位。不要な場合は`null`
+- `targetWeightKg`：重量目安。安全に判断できない場合は`null`
+- `targetReps`：`8〜10回`のような回数範囲を表せる文字列
+- `sets`：実施するセット数
+- `restSeconds`：セット間の休憩秒数
+- `note`：フォームや安全上の注意点
+
+`aiMenuSchema`は、今日のメニュー全体の形を決めます。
+
+- `recommendedBodyPart`：今日優先して鍛える部位
+- `reason`：その部位と内容を選んだ理由
+- `estimatedMinutes`：メニュー全体の推定時間
+- `exercises`：`aiMenuExerciseSchema`形式の種目配列
+- `advice`：利用者へ表示する複数の助言
+
+### Zodで覚える基本文法
+
+- `z.object({ ... })`：複数項目を持つオブジェクトの形を作る
+- `z.string()`：文字列だけを許可する
+- `z.number()`：数値だけを許可する
+- `z.array(設計図)`：同じ設計図のデータが複数並ぶ配列を作る
+- `z.infer<typeof 設計図>`：Zodの設計図からTypeScript型を自動で作る
+- `safeParse(value)`：値を検証し、成功・失敗を例外ではなく結果として返す
+- `parsedRequest.success`：入力検証が成功したかを表す真偽値
+- `parsedRequest.data`：検証に成功した安全な入力データ
+
+`AiMenu`と`AiMenuRequest`は、同じ項目をTypeScriptでもう一度手書きせず、Zodの設計図から自動作成した型です。
+
+### `menuPrompt.ts`と`menuSchema.ts`の違い
+
+```text
+menuPrompt.ts
+「何を考え、どんなルールで作るか」をAIへ指示
+
+menuSchema.ts
+「どの項目・データ型で返すか」を固定
+
+route.ts
+本人確認・データ取得・OpenAI送信・フロント返却
+```
+
+`menuPrompt`だけでもJSON形式をお願いできますが、AIの文章生成だけに任せると形式が崩れる可能性があります。
+
+そこで`menuPrompt`で内容の判断基準を伝え、`menuSchema`で機械的なデータ形式も固定します。
+
+### Structured Outputsで決まった形の回答を受け取る
+
+`zodTextFormat(aiMenuSchema, "training_menu")`は、Zodで作った`aiMenuSchema`をOpenAIが理解できる出力形式へ変換します。
+
+`"training_menu"`は、OpenAIへ渡すこの出力形式の識別名です。
+
+```ts
+const aiResponse =
+  await openai.responses.parse({
+    model: "gpt-5.6-luna",
+    instructions: menuPrompt,
+    input: JSON.stringify(aiInput),
+    text: {
+      format: zodTextFormat(
+        aiMenuSchema,
+        "training_menu",
+      ),
+    },
+  });
+```
+
+- `responses.create()`：主に文章として回答を生成する
+- `responses.parse()`：決めたデータ形式として回答を生成・解析する
+- `text.format`：OpenAIに守らせる出力形式を指定する
+- `output_parsed`：Zodの形式確認を通過した完成データを取得する
+- `if (!generatedMenu)`：有効な形式の結果がなければ、不完全なメニューをフロントへ返さない
+- `status: 502`：外部サービスであるOpenAIから有効な結果を得られなかったことを表す
+
+### AIメニューAPIの現在の処理順
+
+```text
+フロントからPOST
+        ↓
+Clerkで本人確認
+        ↓
+今日の調子とメモをZodで検証
+        ↓
+getUserAiContext()でNeonから本人情報を取得
+        ↓
+不要なuserIdを除いてaiInputを準備
+        ↓
+menuPrompt・aiInput・aiMenuSchemaをOpenAIへ送信
+        ↓
+決まったJSON形式のメニューを受け取る
+        ↓
+メニュー本体と全種目をNeonへまとめて保存
+        ↓
+保存済みIDとメニューをフロントへ返す
+```
+
+入力形式が不正な場合はOpenAIを呼ばないため、不正リクエストによる不要なAPI料金も防ぎます。
+
+内部の`userId`や身体画像そのものはOpenAIへ送らず、メニュー判断に必要なプロフィール・分析結果・履歴だけを送ります。
+
+### フロントから送るJSON
+
+どちらの項目も任意です。
+
+```json
+{
+  "conditionScore": 7,
+  "note": "少し肩に疲れがあります",
+  "requestedBodyPart": "胸"
+}
+```
+
+何も入力しない場合は空のJSONでも生成できます。
+
+```json
+{}
+```
+
+### バックエンドからフロントへ返すJSON
+
+```json
+{
+  "menu": {
+    "id": "保存済みメニューのUUID",
+    "recommendedBodyPart": "胸",
+    "reason": "最近の履歴と身体分析を考慮したため",
+    "estimatedMinutes": 45,
+    "exercises": [
+      {
+        "exerciseName": "ベンチプレス",
+        "bodyPart": "胸",
+        "bodyArea": "中部",
+        "targetWeightKg": 60,
+        "targetReps": "8〜10回",
+        "sets": 3,
+        "restSeconds": 120,
+        "note": "肩甲骨を寄せて行う"
+      }
+    ],
+    "advice": [
+      "痛みが出た場合は中止してください"
+    ],
+    "conditionScore": 7,
+    "requestNote": null,
+    "createdAt": "2026-08-20T06:00:00.000Z"
+  }
+}
+```
+
+フロント担当は、このレスポンス形式をAPI接続の共通仕様として使用できます。
+
+### 現在のAIメニュー機能の完成範囲
+
+- Clerkによる本人確認：完成
+- NeonからAI用本人情報を取得：完成
+- プロフィール・最新身体分析・最近10回の履歴を統合：完成
+- 今日の調子と任意メモの入力検証：完成
+- AIメニュー専用プロンプト：完成
+- Zodによる決まった出力形式：完成
+- OpenAI Responses APIとの接続コード：完成
+- 生成結果のNeon保存：完成
+- 今日の最新メニュー取得API：完成
+- ExpoのAIメニュー画面との接続：完成
+- 保存済みメニューの画面復元：完成
+- AIメニューから記録画面への種目引き継ぎ：完成
+- 実際のOpenAI APIによるZod形式の生成：テストデータで確認済み
+- Neonへのメニュー本体・種目の保存と再取得：テストデータで確認済み・確認後削除済み
+- ログイン状態で画面から生成する一連の確認：ログイン済み端末での最終確認が必要
+- API利用回数制限：今後追加
+- 再生成ルール：今後仕様を決めて追加
+
+## AIメニューをNeonへ保存・取得する仕組み
+
+### 使用言語とファイルの担当
+
+この機能は、PythonではなくTypeScriptで実装しています。
+
+- `db/schema.ts`：Neonへ何を保存するか決める
+- `app/api/ai-menu/route.ts`：本人確認、OpenAI生成、Neon保存、最新取得を行う
+- `app/lib/ai/menuSchema.ts`：フロント入力とOpenAI出力の形式・範囲を検証する
+- `mobile/src/lib/aiMenus.ts`：Expo画面とTypeScriptバックエンドを通信でつなぐ
+- `mobile/src/app/ai-coach.tsx`：利用者の操作、読み込み、結果、エラーを画面へ表示する
+
+Pythonは身体写真の画像検査・身体分析に使い、AIメニューはすでにNeonへ集めた文字・数値データを扱うためTypeScriptで完結させています。
+
+### なぜテーブルを2つに分けるのか
+
+1つのAIメニューには複数の種目が入ります。
+
+```text
+ai_generated_menus
+└─ 今日のメニュー本体 1件
+   ├─ おすすめ部位
+   ├─ 理由
+   ├─ 推定時間
+   └─ アドバイス
+
+ai_generated_menu_exercises
+└─ 本体に所属する種目 複数件
+   ├─ 種目名
+   ├─ 部位・細かい部位
+   ├─ 重量・回数・セット
+   ├─ 休憩時間
+   └─ 注意点
+```
+
+`ai_generated_menus`が親、`ai_generated_menu_exercises`が子です。
+
+子テーブルの`menuId`へ親メニューの`id`を保存することで、「この種目はどのメニューに含まれるか」を判断できます。
+
+```ts
+menuId: uuid("menu_id")
+  .notNull()
+  .references(() => aiGeneratedMenus.id, {
+    onDelete: "cascade",
+  })
+```
+
+- `uuid("menu_id")`：UUIDを保存する列を作る
+- `.notNull()`：所属先がない種目を保存させない
+- `.references(...)`：親メニューのIDだけを許可する
+- `onDelete: "cascade"`：親メニューを削除した場合、所属する種目も一緒に削除する
+
+### POSTは生成して保存する
+
+`POST /api/ai-menu`は、新しいAIメニューを作る処理です。
+
+```ts
+const menuId = crypto.randomUUID();
+const createdAt = new Date();
+```
+
+- `crypto.randomUUID()`：保存するメニュー専用の重複しにくいIDを作る
+- `new Date()`：生成・保存した現在日時を作る
+
+```ts
+await db.batch([
+  db.insert(aiGeneratedMenus).values({ ... }),
+  db.insert(aiGeneratedMenuExercises).values([ ... ]),
+]);
+```
+
+- `db.insert(テーブル)`：指定テーブルへ新しい行を追加する
+- `.values(...)`：実際に保存する値を渡す
+- `.map(...)`：OpenAIが返した全種目を、子テーブルへ保存する形に1件ずつ変換する
+- `displayOrder`：AIが返した種目の並び順を保存する
+- `db.batch([ ... ])`：メニュー本体と全種目を1まとまりでNeonへ送る
+- `await`：Neonへの保存が終わるまで待つ
+
+この保存が成功してから`Response.json()`を返すため、フロントに成功結果が届いた時点でNeon保存も完了しています。
+
+### GETは最後に保存した本人のメニューを取得する
+
+`GET /api/ai-menu`はOpenAIを呼びません。すでにNeonへ保存されている本人の最新メニューを読み取ります。
+
+```ts
+.where(eq(users.clerkUserId, clerkUserId))
+.orderBy(desc(aiGeneratedMenus.createdAt))
+.limit(1);
+```
+
+- `.where(...)`：ログイン中のClerk IDと一致する本人データだけに絞る
+- `eq(A, B)`：AとBが同じデータを探す
+- `desc(createdAt)`：新しい日時から古い日時の順へ並べる
+- `.limit(1)`：最も新しい1件だけを取得する
+
+本体を取得したあと、その`latestMenu.id`と同じ`menuId`を持つ種目を取得します。
+
+```ts
+.where(
+  eq(
+    aiGeneratedMenuExercises.menuId,
+    latestMenu.id,
+  ),
+)
+.orderBy(aiGeneratedMenuExercises.displayOrder);
+```
+
+まだ一度も生成していない場合は、エラーではなく次を返します。
+
+```json
+{
+  "menu": null
+}
+```
+
+`null`ならフロントは「まだ保存済みメニューがない」と判断し、今日の調子を選ぶ画面を表示できます。
+
+### Expo画面で保存済みメニューが残る理由
+
+以前の仮メニューはReactの`useState`にしか入っていなかったため、画面更新やアプリ再起動で消えていました。
+
+現在は次の順番です。
+
+```text
+AIメニュー画面を開く
+        ↓
+ClerkのgetToken()で本人の認証トークンを取得
+        ↓
+GET /api/ai-menu
+        ↓
+TypeScriptバックエンドがNeonから本人の最新メニューを取得
+        ↓
+toGeneratedMenuPreview()で画面用の形へ変換
+        ↓
+画面へ表示し、React Contextにも入れる
+```
+
+`mobile/src/lib/aiMenus.ts`は、バックエンドの保存形式を既存画面の表示形式へ変換します。
+
+```ts
+const savedMenu =
+  toGeneratedMenuPreview(response.menu);
+```
+
+- `response.menu`：GET APIから届いたNeonの最新メニュー
+- `toGeneratedMenuPreview(...)`：項目名や数値を既存画面が使える形へ変える関数
+- `const savedMenu =`：変換後のメニューを変数へ保存する
+
+### `useEffect()`を使う理由
+
+```ts
+useEffect(() => {
+  // 最新AIメニューを取得する処理
+}, [getToken, isLoaded, isSignedIn]);
+```
+
+`useEffect()`は、画面が表示されたことや認証状態が準備できたことに合わせて通信を始めるために使います。
+
+- `isLoaded`：Clerkの認証状態を読み込み終えたか
+- `isSignedIn`：利用者がログイン済みか
+- `getToken()`：バックエンドが本人確認に使う認証トークンを取得する
+- 依存配列`[ ... ]`：この中の値が変わったときに処理を見直す
+- `cancelled`：画面を閉じたあとに古い通信結果で画面を更新しないための印
+
+Reactの一時状態とNeonの違いは次のとおりです。
+
+```text
+useState / React Context
+画面を動かすための一時データ
+
+Neon
+アプリを閉じても残す長期データ
+```
+
+AIメニューはNeonへ保存するため、画面を切り替えたりアプリを再起動したりしても、ログイン中の本人の最新メニューを再取得できます。
+
 ## このアプリでNeonを使う理由
 
 ### Neon・PostgreSQL・Drizzleの関係
@@ -7951,3 +8906,1227 @@ Neon独自形式だけに依存するデータベースではなくPostgreSQLな
 - Structured Outputs：AIの出力を決められたJSON構造へそろえる機能
 - `output_parsed`：指定したPydantic型として検査・変換された結果
 - HTTP 502：外部サービスから正常な結果を受け取れなかったことを示すステータス
+
+## 初回設定の完了状態を保存するAPI
+
+担当ファイルは`app/api/users/onboarding-complete/route.ts`です。
+
+このAPIは、理想体型・必須の身体情報・初回身体分析がすべて完了したことを確認し、次回起動時に初回設定を繰り返さないようにするTypeScriptバックエンドです。
+
+```text
+フロントからPOST通信
+↓
+Clerkでログイン本人を確認
+↓
+Neonから理想体型・身長・体重を取得
+↓
+完了済みの身体分析があるか確認
+↓
+initialAnalysisCompletedをtrueへ更新
+↓
+onboardingCompletedをtrueへ更新
+↓
+完了状態をJSONでフロントへ返す
+```
+
+### なぜこのAPIが必要なのか
+
+Reactの`useState`だけに保存した値は、画面の再読み込みやアプリの再起動によって失われます。
+
+Neonの`users.onboardingCompleted`へ`true`を保存すると、サーバーやアプリを再起動しても初回設定を完了した事実が残ります。
+
+次回起動時は`POST /api/users/bootstrap`がこの値を取得し、`true`ならホーム、`false`なら初回設定へ進む判断に使います。
+
+このAPIが保存するのは理想体型や身長そのものではなく、「初回設定全体が完了した」という状態です。
+
+- 理想体型の保存：`PATCH /api/users/goal`
+- 身長・体重などの保存：`PATCH /api/users/profile`
+- 身体分析結果の保存：`POST /api/body-analysis`
+- 初回設定完了状態の保存：`POST /api/users/onboarding-complete`
+
+### 本人データの取得
+
+```typescript
+const matchedUsers = await db
+  .select({
+    userId: users.id,
+    goalBodyType: users.goalBodyType,
+    heightCm: userProfiles.heightCm,
+    weightKg: userProfiles.weightKg,
+  })
+  .from(users)
+  .leftJoin(
+    userProfiles,
+    eq(userProfiles.userId, users.id),
+  )
+  .where(eq(users.clerkUserId, clerkUserId))
+  .limit(1);
+```
+
+`.select({...})`は、確認に必要な項目だけを取得します。
+
+`.from(users)`は、`users`テーブルを検索の中心にします。
+
+`.leftJoin(userProfiles, ...)`は、同じ利用者の身体プロフィールを`users`へ結び付けます。
+
+`.where(eq(users.clerkUserId, clerkUserId))`は、Clerkで確認した本人のデータだけへ絞り込みます。
+
+`.limit(1)`は、取得件数を最大1件にします。
+
+### 必須情報の確認
+
+```typescript
+if (
+  user.goalBodyType === null ||
+  user.heightCm === null ||
+  user.weightKg === null
+) {
+  return Response.json(
+    { error: "理想体型と身長・体重を先に設定してください。" },
+    { status: 400 },
+  );
+}
+```
+
+`=== null`は、Neonに値がまだ保存されていないかを確認します。
+
+`||`は、どれか一つでも未設定なら条件が成立する「または」です。
+
+この確認により、不完全な状態で初回設定が完了扱いになることを防ぎます。
+
+### 完了済み身体分析の確認
+
+```typescript
+.where(
+  and(
+    eq(bodyAnalyses.userId, user.userId),
+    eq(bodyAnalyses.status, "completed"),
+  ),
+)
+```
+
+`and()`は、複数の条件をすべて満たすデータだけを検索します。
+
+1つ目の`eq()`は、分析結果がログイン中の本人のものか確認します。
+
+2つ目の`eq()`は、分析処理が`completed`まで完了しているか確認します。
+
+### 初回設定状態の更新
+
+```typescript
+const updatedUsers = await db
+  .update(users)
+  .set({
+    initialAnalysisCompleted: true,
+    onboardingCompleted: true,
+    updatedAt: new Date(),
+  })
+  .where(eq(users.id, user.userId))
+  .returning({
+    userId: users.id,
+    onboardingCompleted: users.onboardingCompleted,
+    initialAnalysisCompleted: users.initialAnalysisCompleted,
+  });
+```
+
+`.update(users)`は、`users`テーブルを更新対象にします。
+
+`.set({...})`は、変更する列と新しい値を指定します。
+
+`initialAnalysisCompleted: true`は、初回分析が完了した状態です。
+
+`onboardingCompleted: true`は、初回設定全体が完了した状態です。
+
+`updatedAt: new Date()`は、最後に更新した日時を現在時刻へ変更します。
+
+`.where(eq(users.id, user.userId))`は、本人の1件だけを更新します。
+
+`.returning({...})`は、Neonで更新された後の値を受け取ります。
+
+### 覚える単語
+
+- オンボーディング：利用開始時に行う初回設定
+- 完了フラグ：完了したかを`true`または`false`で保存する値
+- `and()`：複数の検索条件をすべて満たすようにつなぐ
+- `.update()`：既存のデータを変更する
+- `.set()`：変更後の値を指定する
+- `.returning()`：保存・更新後の値をデータベースから受け取る
+- HTTP 400：入力や現在の設定状態に問題がある
+- HTTP 401：ログインを確認できない
+- HTTP 404：対象のユーザーが見つからない
+- HTTP 500：サーバー内で予想外のエラーが起きた
+
+### 現在の確認状況
+
+`npm run build`で`/api/users/onboarding-complete`がAPIルートとして認識され、ビルドに成功することを確認済みです。
+
+実際のClerk認証・Neonデータを使ったフロントからの通し確認は、フロント接続後に行います。
+
+## 保存済みの理想体型を取得するGET API
+
+担当ファイルは`app/api/users/goal/route.ts`です。
+
+同じURLでも、HTTPメソッドによって役割が分かれます。
+
+```text
+GET /api/users/goal
+→ Neonに保存済みの理想体型を取得する
+
+PATCH /api/users/goal
+→ 理想体型を新しく保存または変更する
+```
+
+`GET()`は、画面の再表示やアプリ再起動後に以前の選択内容を復元するために使います。
+
+```typescript
+const matchedUsers = await db
+  .select({
+    userId: users.id,
+    goalBodyType: users.goalBodyType,
+  })
+  .from(users)
+  .where(eq(users.clerkUserId, clerkUserId))
+  .limit(1);
+```
+
+`.select({...})`で、本人のアプリ内IDと理想体型だけを取得します。
+
+`.where(eq(...))`で、Clerk認証を通過した本人のデータだけに絞ります。
+
+```typescript
+const user = matchedUsers[0] ?? null;
+```
+
+Neonの検索結果は配列なので、`[0]`で最初の1件を取り出します。
+
+`?? null`は、検索結果が存在しない場合の値を`null`へ統一します。
+
+```typescript
+return Response.json({
+  goalBodyType: user.goalBodyType,
+});
+```
+
+取得できた理想体型をJSONとしてフロントエンドへ返します。
+
+理想体型がまだ未設定の場合は、`goalBodyType`が`null`として返ります。
+
+### 覚える単語
+
+- GET：保存済みデータを取得するためのHTTPメソッド
+- PATCH：既存データの一部を変更するためのHTTPメソッド
+- 復元：以前保存した値を取得して画面へ戻すこと
+- `[0]`：配列の最初の要素を取り出す指定
+- `?? null`：左側に値がなければ`null`を使う書き方
+
+`npm run build`で、GET追加後もビルドに成功することを確認済みです。
+
+## bootstrap APIで初回設定の途中経過を返す
+
+担当ファイルは`app/api/users/bootstrap/route.ts`です。
+
+bootstrapは、アプリを使い始めるための状態を最初に準備・確認する処理です。
+
+このアプリでは、Clerkログイン後に本人をNeonへ登録または検索し、次に表示する画面を決める情報を返します。
+
+```text
+アプリ起動
+↓
+Clerkでログイン本人を確認
+↓
+Neonに未登録ならusersへ新規登録
+↓
+登録済みなら初回設定の進行状態を取得
+↓
+進行状態をJSONでフロントへ返す
+```
+
+現在は次の形式で返します。
+
+```typescript
+return Response.json({
+  userId: clerkUserId,
+  onboardingCompleted: existingUser.onboardingCompleted,
+  goalBodyType: existingUser.goalBodyType,
+  profileCompleted: existingUser.profileCompleted,
+  initialAnalysisCompleted: existingUser.initialAnalysisCompleted,
+});
+```
+
+`userId`は、Clerkで確認した利用者を識別するIDです。
+
+`goalBodyType`は、以前選択した理想体型です。未設定なら`null`です。
+
+`profileCompleted`は、必須の身長・体重が保存済みかを示します。
+
+`initialAnalysisCompleted`は、初回身体分析が完了済みかを示します。
+
+`onboardingCompleted`は、初回設定全体が完了済みかを示します。
+
+これらは今回Neonへ保存する処理ではなく、Neonにすでに保存されている状態をフロントへ返す処理です。
+
+フロントは次の順番で画面を判断できます。
+
+```text
+onboardingCompletedがtrue
+→ ホーム
+
+goalBodyTypeがnull
+→ 理想体型設定
+
+profileCompletedがfalse
+→ 身体情報入力
+
+initialAnalysisCompletedがfalse
+→ 初回身体分析
+```
+
+これにより、初回設定の途中でアプリを閉じても、完了済み画面を飛ばして続きから再開できます。
+
+### 覚える単語
+
+- bootstrap：アプリ起動時に利用開始の状態を準備・確認する処理
+- 進行状態：利用者が各設定をどこまで完了したかを表す値
+- 真偽値：`true`または`false`の2種類を持つ値
+- `Response.json()`：フロントへJSON形式のデータを返す処理
+
+返却項目の追加後に`npm run build`が成功することを確認済みです。
+
+## スマホ側でbootstrap APIの返却型を定義する
+
+担当ファイルは`mobile/src/lib/bootstrap.ts`です。
+
+バックエンドが返すJSONをTypeScriptが正しく理解できるように、`BootstrapResponse`へ初回設定の各状態を定義しています。
+
+```typescript
+export type BootstrapResponse = {
+  userId: string;
+  onboardingCompleted: boolean;
+  goalBodyType: string | null;
+  profileCompleted: boolean;
+  initialAnalysisCompleted: boolean;
+};
+```
+
+`type`は、データがどの項目と型を持つかを表すTypeScriptの設計図です。
+
+`string`は文字列、`boolean`は`true`または`false`を表します。
+
+`string | null`は、文字列が入る場合と、まだ未設定で`null`になる場合の両方を許可します。
+
+ここはNeonへ保存したり画面を移動したりする処理ではありません。
+
+APIから受け取るデータの形をTypeScriptへ教え、項目名の間違いや型の不一致を開発中に見つけるための部分です。
+
+変更後にスマホ版で`npx tsc --noEmit`を実行し、TypeScriptエラーがないことを確認済みです。
+
+## bootstrapの進行状態で続きの画面へ移動する
+
+担当ファイルは`mobile/src/app/bootstrap.tsx`です。
+
+`fetchBootstrap(token)`でバックエンドから進行状態を取得し、最初に見せるべき画面を判断します。
+
+```typescript
+if (data.onboardingCompleted) {
+  router.replace('/home');
+  return;
+}
+
+if (data.goalBodyType === null) {
+  router.replace('/ideal-body');
+  return;
+}
+
+if (!data.profileCompleted) {
+  router.replace('/profile-setup');
+  return;
+}
+
+router.replace('/initial-analysis');
+```
+
+最初の`if`は、初回設定全体が完了済みならホームへ移動します。
+
+2番目の`if`は、理想体型が未設定なら理想体型選択へ移動します。
+
+3番目の`if`は、身体プロフィールが未完了なら身体情報入力へ移動します。
+
+ここまでに該当しなければ理想体型とプロフィールは保存済みなので、初回分析へ移動します。
+
+`return`は、移動先が決まった後に下の条件を続けて実行しないために使います。
+
+`router.replace()`は現在の画面を履歴上で置き換えるため、戻る操作で起動確認画面へ戻りにくくします。
+
+この分岐により、アプリを途中で閉じても、Neonに保存された進行状態から続きの画面を判断できます。
+
+変更後にスマホ版の`npx tsc --noEmit`が成功することを確認済みです。
+
+## 初回設定の保存・復元を画面まで接続する
+
+### 全体の役割
+
+今回の接続により、初回設定はReactの`useState`だけではなくNeonへ長期保存されます。
+
+```text
+理想体型画面
+↓ PATCH /api/users/goal
+Neonへ理想体型を保存
+↓
+身体情報画面
+↓ PATCH /api/users/profile
+Neonへプロフィールを保存
+↓
+初回分析画面
+↓ 身体写真分析画面
+↓ POST /api/body-analysis
+Python・OpenAIで分析してNeonへ結果を保存
+↓ POST /api/users/onboarding-complete
+初回設定完了をNeonへ保存
+↓
+ホーム
+```
+
+次回起動時は`bootstrap API`の後に保存済みデータを取得し、React Contextへ戻します。
+
+### プロフィール通信ファイル
+
+担当ファイルは`mobile/src/lib/profiles.ts`です。
+
+`fetchUserProfile(token)`は`GET /api/users/profile`を呼び、Neonに保存済みの身体プロフィールを取得します。
+
+`saveUserProfile(token, profile)`は`PATCH /api/users/profile`を呼び、入力したプロフィールを保存します。
+
+```typescript
+export function profileDraftToApiInput(
+  profile: ProfileDraft,
+) {
+  return {
+    heightCm: Number(profile.heightCm),
+    weightKg: Number(profile.weightKg),
+    bodyFatPercentage:
+      profile.bodyFatPercentage === ''
+        ? null
+        : Number(profile.bodyFatPercentage),
+  };
+}
+```
+
+React Nativeの入力欄は値を文字列として持つため、`Number()`でバックエンドが保存できる数値へ変換します。
+
+任意の体脂肪率が空欄なら、存在しない値を表す`null`へ変換します。
+
+```typescript
+export function userProfileToDraft(
+  profile: UserProfile,
+): ProfileDraft
+```
+
+この関数は反対に、Neonから取得した数値を入力欄で再表示できる文字列へ戻します。
+
+### 起動時のReact Context復元
+
+担当ファイルは`mobile/src/app/bootstrap.tsx`です。
+
+```typescript
+if (data.goalBodyType !== null) {
+  const restoredGoal =
+    goalBodyTypeToSelection(
+      data.goalBodyType,
+    );
+
+  if (restoredGoal) {
+    setGoalBody(restoredGoal);
+  }
+}
+```
+
+Neonの`細マッチョ`などの日本語名を、理想体型画面が使用する`lean-muscle`などのIDへ変換してContextへ戻します。
+
+```typescript
+if (data.profileCompleted) {
+  const profileResponse =
+    await fetchUserProfile(token);
+
+  if (profileResponse.profile) {
+    setProfile(
+      userProfileToDraft(
+        profileResponse.profile,
+      ),
+    );
+  }
+}
+```
+
+身体情報が保存済みの場合だけプロフィールGET APIを呼び、取得結果を入力フォーム用の形へ変換してContextへ戻します。
+
+これにより、ホームやマイページなどContextを読む画面でも再起動前の値を利用できます。
+
+### 身体情報画面の保存
+
+担当ファイルは`mobile/src/app/profile-setup.tsx`です。
+
+`continueToAnalysis()`を`async`関数にして、Clerkトークン取得とプロフィールAPIの完了を待つように変更しました。
+
+```typescript
+const token = await getToken();
+await saveUserProfile(token, form);
+setProfile(form);
+router.push('/initial-analysis');
+```
+
+`await saveUserProfile()`によって、Neon保存が終わるまで画面移動を待ちます。
+
+保存成功後だけContextを更新して初回分析画面へ進みます。
+
+保存失敗時は`catch`でエラーを画面へ表示し、入力内容を残したまま再試行できます。
+
+身長と体重だけを必須とし、体脂肪率・場所・週の回数・1回の時間・苦手部位・トレーニング形式は任意です。
+
+### 初回分析と定期分析の分岐
+
+担当ファイルは`mobile/src/app/initial-analysis.tsx`と`mobile/src/app/body-analysis.tsx`です。
+
+初回分析画面は次のURLパラメータを付けて身体写真分析へ移動します。
+
+```typescript
+router.push({
+  pathname: '/body-analysis',
+  params: {
+    initial: 'true',
+  },
+});
+```
+
+`params`は、同じ身体分析画面へ「今回は初回分析である」という追加情報を渡します。
+
+身体分析画面ではExpo Router v57の`useLocalSearchParams()`を使って値を受け取ります。
+
+```typescript
+const { initial } =
+  useLocalSearchParams<{
+    initial?: string;
+  }>();
+
+const isInitialAnalysis =
+  initial === 'true';
+```
+
+初回分析の場合は、分析結果を確認した後に`completeOnboarding(token)`を呼びます。
+
+定期分析の場合は初回設定状態を変更せず、分析履歴画面へ移動します。
+
+### 初回設定完了の通信ファイル
+
+担当ファイルは`mobile/src/lib/onboarding.ts`です。
+
+```typescript
+export function completeOnboarding(
+  token: string,
+) {
+  return apiRequest(
+    '/api/users/onboarding-complete',
+    {
+      method: 'POST',
+      token,
+    },
+  );
+}
+```
+
+この関数は初回設定を直接完了させるのではなく、バックエンドへ完了確認を依頼します。
+
+バックエンドは理想体型・身長・体重・完了済み身体分析を確認してから、Neonの完了状態を`true`へ更新します。
+
+## 身体分析履歴をNeonから取得して表示する
+
+### バックエンドGET API
+
+担当ファイルは`app/api/body-analysis/route.ts`です。
+
+同じURLで役割を分けています。
+
+```text
+GET /api/body-analysis
+→ 本人の保存済み分析履歴を取得
+
+POST /api/body-analysis
+→ 画像3枚を分析し、結果を保存
+```
+
+GETではClerkユーザーIDから本人の`users.id`を取得し、`body_analyses`を新しい順で最大50件取得します。
+
+```typescript
+.where(
+  and(
+    eq(bodyAnalyses.userId, user.id),
+    eq(bodyAnalyses.status, 'completed'),
+  ),
+)
+.orderBy(desc(bodyAnalyses.analyzedAt))
+.limit(50)
+```
+
+`and()`によって、本人のデータかつ完了済みの分析だけに限定します。
+
+`desc()`は日時を降順に並べ、最新の分析を先頭にします。
+
+各分析について`body_analysis_areas`を検索し、肩・胸などの部位別評価を結び付けて返します。
+
+### スマホ側の履歴通信
+
+担当ファイルは`mobile/src/lib/bodyAnalyses.ts`です。
+
+`BodyAnalysisHistoryItem`は、バックエンドから受け取る分析全体・日時・理想との差・部位別評価のTypeScript設計図です。
+
+`fetchBodyAnalysisHistory(token)`は認証トークンを付けてGET APIを呼びます。
+
+### 分析履歴画面
+
+担当ファイルは`mobile/src/app/analysis-history.tsx`です。
+
+Expo Routerの`useFocusEffect()`を使い、分析画面から戻って再び履歴画面が表示されたときも最新データを取得します。
+
+履歴画面には次を表示します。
+
+- 保存済み分析の回数
+- 最新分析の部位別平均スコア
+- 分析日時
+- AIの分析要約
+- 理想体型との差
+- 肩・胸などの部位別スコア
+- 部位別の観察内容とおすすめ
+
+分析時点の体重を保存する列は現在ないため、仮の体重推移やBMIは表示しません。
+
+通信中はローディング、履歴0件なら空状態、通信失敗時はエラーと再試行ボタンを表示します。
+
+### セキュリティ確認
+
+認証トークンなしで次のAPIを呼び、どちらもHTTP 401と`ログインが必要です`を返すことを確認しました。
+
+- `GET /api/body-analysis`
+- `POST /api/users/onboarding-complete`
+
+これにより、ログインしていない通信から身体分析履歴を取得したり初回設定を変更したりできないことを確認しています。
+
+### 検証結果
+
+- スマホ版`npx tsc --noEmit`：成功
+- スマホ版`npm run lint`：成功
+- バックエンド`npm run build`：成功
+- 認証なしAPI確認：HTTP 401
+
+実際のClerkログインユーザー・Neonデータ・Python分析APIを使った通し確認はまだ必要です。
+
+## 理想体型画面とバックエンドAPIをつなぐ通信ファイル
+
+担当ファイルは`mobile/src/lib/goals.ts`です。
+
+このファイルはNeonを直接操作せず、理想体型の取得・保存をTypeScriptバックエンドへ依頼します。
+
+```text
+理想体型画面
+↓ goals.ts
+↓ GETまたはPATCH
+app/api/users/goal/route.ts
+↓ 本人確認
+Neon
+```
+
+`GoalBodyType`は、バックエンドへの保存を許可する4種類の文字列だけを表すTypeScriptの型です。
+
+`fetchGoalBodyType(token)`は`GET /api/users/goal`を呼び、保存済みの理想体型を取得します。
+
+`saveGoalBodyType(token, goalBodyType)`は`PATCH /api/users/goal`を呼び、選択した理想体型の保存を依頼します。
+
+```typescript
+body: JSON.stringify({
+  goalBodyType,
+})
+```
+
+`JSON.stringify()`は、JavaScript・TypeScriptのオブジェクトをHTTP通信で送れるJSON文字列へ変換します。
+
+`token`はバックエンド側でClerkのログイン本人を確認するために送ります。
+
+スマホからNeonへ直接接続しない理由は、`DATABASE_URL`などの秘密情報をアプリ利用者へ公開しないためです。
+
+参考画像はこのAPIの対象ではなく、画像ストレージと専用アップロード処理を作成した後に接続します。
+
+変更後にスマホ版の`npx tsc --noEmit`が成功することを確認済みです。
+# 身体分析を任意にする仕組み
+
+初回設定で必須なのは、理想体型・身長・体重です。身体写真による分析は任意で、利用者は初回分析画面から「今は分析せずホームへ進む」を選べます。
+
+## フロントエンド：`mobile/src/app/initial-analysis.tsx`
+
+`skipBodyAnalysis()` は、身体写真を送らずに初回設定を完了するための関数です。
+
+- `getToken()`：現在ログインしている本人のClerk認証トークンを取得します。
+- `completeOnboarding(token)`：認証トークンを付けて、初回設定完了APIを呼びます。
+- `router.replace('/home')`：保存に成功した後、初回分析画面へ戻れない形でホームへ移動します。
+- `isSkipping`：保存処理中の二重送信を防ぎ、処理中の表示へ切り替えるStateです。
+- `skipError`：保存に失敗した場合のメッセージを画面へ表示するStateです。
+
+## バックエンド：`app/api/users/onboarding-complete/route.ts`
+
+このAPIは、理想体型・身長・体重がNeonに保存済みか確認し、そろっていれば `onboardingCompleted` を `true` にします。
+
+```ts
+initialAnalysisCompleted:
+  completedAnalyses.length > 0,
+```
+
+`completedAnalyses.length > 0` は、完了済みの身体分析が1件以上あるかを調べています。分析済みなら `true`、スキップした場合は `false` です。身体分析をスキップしても `onboardingCompleted` は `true` になるため、次回起動時はホームへ進めます。
+# Renderへ公開したPython身体分析API
+
+身体分析用FastAPIをRenderのStarterプランへ公開しています。
+
+```text
+https://musclepas-body-analysis.onrender.com
+```
+
+ローカル開発では以前、TypeScriptバックエンドから `http://127.0.0.1:8000` のPythonへ接続していました。現在は `.env.local` の次の設定により、Render上のPythonへ接続します。
+
+```env
+PYTHON_ANALYSIS_URL=https://musclepas-body-analysis.onrender.com
+```
+
+処理の流れは次のとおりです。
+
+```text
+スマホ画面
+→ TypeScriptバックエンド
+→ Render上のPython FastAPI
+→ OpenAI画像分析
+→ Pythonが分析結果JSONを返す
+→ TypeScriptがNeonへ保存
+→ スマホ画面へ結果を返す
+```
+
+Renderには `OPENAI_API_KEY` を環境変数として保存しています。秘密鍵はGitHubやアプリのフロントエンドへ書いてはいけません。`/health` はOpenAIを呼ばず、Pythonサービスが起動しているかだけを確認するURLです。
+
+# スマホ版AIチャットとバックエンドの接続
+
+今回の担当ファイルは次の3つです。
+
+- `mobile/src/lib/chatApi.ts`：チャットAPIとの通信だけを担当します。
+- `mobile/src/app/chat.tsx`：質問の入力とAI回答の表示を担当します。
+- `mobile/src/contexts/ChatHistoryContext.tsx`：画面内のチャットとNeon側のチャットIDを紐づけます。
+
+処理の流れは次のとおりです。
+
+```text
+スマホのチャット入力欄
+→ Clerkの認証トークンを取得
+→ chatApi.tsからPOST /api/chatを呼ぶ
+→ TypeScriptバックエンドが本人確認
+→ OpenAIが回答を生成
+→ バックエンドがNeonへ会話を保存
+→ replyをスマホへ返す
+→ chat.tsxがAIの吹き出しへ表示
+```
+
+## `sendChatMessage()`
+
+`sendChatMessage()`は、利用者の質問・Clerkトークン・会話IDをバックエンドへ送る関数です。
+
+```ts
+sendChatMessage(
+  token,
+  content,
+  serverConversationId,
+)
+```
+
+- `token`：ログイン中の本人だと証明する値です。
+- `content`：入力欄に書かれた質問です。
+- `serverConversationId`：Neonに保存されているチャットルームのIDです。新規チャットでは`null`になります。
+
+バックエンドからは次の形で結果が返ります。
+
+```ts
+{
+  conversationId: string;
+  reply: string;
+}
+```
+
+`conversationId`はNeon側のチャットID、`reply`はOpenAIが生成した回答です。
+
+## スマホ内IDとNeon側ID
+
+`id`は、スマホ画面上でチャットを見分けるための仮IDです。
+
+`serverConversationId`は、Neonに保存された本物のチャットルームIDです。
+
+最初の送信では`serverConversationId`が`null`なので、バックエンドが新しいチャットルームを作ります。返されたIDを`setServerConversationId()`で画面内のチャットへ保存し、2回目以降の質問を同じ会話へ追加します。
+
+未ログインの場合は`Redirect`で`/sign-in`へ移動し、認証なしでチャットAPIを利用できないようにしています。
+
+実通信テストでは、スマホ画面から送った「接続テストです。短く返答してください。」に対して、AIから「接続できています。」と回答が表示されることを確認済みです。
+
+現在は、画面を開いている間の表示だけでなく、アプリを再読み込みした後にNeonから過去のチャット一覧とメッセージを読み戻すところまで完成しています。
+
+## Neonからチャット履歴を取得する通信関数
+
+担当ファイルは`mobile/src/lib/chatApi.ts`です。
+
+`fetchChatHistory()`は、Clerkトークンを付けて`GET /api/chat`を呼び、ログイン中の本人のチャット履歴を取得します。
+
+```ts
+fetchChatHistory(
+  token,
+  conversationId,
+)
+```
+
+- `conversationId`なし：本人のチャットルーム一覧を取得します。
+- `conversationId`あり：一覧に加えて、指定したチャットのメッセージを取得します。
+
+```ts
+const query = conversationId
+  ? `?conversationId=${encodeURIComponent(
+      conversationId,
+    )}`
+  : '';
+```
+
+三項演算子`条件 ? A : B`を使い、チャットIDがある場合だけURLへ検索条件を追加しています。
+
+`encodeURIComponent()`は、値にURLで特別な意味を持つ文字が含まれても壊れないよう、安全なURL用文字列へ変換します。
+
+```text
+スマホのfetchChatHistory()
+→ GET /api/chat
+→ Clerkで本人確認
+→ Neonから本人のチャットだけを検索
+→ conversationsとmessagesをJSONで返す
+```
+
+通信関数・TypeScriptのデータ型・`ChatHistoryContext`への保存・画面を開いたときの自動取得まで実装済みです。
+
+## 取得したチャット履歴をStateへ保存する
+
+担当ファイルは`mobile/src/contexts/ChatHistoryContext.tsx`です。
+
+`replaceConversations()`は、現在のチャット一覧をNeonから取得した一覧へ丸ごと置き換えます。
+
+`setConversationMessages()`は、`map()`で全チャットを確認し、指定したIDのチャットだけ`messages`を取得結果へ変更します。
+
+```text
+fetchChatHistory()が履歴を取得
+→ replaceConversations()が一覧をStateへ保存
+→ 利用者がチャットを選択
+→ setConversationMessages()がその会話のメッセージをStateへ保存
+→ chat.tsxがStateを吹き出しとして表示
+```
+
+この2つはNeonへ直接接続する関数ではありません。APIから受け取ったデータを、Reactの画面が利用できるStateへ入れる役割です。
+
+## チャット画面を開いたときの履歴復元
+
+担当ファイルは`mobile/src/app/chat.tsx`です。
+
+チャット画面では、次の2段階で履歴を取得します。
+
+```text
+1回目：チャットルームの一覧だけを取得
+↓
+最初のチャット、または利用者が選んだチャットを決める
+↓
+2回目：選ばれたチャットのメッセージだけを取得
+↓
+質問とAI回答を吹き出しで表示
+```
+
+一覧と全メッセージを一度に取得しない理由は、過去の会話が増えたときに大量の文章を毎回ダウンロードしないためです。最初はタイトルなどの軽い情報だけを取得し、開く会話の本文だけを後から取得します。
+
+### 日付を画面用の数値へ変換する
+
+```ts
+function toTimestamp(value: string) {
+  const timestamp = Date.parse(value);
+  return Number.isNaN(timestamp) ? Date.now() : timestamp;
+}
+```
+
+`value`にはAPIから届いた日付文字列が入ります。
+
+`Date.parse(value)`は日付文字列を、React側で比較や並び替えに使いやすいミリ秒の数値へ変換します。
+
+`Number.isNaN(timestamp)`は、変換結果が正しい数値ではないかを確認します。
+
+`条件 ? A : B`は三項演算子です。変換に失敗した場合は現在時刻の`Date.now()`、成功した場合は変換済みの`timestamp`を返します。
+
+### チャット一覧を取得する`useEffect`
+
+```ts
+useEffect(() => {
+  if (!isLoaded || !isSignedIn) return;
+
+  // この中でfetchChatHistory(token)を実行する
+}, [isLoaded, isSignedIn, replaceConversations]);
+```
+
+`useEffect()`は、画面表示後に通信などの処理を実行するReactの機能です。
+
+`!isLoaded`はClerkのログイン状態をまだ確認中、`!isSignedIn`は未ログインという意味です。本人確認前には履歴APIを呼びません。
+
+`fetchChatHistory(token)`は`conversationId`を渡していないため、本人のチャットルーム一覧だけを取得します。
+
+取得した`response.conversations`へ`.map()`を使い、APIのデータを画面用の`ChatConversation`へ1件ずつ変換します。
+
+```ts
+const loadedConversations = response.conversations.map((conversation) => ({
+  id: conversation.id,
+  serverConversationId: conversation.id,
+  title: conversation.title,
+  messages: [],
+  updatedAt: toTimestamp(conversation.updatedAt),
+}));
+```
+
+`conversation`は、`.map()`が現在処理しているチャット1件です。そのため、かっこの中では`conversation.id`や`conversation.title`を使用します。
+
+`messages: []`が空なのは、この段階では一覧だけを取得しているためです。本文は選ばれたチャットに対して次の`useEffect`が取得します。
+
+`replaceConversations(loadedConversations)`は、React Context内の一覧をNeonから取得した最新の一覧へ置き換えます。
+
+`setActiveId()`は、今まで選んでいたチャットが一覧に残っていればそのIDを使い、なければ一覧の先頭を選びます。
+
+### 選択したチャットのメッセージを取得する`useEffect`
+
+```ts
+const localConversationId = activeConversation?.id ?? null;
+const serverConversationId = activeConversation?.serverConversationId ?? null;
+```
+
+`activeConversation?.id`の`?.`は、チャットが存在するときだけ`id`を読むという意味です。存在しない場合にエラーを起こさず`undefined`になります。
+
+`?? null`は、左側が`null`または`undefined`なら`null`を使うという意味です。
+
+```ts
+const response = await fetchChatHistory(
+  token,
+  selectedServerConversationId,
+);
+```
+
+今回は`conversationId`を渡すため、`GET /api/chat?conversationId=...`となり、選択した会話のメッセージも取得します。
+
+`await`はAPIの返事が届くまで、この非同期処理の続きだけを待たせます。アプリ全体を停止する命令ではありません。
+
+```ts
+const loadedMessages: ChatMessage[] = response.messages.map((message) => ({
+  id: message.id,
+  role: message.role,
+  content: message.content,
+  createdAt: toTimestamp(message.createdAt),
+}));
+```
+
+ここでも`.map()`を使い、Neonから届いたメッセージをReact画面で使う`ChatMessage`形式へ1件ずつ変換します。
+
+`role`は発言者です。`user`なら利用者の吹き出し、`assistant`ならAIの吹き出しとして表示します。
+
+`setConversationMessages(selectedLocalConversationId, loadedMessages)`は、選択中のチャットだけへ取得した本文を保存します。
+
+### `useRef`で二重取得を防ぐ
+
+```ts
+const loadedMessageConversationIds = useRef(new Set<string>());
+```
+
+`useRef()`は、画面が再描画されても値を残しつつ、その値を変更しても再描画を起こさないReactの機能です。
+
+`Set<string>`は、同じ文字列を重複して持たない入れ物です。ここには取得済みのNeonチャットIDを保存します。
+
+すでにIDが`Set`へ入っているチャットは再通信しないため、同じメッセージを何度も取得することを防ぎます。
+
+```ts
+const messageRequestId = useRef(0);
+```
+
+これはメッセージ取得通信へ順番の番号を付ける値です。利用者がすぐ別チャットへ切り替えた場合でも、古い通信ではなく現在の通信が終わったときだけローディング表示を消します。
+
+### `getTokenRef`が必要な理由
+
+```ts
+const getTokenRef = useRef(getToken);
+
+useEffect(() => {
+  getTokenRef.current = getToken;
+}, [getToken]);
+```
+
+`getToken`はClerkから認証トークンを取得する関数です。
+
+この関数そのものを履歴取得用`useEffect`の監視対象にすると、画面の再描画時に関数が変わったと判断され、通信が途中から繰り返される場合があります。
+
+そこで最新の`getToken`を`getTokenRef.current`へ保持します。認証関数は最新のものを使いながら、履歴通信はログイン状態や選択チャットが本当に変わったときだけ動かします。
+
+今回「保存済みのチャットを読み込んでいます…」が消えなかった主な原因は、この通信の再実行と古い通信の終了処理が重なっていたことです。
+
+### `cancelled`の役割
+
+```ts
+let cancelled = false;
+
+return () => {
+  cancelled = true;
+};
+```
+
+`useEffect`の対象が変わったり画面を閉じたりすると、`return`内の後片付けが実行されます。
+
+古い通信の返事が後から届いても、`cancelled`が`true`なら古い結果で現在の画面を上書きしません。
+
+### `useCallback`をContextで使う理由
+
+担当ファイルは`mobile/src/contexts/ChatHistoryContext.tsx`です。
+
+```ts
+const replaceConversations = useCallback((loadedConversations) => {
+  setConversations(loadedConversations);
+}, []);
+```
+
+`useCallback()`は関数を再利用し、再描画のたびに別の関数として作り直されることを防ぎます。
+
+`replaceConversations`や`setConversationMessages`が毎回別の関数になると、それらを監視する`useEffect`が不要に再実行される可能性があります。チャット一覧・作成・削除・メッセージ追加・サーバーID保存の各関数を`useCallback`で安定させています。
+
+## チャット履歴復元の動作確認結果
+
+ブラウザでチャット画面を再読み込みし、次を確認しました。
+
+- Neonに保存された4件のチャットタイトルが履歴メニューへ表示される。
+- 最初の保存済みチャットの利用者メッセージとAI回答が自動表示される。
+- 履歴メニューから別のチャットを選ぶと、そのチャットのメッセージだけを取得して表示できる。
+- 読み込み完了後に「保存済みのチャットを読み込んでいます…」が消える。
+- TypeScriptの型チェック`npx tsc --noEmit`が成功する。
+
+チャットの保存・取得・画面復元・Neonからの削除まで完成です。
+
+## チャットをNeonから削除する機能
+
+この機能の目的は、画面で削除したチャットがアプリ再読み込み後に復活しないようにすることです。
+
+担当ファイルは次の3つです。
+
+- `app/api/chat/route.ts`：本人確認を行い、Neonからチャットを削除します。
+- `mobile/src/lib/chatApi.ts`：スマホから削除APIを呼びます。
+- `mobile/src/app/chat.tsx`：削除ボタンと通信中・失敗時の表示を管理します。
+
+処理の流れは次のとおりです。
+
+```text
+利用者が削除ボタンを押す
+↓
+スマホがClerkトークンとチャットIDを送る
+↓
+DELETE /api/chatがログイン中の本人を確認
+↓
+Neonで「チャットID」と「本人のClerk ID」が両方一致する行を探す
+↓
+一致した本人のチャットだけを削除
+↓
+子テーブルのメッセージも自動削除
+↓
+成功した場合だけReactの画面から削除
+```
+
+### バックエンドの`DELETE()`
+
+```ts
+export async function DELETE(request: Request) {
+```
+
+`export`はNext.jsのRoute Handlerへ、この関数がHTTPのDELETEリクエストを担当すると伝えます。
+
+`async`は、本人確認やNeon通信のような時間のかかる処理で`await`を使える関数にします。
+
+`request`には、スマホから届いた認証情報とJSONが入っています。
+
+```ts
+const clerkUserId = await getClerkUserId(request);
+```
+
+リクエストのClerkトークンを確認し、ログイン中の本人のClerkユーザーIDを取得します。これは再ログイン処理ではなく、今回の削除要求を送った人が誰かをAPI側で確認する処理です。
+
+```ts
+const body = (await request
+  .json()
+  .catch(() => null)) as DeleteChatRequestBody | null;
+```
+
+`request.json()`はスマホから送られたJSONをJavaScript・TypeScriptで使えるデータへ変換します。
+
+`.catch(() => null)`は、不正なJSONだった場合にAPI全体を突然終了させず`null`として扱います。
+
+`as DeleteChatRequestBody | null`は、TypeScriptへ「この値は削除用データ、または`null`です」と型を伝えています。データを変換・保存する命令ではありません。
+
+```ts
+const conversationId =
+  body?.conversationId?.trim() ?? "";
+```
+
+`body?.conversationId`は、`body`が存在するときだけチャットIDを取得します。
+
+`.trim()`は文字列の前後の空白を削除します。
+
+`?? ""`は値が`null`または`undefined`なら空文字を使用します。空文字の場合はHTTP 400を返し、削除処理へ進みません。
+
+### 他人のチャットを削除させない検索条件
+
+```ts
+.where(
+  and(
+    eq(chatConversations.id, conversationId),
+    eq(users.clerkUserId, clerkUserId),
+  ),
+)
+```
+
+`eq(A, B)`はAとBが等しいという検索条件です。
+
+`and(条件1, 条件2)`は、両方の条件を満たす行だけを対象にします。
+
+ここでは「送られたチャットID」と「ログイン中の本人のClerk ID」の両方が一致する必要があります。他人のチャットIDだけを知っていても、Clerk IDが一致しないため削除できません。
+
+一致しない場合はHTTP 404を返します。本人のデータではないことを細かく教えず、チャットが見つからないものとして扱います。
+
+### 親チャットと子メッセージの削除
+
+```ts
+await db
+  .delete(chatConversations)
+  .where(
+    eq(
+      chatConversations.id,
+      matchedConversation.id,
+    ),
+  );
+```
+
+`.delete(chatConversations)`は親テーブル`chat_conversations`から削除します。
+
+`.where(...)`があるため、確認済みの1つのチャットだけが対象です。`where`なしで削除すると全チャットが対象になる危険があるため、削除処理では特に重要です。
+
+`chat_messages.conversationId`には次の設定があります。
+
+```ts
+.references(() => chatConversations.id, {
+  onDelete: "cascade",
+})
+```
+
+`onDelete: "cascade"`は、親チャットを削除したとき、そのチャットに属する子メッセージもPostgreSQLが自動削除する設定です。そのため、メッセージを1件ずつ削除するコードは不要です。
+
+### スマホからDELETE APIを呼ぶ
+
+担当ファイルは`mobile/src/lib/chatApi.ts`です。
+
+```ts
+export async function deleteChatConversation(
+  token: string,
+  conversationId: string,
+) {
+```
+
+`token`はログイン中の本人を証明するClerkトークンです。
+
+`conversationId`はNeonから削除するチャットルームのIDです。
+
+```ts
+return apiRequest<DeleteChatResponse>(
+  '/api/chat',
+  {
+    method: 'DELETE',
+    token,
+    body: JSON.stringify({ conversationId }),
+  },
+);
+```
+
+`method: 'DELETE'`で削除リクエストだとバックエンドへ伝えます。
+
+`JSON.stringify()`はTypeScriptのオブジェクトを、HTTP通信で送れるJSON文字列へ変換します。
+
+`apiRequest<DeleteChatResponse>`の`<DeleteChatResponse>`は、成功時に返るデータの型をTypeScriptへ伝えています。
+
+### 削除ボタンを押した後の`removeChat()`
+
+担当ファイルは`mobile/src/app/chat.tsx`です。
+
+```ts
+const conversation =
+  conversations.find((chat) => chat.id === id) ?? null;
+```
+
+`.find()`はチャット一覧を先頭から確認し、押された画面内IDと一致するチャット1件を取得します。見つからなければ`?? null`によって`null`になります。
+
+```ts
+if (!conversation.serverConversationId) {
+  deleteConversation(id);
+  return;
+}
+```
+
+まだメッセージを送っていない新規チャットにはNeon側IDがありません。Neonに存在しないためAPIを呼ばず、画面上のStateだけから削除します。
+
+保存済みチャットでは、次の順番を守ります。
+
+```text
+deleteChatConversation()でNeonから削除
+↓
+成功
+↓
+deleteConversation()で画面から削除
+```
+
+先に画面から消すと、Neon通信に失敗した場合も削除できたように見え、再読み込み後に復活します。そのため、サーバーでの成功後に画面を更新します。
+
+`deletingConversationId`には削除中のチャットIDを保存します。値が入っている間は他の削除ボタンを無効化し、対象のボタンを「削除中…」へ変更します。
+
+`try`は削除通信を試す場所、`catch`は失敗メッセージを表示する場所、`finally`は成功・失敗のどちらでも削除中状態を解除する場所です。
+
+### チャット削除機能の確認結果
+
+- スマホ版のTypeScript型チェックに成功しました。
+- 今回変更したチャット3ファイルのESLintチェックに成功しました。
+- 未送信の新規チャットを画面から削除できました。
+- 保存済み4件に削除ボタンが表示されることを確認しました。
+- 認証なしで`DELETE /api/chat`を呼ぶとHTTP 401と「ログインが必要です。」が返り、削除が拒否されました。
+- 既存の保存済みチャットは、安全のため動作確認中には削除していません。
+
+バックエンド全体の`npx tsc --noEmit`は、今回の変更とは別の既存Cloudflare設定`vite.config.ts`と`worker/index.ts`の型エラーで停止します。今回変更したチャットファイルはESLint、スマホ側はTypeScriptで検査済みです。
+
+## AIチャットのSystem PromptとTool選択
+
+`app/lib/ai/systemPrompt.js`は、AIの役割・回答方針・安全上のルール・Toolを使う判断基準を書くJavaScriptファイルです。
+
+このファイル自体はNeonからデータを取得しません。AIが質問を読んで必要なToolを選ぶための「説明書」です。
+
+```text
+systemPrompt.js
+→ AIが必要なToolを判断
+→ chatTools.tsに定義されたToolを選択
+→ runChatTool.tsがToolを実行
+→ Clerk IDで本人を特定
+→ Neonから本人のデータを取得
+→ AIが取得結果を使って回答
+```
+
+プロフィール取得の実通信テストでは「私の目標体型と身体情報を教えて」と質問し、`get_user_profile`を通してNeonに保存された目標体型・身長・体重・頻度・可能時間・場所・苦手部位が回答へ反映されることを確認済みです。
+
+## AIチャットToolの実通信テスト結果
+
+AIチャットで利用する4つのToolは、すべてスマホ画面から実通信で動作確認済みです。
+
+- `get_user_profile`：目標体型、身長、体重、頻度、可能時間、場所、苦手部位を取得できました。
+- `get_latest_body_analysis`：最新の分析日、全体評価、部位別スコア、優先部位、提案を取得できました。
+- `get_recent_training_records`：最近実施した部位・種目・セットなどを取得し、次に鍛える部位の判断へ使用できました。
+- `get_latest_ai_menu`：最後に生成した部位、理由、推定時間、種目、回数、セット、休憩、注意点を取得できました。
+
+ToolにはClerkユーザーIDを直接AIから渡しません。`route.ts`で認証できた本人のClerk IDを`runChatTool()`へ渡し、そのIDに一致するデータだけをNeonから検索します。これにより、AIが別の利用者のIDを指定してデータを取得することを防いでいます。

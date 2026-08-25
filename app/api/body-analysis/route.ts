@@ -2,6 +2,7 @@
 import { getClerkUserId } from "@/app/lib/auth/clerk-auth";
 import {
   and,
+  desc,
   eq,
   gte,
   lt,
@@ -104,6 +105,122 @@ function isBodyAnalysisResult(
           "string",
     )
   );
+}
+
+// GET通信を受け取り、ログイン中の本人の身体分析履歴を新しい順で返す
+export async function GET(request: Request) {
+  try {
+    const clerkUserId =
+      await getClerkUserId(request);
+
+    if (!clerkUserId) {
+      return Response.json(
+        { error: "ログインが必要です。" },
+        { status: 401 },
+      );
+    }
+
+    const db = getDb();
+
+    // ClerkユーザーIDからNeon内の本人IDを取得する
+    const matchedUsers = await db
+      .select({
+        id: users.id,
+      })
+      .from(users)
+      .where(
+        eq(
+          users.clerkUserId,
+          clerkUserId,
+        ),
+      )
+      .limit(1);
+
+    const user = matchedUsers[0] ?? null;
+
+    if (!user) {
+      return Response.json(
+        {
+          error:
+            "ユーザー情報が見つかりません。",
+        },
+        { status: 404 },
+      );
+    }
+
+    // 本人の完了済み分析を新しい順で最大50件取得する
+    const analyses = await db
+      .select({
+        id: bodyAnalyses.id,
+        summary: bodyAnalyses.summary,
+        goalDifference:
+          bodyAnalyses.goalDifference,
+        analyzedAt: bodyAnalyses.analyzedAt,
+      })
+      .from(bodyAnalyses)
+      .where(
+        and(
+          eq(bodyAnalyses.userId, user.id),
+          eq(
+            bodyAnalyses.status,
+            "completed",
+          ),
+        ),
+      )
+      .orderBy(
+        desc(bodyAnalyses.analyzedAt),
+      )
+      .limit(50);
+
+    // 各分析へ肩・胸などの部位別結果を結び付ける
+    const analysesWithAreas =
+      await Promise.all(
+        analyses.map(async (analysis) => {
+          const areas = await db
+            .select({
+              id: bodyAnalysisAreas.id,
+              bodyPart:
+                bodyAnalysisAreas.bodyPart,
+              score: bodyAnalysisAreas.score,
+              priority:
+                bodyAnalysisAreas.priority,
+              observation:
+                bodyAnalysisAreas.observation,
+              recommendation:
+                bodyAnalysisAreas.recommendation,
+            })
+            .from(bodyAnalysisAreas)
+            .where(
+              eq(
+                bodyAnalysisAreas.analysisId,
+                analysis.id,
+              ),
+            );
+
+          return {
+            ...analysis,
+            areas,
+          };
+        }),
+      );
+
+    return Response.json({
+      analyses: analysesWithAreas,
+    });
+  } catch (error) {
+    console.error(
+      "身体分析履歴の取得に失敗しました。",
+      error,
+    );
+
+    return Response.json(
+      {
+        error:
+          "身体分析履歴を取得できませんでした。",
+      },
+      { status: 500 },
+    );
+  }
 }
 
 // POST通信を受け取り、認証後にPythonの仮分析APIを呼ぶ

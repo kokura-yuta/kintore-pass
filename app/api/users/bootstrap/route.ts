@@ -51,10 +51,17 @@ export async function POST(
 
     // 登録済みならClerkユーザーIDと初回設定の完了状態を返して処理を終了する
     if (existingUser) {
+      // 初回設定全体と各段階の進行状態をフロントエンドへ返す
       return Response.json({
         userId: clerkUserId,
         onboardingCompleted:
           existingUser.onboardingCompleted,
+        goalBodyType:
+          existingUser.goalBodyType,
+        profileCompleted:
+          existingUser.profileCompleted,
+        initialAnalysisCompleted:
+          existingUser.initialAnalysisCompleted,
       });
     }
 
@@ -103,13 +110,22 @@ export async function POST(
     const createdUser = createdUsers[0];
 
     // ClerkユーザーIDと初回設定の完了状態をHTTP 201で返す
+    // 新規ユーザーの初回設定状態をフロントエンドへ返す
     return Response.json(
       {
         userId: clerkUserId,
         onboardingCompleted:
           createdUser.onboardingCompleted,
+        goalBodyType:
+          createdUser.goalBodyType,
+        profileCompleted:
+          createdUser.profileCompleted,
+        initialAnalysisCompleted:
+          createdUser.initialAnalysisCompleted,
       },
-      { status: 201 },
+      {
+        status: 201,
+      },
     );
   } catch (error) {
     // 詳しい原因は利用者へ返さず、開発者が確認するサーバーログへ残す
