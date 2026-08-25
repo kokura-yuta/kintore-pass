@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useAuth } from '@clerk/expo';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { BottomNavigation } from '@/components/BottomNavigation';
@@ -125,6 +125,21 @@ export default function TrainingScreen() {
       setErrorMessage('実施した種目を1つ以上追加してください。');
       return;
     }
+    const duration = trainingMinutes ? Number(trainingMinutes) : null;
+    if (duration !== null && (!Number.isInteger(duration) || duration < 1 || duration > 600)) {
+      setErrorMessage('トレーニング時間は1〜600分で入力してください。');
+      return;
+    }
+    const invalidSet = exercises.some((exercise) => exercise.sets.some((set) => {
+      const weight = set.weightKg ? Number(set.weightKg) : null;
+      const reps = set.reps ? Number(set.reps) : null;
+      return (weight !== null && (!Number.isFinite(weight) || weight < 0 || weight > 1000))
+        || (reps !== null && (!Number.isInteger(reps) || reps < 1 || reps > 1000));
+    }));
+    if (invalidSet) {
+      setErrorMessage('重量は0〜1000kg、回数は1〜1000回で入力してください。');
+      return;
+    }
     setErrorMessage('');
     setIsSaving(true);
     try {
@@ -135,7 +150,7 @@ export default function TrainingScreen() {
 
       const response = await createTrainingRecord(token, {
         performedAt: new Date().toISOString(),
-        durationMinutes: trainingMinutes ? Number(trainingMinutes) : null,
+        durationMinutes: duration,
         conditionScore: condition,
         memo: memo.trim() || null,
         exercises: exercises.map((exercise, exerciseIndex) => ({
@@ -164,7 +179,7 @@ export default function TrainingScreen() {
             reps: set.reps || null,
           })),
         })),
-        trainingMinutes: trainingMinutes ? Number(trainingMinutes) : null,
+        trainingMinutes: duration,
         condition,
         memo: memo.trim() || null,
       });
@@ -179,7 +194,8 @@ export default function TrainingScreen() {
   return (
     <View style={styles.screen}>
       <SafeAreaView edges={['top']} style={styles.safeArea}>
-        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.safeArea}>
+        <ScrollView automaticallyAdjustKeyboardInsets contentContainerStyle={styles.content} keyboardDismissMode="interactive" keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
           <View style={styles.header}>
             <View>
               <Text style={styles.eyebrow}>TRAINING LOG</Text>
@@ -244,6 +260,7 @@ export default function TrainingScreen() {
             <Text style={styles.fieldLabel}>メモ <Text style={styles.optionalText}>任意</Text></Text>
             <TextInput
               multiline
+              maxLength={500}
               onChangeText={setMemo}
               placeholder="フォーム、疲労、気づいたことなど"
               placeholderTextColor="#59605A"
@@ -261,6 +278,7 @@ export default function TrainingScreen() {
           </Pressable>
           <Text style={styles.previewNote}>保存した記録は履歴とカレンダーへ反映されます。</Text>
         </ScrollView>
+        </KeyboardAvoidingView>
       </SafeAreaView>
 
       <BottomNavigation />

@@ -4,6 +4,7 @@ import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollVie
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useWeightHistory } from '@/contexts/WeightHistoryContext';
+import { sanitizeDecimalInput } from '@/lib/numberInput';
 
 function formatLocalDate(date: Date) {
   const year = date.getFullYear();
@@ -43,7 +44,7 @@ export default function WeightHistoryScreen() {
       setError('日付をYYYY-MM-DD形式で入力してください。');
       return;
     }
-    if (!weightKg || numericWeight < 30 || numericWeight > 300) {
+    if (!weightKg || !Number.isFinite(numericWeight) || numericWeight < 30 || numericWeight > 300) {
       setError('体重を30〜300kgで入力してください。');
       return;
     }
@@ -61,7 +62,7 @@ export default function WeightHistoryScreen() {
     <View style={styles.screen}>
       <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.safeArea}>
-          <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+          <ScrollView automaticallyAdjustKeyboardInsets contentContainerStyle={styles.content} keyboardDismissMode="interactive" keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
             <View style={styles.header}>
               <Pressable accessibilityLabel="マイページへ戻る" onPress={() => router.back()} style={styles.backButton}><Text style={styles.backText}>‹</Text></Pressable>
               <View><Text style={styles.eyebrow}>BODY WEIGHT</Text><Text style={styles.title}>体重記録</Text></View>
@@ -96,7 +97,7 @@ export default function WeightHistoryScreen() {
               <TextInput autoCapitalize="none" onChangeText={setRecordedOn} placeholder="YYYY-MM-DD" placeholderTextColor="#59605A" style={styles.textInput} value={recordedOn} />
               <Text style={styles.fieldLabel}>体重</Text>
               <View style={styles.weightInputWrap}>
-                <TextInput inputMode="decimal" keyboardType="decimal-pad" onChangeText={(text) => setWeightKg(text.replace(/[^0-9.]/g, ''))} placeholder="65.0" placeholderTextColor="#59605A" style={styles.weightInput} value={weightKg} />
+                <TextInput inputMode="decimal" keyboardType="decimal-pad" onChangeText={(text) => { setWeightKg(sanitizeDecimalInput(text)); setError(''); setSuccess(''); }} placeholder="65.0" placeholderTextColor="#59605A" style={styles.weightInput} value={weightKg} />
                 <Text style={styles.inputUnit}>kg</Text>
               </View>
               {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -108,7 +109,7 @@ export default function WeightHistoryScreen() {
 
             <View style={styles.card}>
               <Text style={styles.cardTitle}>記録履歴</Text>
-              {[...sortedRecords].reverse().map((record, index) => {
+              {sortedRecords.length === 0 ? <Text style={styles.emptyText}>まだ体重記録はありません。</Text> : [...sortedRecords].reverse().map((record, index) => {
                 const previous = [...sortedRecords].reverse()[index + 1];
                 const difference = previous ? Number((record.weightKg - previous.weightKg).toFixed(1)) : null;
                 return <View key={record.id} style={styles.historyRow}><Text style={styles.historyDate}>{record.recordedOn.replaceAll('-', '.')}</Text><View style={styles.historyRight}><Text style={styles.historyWeight}>{record.weightKg} kg</Text><Text style={styles.historyDiff}>{difference === null ? '—' : `${difference > 0 ? '+' : ''}${difference} kg`}</Text></View></View>;

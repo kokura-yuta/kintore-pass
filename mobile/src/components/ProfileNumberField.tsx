@@ -1,5 +1,7 @@
 import { StyleSheet, Text, TextInput, View } from 'react-native';
 
+import { sanitizeDecimalInput } from '@/lib/numberInput';
+
 type Props = {
   error?: string;
   label: string;
@@ -30,7 +32,7 @@ export function ProfileNumberField({
           accessibilityLabel={label}
           inputMode="decimal"
           keyboardType="decimal-pad"
-          onChangeText={(text) => onChangeText(text.replace(/[^0-9.]/g, ''))}
+          onChangeText={(text) => onChangeText(sanitizeDecimalInput(text))}
           placeholder={placeholder}
           placeholderTextColor="#697169"
           style={styles.input}

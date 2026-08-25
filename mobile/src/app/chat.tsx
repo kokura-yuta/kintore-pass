@@ -1,7 +1,7 @@
 import { useAuth } from '@clerk/expo';
 import { Redirect } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Markdown from 'react-native-markdown-display';
 import { BottomNavigation } from '@/components/BottomNavigation';
@@ -290,6 +290,19 @@ export default function ChatScreen() {
     return <Redirect href="/sign-in" />;
   }
 
+  function confirmRemoveChat(id: string, title: string) {
+    const message = `「${title}」を削除します。この操作は取り消せません。`;
+    if (Platform.OS === 'web') {
+      if (globalThis.confirm(message)) removeChat(id);
+      return;
+    }
+
+    Alert.alert('チャットを削除しますか？', message, [
+      { text: 'キャンセル', style: 'cancel' },
+      { text: '削除', style: 'destructive', onPress: () => removeChat(id) },
+    ]);
+  }
+
   return (
     <View style={styles.screen}>
       <SafeAreaView edges={['top']} style={styles.safeArea}>
@@ -300,7 +313,7 @@ export default function ChatScreen() {
             <Pressable accessibilityLabel="新しいチャット" onPress={startNewChat} style={styles.newButton}><Text style={styles.newButtonText}>＋</Text></Pressable>
           </View>
 
-          <ScrollView contentContainerStyle={styles.messages} onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })} ref={scrollRef} showsVerticalScrollIndicator={false}>
+          <ScrollView automaticallyAdjustKeyboardInsets contentContainerStyle={styles.messages} keyboardDismissMode="interactive" keyboardShouldPersistTaps="handled" onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })} ref={scrollRef} showsVerticalScrollIndicator={false}>
             {isLoadingHistory || isLoadingMessages ? (
               <View style={styles.welcome}>
                 <ActivityIndicator color="#F6D365" size="large" />
@@ -317,7 +330,10 @@ export default function ChatScreen() {
 
           {error ? <Text style={styles.error}>{error}</Text> : null}
           <View style={styles.inputArea}>
-            <TextInput multiline onChangeText={setInput} placeholder="筋トレについて相談する" placeholderTextColor="#697169" style={styles.input} value={input} />
+            <View style={styles.inputWrap}>
+              <TextInput maxLength={1000} multiline onChangeText={(value) => { setInput(value); setError(''); }} placeholder="筋トレについて相談する" placeholderTextColor="#697169" style={styles.input} value={input} />
+              <Text style={styles.characterCount}>{input.length}/1000</Text>
+            </View>
             <Pressable disabled={!input.trim() || isSending} onPress={sendMessage} style={[styles.sendButton, (!input.trim() || isSending) && styles.disabledSend]}><Text style={styles.sendText}>↑</Text></Pressable>
           </View>
         </KeyboardAvoidingView>
@@ -329,7 +345,7 @@ export default function ChatScreen() {
           <View style={styles.drawerHeader}><Text style={styles.drawerTitle}>チャット履歴</Text><Pressable onPress={() => setDrawerVisible(false)}><Text style={styles.closeText}>×</Text></Pressable></View>
           <Pressable onPress={startNewChat} style={styles.drawerNewButton}><Text style={styles.drawerNewText}>＋ 新しいチャット</Text></Pressable>
           <ScrollView contentContainerStyle={styles.chatList}>
-            {conversations.length === 0 ? <Text style={styles.emptyHistory}>過去のチャットはありません。</Text> : conversations.map((chat) => <View key={chat.id} style={[styles.chatRow, resolvedActiveId === chat.id && styles.activeChatRow]}><Pressable onPress={() => { setActiveId(chat.id); setDrawerVisible(false); }} style={styles.chatSelect}><Text numberOfLines={1} style={styles.chatTitle}>{chat.title}</Text><Text style={styles.chatMeta}>{chat.serverConversationId ? (chat.messages.length > 0 ? `${chat.messages.length}メッセージ` : '保存済み') : '新しいチャット'}</Text></Pressable><Pressable accessibilityLabel={`${chat.title}を削除`} disabled={deletingConversationId !== null} onPress={() => void removeChat(chat.id)} style={styles.deleteButton}><Text style={styles.deleteText}>{deletingConversationId === chat.id ? '削除中…' : '削除'}</Text></Pressable></View>)}
+            {conversations.length === 0 ? <Text style={styles.emptyHistory}>過去のチャットはありません。</Text> : conversations.map((chat) => <View key={chat.id} style={[styles.chatRow, resolvedActiveId === chat.id && styles.activeChatRow]}><Pressable onPress={() => { setActiveId(chat.id); setDrawerVisible(false); }} style={styles.chatSelect}><Text numberOfLines={1} style={styles.chatTitle}>{chat.title}</Text><Text style={styles.chatMeta}>{chat.serverConversationId ? (chat.messages.length > 0 ? `${chat.messages.length}メッセージ` : '保存済み') : '新しいチャット'}</Text></Pressable><Pressable accessibilityLabel={`${chat.title}を削除`} accessibilityHint="確認後にチャット履歴を削除します" disabled={deletingConversationId !== null} onPress={() => confirmRemoveChat(chat.id, chat.title)} style={styles.deleteButton}><Text style={styles.deleteText}>{deletingConversationId === chat.id ? '削除中…' : '削除'}</Text></Pressable></View>)}
           </ScrollView>
           <Text style={styles.drawerNote}>Neonに保存された本人のチャット履歴を表示しています。</Text>
         </SafeAreaView></View>
@@ -347,6 +363,6 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#0A0A0A' }, safeArea: { flex: 1 }, header: { minHeight: 66, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, borderBottomWidth: 1, borderBottomColor: '#2C2924' }, menuButton: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }, menuIcon: { color: '#F4F6F3', fontSize: 20 }, headerCopy: { flex: 1, marginHorizontal: 7 }, eyebrow: { color: '#FFF1B8', fontSize: 7, fontWeight: '700', letterSpacing: 1.2 }, title: { marginTop: 3, color: '#F4F6F3', fontSize: 15, fontWeight: '700' }, newButton: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#3A3A3A', borderRadius: 12 }, newButtonText: { color: '#FFF1B8', fontSize: 20 },
   messages: { flexGrow: 1, paddingHorizontal: 14, paddingVertical: 17 }, welcome: { alignItems: 'center', paddingTop: 42 }, aiMark: { width: 54, height: 54, alignItems: 'center', justifyContent: 'center', borderRadius: 27, backgroundColor: '#F6D365' }, aiMarkText: { color: '#0A0A0A', fontSize: 14, fontWeight: '700' }, welcomeTitle: { marginTop: 17, color: '#F4F6F3', fontSize: 18, fontWeight: '700', textAlign: 'center' }, welcomeText: { marginTop: 8, maxWidth: 290, color: '#737B75', fontSize: 10, lineHeight: 16, textAlign: 'center' }, suggestions: { width: '100%', gap: 8, marginTop: 22 }, suggestion: { padding: 13, borderWidth: 1, borderColor: '#303030', borderRadius: 13, backgroundColor: '#151515' }, suggestionText: { color: '#C9CECA', fontSize: 11, fontWeight: '700' },
   bubbleRow: { flexDirection: 'row', alignItems: 'flex-end', marginBottom: 14 }, userRow: { justifyContent: 'flex-end', paddingLeft: 45 }, assistantRow: { justifyContent: 'flex-start', paddingRight: 32 }, smallAiMark: { width: 25, height: 25, alignItems: 'center', justifyContent: 'center', marginRight: 7, borderRadius: 13, backgroundColor: '#F6D365' }, smallAiText: { color: '#0A0A0A', fontSize: 7, fontWeight: '700' }, userBubble: { paddingHorizontal: 14, paddingVertical: 11, borderRadius: 17, borderBottomRightRadius: 5, backgroundColor: '#F6D365' }, assistantBubble: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 14, paddingVertical: 11, borderRadius: 17, borderBottomLeftRadius: 5, backgroundColor: '#1C201D' }, userMessageText: { color: '#0A0A0A', fontSize: 12, fontWeight: '700', lineHeight: 19 }, assistantMessageText: { color: '#E8EBE8', fontSize: 12, lineHeight: 20 }, thinkingText: { color: '#8E978F', fontSize: 10 },
-  error: { paddingHorizontal: 16, paddingBottom: 7, color: '#FF7676', fontSize: 10 }, inputArea: { flexDirection: 'row', alignItems: 'flex-end', gap: 9, paddingHorizontal: 13, paddingVertical: 10, borderTopWidth: 1, borderTopColor: '#2C2924', backgroundColor: '#111111' }, input: { maxHeight: 110, minHeight: 46, flex: 1, paddingHorizontal: 14, paddingVertical: 12, borderWidth: 1, borderColor: '#3A3A3A', borderRadius: 15, backgroundColor: '#0A0A0A', color: '#F4F6F3', fontSize: 12 }, sendButton: { width: 46, height: 46, alignItems: 'center', justifyContent: 'center', borderRadius: 15, backgroundColor: '#F6D365' }, disabledSend: { opacity: 0.35 }, sendText: { color: '#0A0A0A', fontSize: 20, fontWeight: '700' },
+  error: { paddingHorizontal: 16, paddingBottom: 7, color: '#FF7676', fontSize: 10 }, inputArea: { flexDirection: 'row', alignItems: 'flex-end', gap: 9, paddingHorizontal: 13, paddingVertical: 10, borderTopWidth: 1, borderTopColor: '#2C2924', backgroundColor: '#111111' }, inputWrap: { flex: 1 }, input: { maxHeight: 110, minHeight: 46, paddingHorizontal: 14, paddingTop: 12, paddingBottom: 18, borderWidth: 1, borderColor: '#3A3A3A', borderRadius: 15, backgroundColor: '#0A0A0A', color: '#F4F6F3', fontSize: 12 }, characterCount: { position: 'absolute', right: 10, bottom: 5, color: '#59605A', fontSize: 8 }, sendButton: { width: 46, height: 46, alignItems: 'center', justifyContent: 'center', borderRadius: 15, backgroundColor: '#F6D365' }, disabledSend: { opacity: 0.35 }, sendText: { color: '#0A0A0A', fontSize: 20, fontWeight: '700' },
   modalBackdrop: { flex: 1, flexDirection: 'row', backgroundColor: 'rgba(0,0,0,0.6)' }, modalDismiss: { flex: 1 }, drawer: { width: '82%', backgroundColor: '#111111' }, drawerHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 18, borderBottomWidth: 1, borderBottomColor: '#2C2924' }, drawerTitle: { color: '#F4F6F3', fontSize: 20, fontWeight: '700' }, closeText: { color: '#8E978F', fontSize: 26 }, drawerNewButton: { margin: 14, padding: 13, borderWidth: 1, borderColor: '#F6D365', borderRadius: 13 }, drawerNewText: { color: '#FFF1B8', fontSize: 12, fontWeight: '700', textAlign: 'center' }, chatList: { paddingHorizontal: 12 }, emptyHistory: { padding: 14, color: '#737B75', fontSize: 10 }, chatRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 6, borderRadius: 12, backgroundColor: '#181C19' }, activeChatRow: { backgroundColor: '#302A12' }, chatSelect: { flex: 1, padding: 12 }, chatTitle: { color: '#E8EBE8', fontSize: 11, fontWeight: '600' }, chatMeta: { marginTop: 4, color: '#697169', fontSize: 8 }, deleteButton: { padding: 11 }, deleteText: { color: '#FF8D98', fontSize: 9, fontWeight: '600' }, drawerNote: { padding: 15, color: '#59605A', fontSize: 8, textAlign: 'center' },
 });

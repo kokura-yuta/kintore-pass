@@ -123,9 +123,60 @@ const splitMenus: Record<MenuBodyPart, GeneratedMenuPreview> = {
   },
 };
 
+const alternativeExercises: Record<string, GeneratedMenuExercise> = {
+  'bench-press': { exerciseId: 'dumbbell-press', name: 'ダンベルプレス', equipment: 'ダンベル', weightKg: '22', reps: '10', setCount: 3, source: 'recommended' },
+  'incline-dumbbell-press': { exerciseId: 'incline-bench-press', name: 'インクラインベンチプレス', equipment: 'バーベル', weightKg: '45', reps: '8', setCount: 3, source: 'recommended' },
+  'chest-press': { exerciseId: 'pec-deck-fly', name: 'ペックデックフライ', equipment: 'マシン', weightKg: '25', reps: '12', setCount: 3, source: 'recommended' },
+  'push-up': { exerciseId: 'dumbbell-fly', name: 'ダンベルフライ', equipment: 'ダンベル', weightKg: '12', reps: '12', setCount: 2, source: 'recommended' },
+  'lat-pulldown': { exerciseId: 'pull-up', name: '懸垂', equipment: '自重', weightKg: '', reps: '8', setCount: 3, source: 'recommended' },
+  'seated-row': { exerciseId: 'one-arm-dumbbell-row', name: 'ワンハンドダンベルロウ', equipment: 'ダンベル', weightKg: '18', reps: '10', setCount: 3, source: 'recommended' },
+  'rear-delt-fly': { exerciseId: 'face-pull', name: 'フェイスプル', equipment: 'ケーブル', weightKg: '15', reps: '12', setCount: 3, source: 'recommended' },
+  'hammer-curl': { exerciseId: 'incline-dumbbell-curl', name: 'インクラインダンベルカール', equipment: 'ダンベル', weightKg: '8', reps: '10', setCount: 3, source: 'recommended' },
+  'shoulder-press': { exerciseId: 'machine-shoulder-press', name: 'マシンショルダープレス', equipment: 'マシン', weightKg: '30', reps: '10', setCount: 3, source: 'recommended' },
+  'side-raise': { exerciseId: 'cable-side-raise', name: 'ケーブルサイドレイズ', equipment: 'ケーブル', weightKg: '5', reps: '12', setCount: 3, source: 'recommended' },
+  'cable-pushdown': { exerciseId: 'skull-crusher', name: 'スカルクラッシャー', equipment: 'EZバー', weightKg: '15', reps: '10', setCount: 3, source: 'recommended' },
+  'barbell-curl': { exerciseId: 'cable-curl', name: 'ケーブルカール', equipment: 'ケーブル', weightKg: '15', reps: '12', setCount: 3, source: 'recommended' },
+  'squat': { exerciseId: 'front-squat', name: 'フロントスクワット', equipment: 'バーベル', weightKg: '45', reps: '8', setCount: 3, source: 'recommended' },
+  'leg-press': { exerciseId: 'bulgarian-split-squat', name: 'ブルガリアンスクワット', equipment: 'ダンベル', weightKg: '12', reps: '10', setCount: 3, source: 'recommended' },
+  'leg-curl': { exerciseId: 'romanian-deadlift', name: 'ルーマニアンデッドリフト', equipment: 'バーベル', weightKg: '45', reps: '10', setCount: 3, source: 'recommended' },
+  'plank': { exerciseId: 'dead-bug', name: 'デッドバグ', equipment: '自重', weightKg: '', reps: '12', setCount: 3, source: 'recommended' },
+  'crunch': { exerciseId: 'cable-crunch', name: 'ケーブルクランチ', equipment: 'ケーブル', weightKg: '15', reps: '12', setCount: 3, source: 'recommended' },
+  'ab-wheel': { exerciseId: 'hanging-leg-raise', name: 'ハンギングレッグレイズ', equipment: '自重', weightKg: '', reps: '10', setCount: 3, source: 'recommended' },
+};
+
+function buildMenuVariation(baseMenu: GeneratedMenuPreview, generation: number) {
+  const variation = generation % 3;
+  if (variation === 0) {
+    return { ...baseMenu, menuId: `${baseMenu.menuId}-${generation}` };
+  }
+
+  if (variation === 1) {
+    return {
+      ...baseMenu,
+      menuId: `${baseMenu.menuId}-${generation}`,
+      estimatedMinutes: Math.max(25, baseMenu.estimatedMinutes - 5),
+      reason: `前回と同じ内容が続かないように種目を入れ替えました。${baseMenu.reason}`,
+      exercises: baseMenu.exercises.map((exercise) => alternativeExercises[exercise.exerciseId] ?? exercise),
+    };
+  }
+
+  const [firstExercise, ...remainingExercises] = baseMenu.exercises;
+  const reorderedExercises = firstExercise ? [...remainingExercises, firstExercise] : [];
+  return {
+    ...baseMenu,
+    menuId: `${baseMenu.menuId}-${generation}`,
+    estimatedMinutes: baseMenu.estimatedMinutes + 5,
+    reason: `前回とは種目の順番と回数設定を変え、刺激に変化をつけました。${baseMenu.reason}`,
+    exercises: reorderedExercises.map((exercise) => ({
+      ...exercise,
+      reps: String(Math.min(20, Number(exercise.reps) + 2)),
+    })),
+  };
+}
+
 export function getMenuPreview(condition: number, generation: number, style: MenuTrainingStyle = 'ai', bodyPart: MenuBodyPart | null = null) {
-  if (condition <= 4) return menuVariants[2];
-  if (style === 'full-body') return fullBodyMenu;
-  if (style === 'split' && bodyPart) return splitMenus[bodyPart];
-  return menuVariants[generation % 2];
+  if (condition <= 4) return buildMenuVariation(menuVariants[2], generation);
+  if (style === 'full-body') return buildMenuVariation(fullBodyMenu, generation);
+  if (style === 'split' && bodyPart) return buildMenuVariation(splitMenus[bodyPart], generation);
+  return buildMenuVariation(menuVariants[generation % 2], generation);
 }

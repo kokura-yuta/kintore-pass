@@ -1,7 +1,7 @@
-import { useUser } from '@clerk/expo';
+import { useClerk, useUser } from '@clerk/expo';
 import { type Href, useRouter } from 'expo-router';
 import { useState } from 'react';
-import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { BottomNavigation } from '@/components/BottomNavigation';
@@ -28,11 +28,14 @@ type Errors = Partial<Record<'heightCm' | 'weightKg' | 'bodyFatPercentage' | 'tr
 export default function MyPageScreen() {
   const router = useRouter();
   const { user } = useUser();
+  const { signOut } = useClerk();
   const { goalBody, profile, setProfile } = useOnboarding();
   const [form, setForm] = useState<ProfileDraft>(profile);
   const [errors, setErrors] = useState<Errors>({});
   const [isSaving, setIsSaving] = useState(false);
   const [savedMessage, setSavedMessage] = useState('');
+  const [isSigningOut, setIsSigningOut] = useState(false);
+  const [accountError, setAccountError] = useState('');
 
   function updateField<K extends keyof ProfileDraft>(field: K, value: ProfileDraft[K]) {
     setForm((current) => ({ ...current, [field]: value }));
@@ -72,11 +75,36 @@ export default function MyPageScreen() {
     setSavedMessage('プロフィールを保存しました。');
   }
 
+  async function performSignOut() {
+    setIsSigningOut(true);
+    setAccountError('');
+    try {
+      await signOut();
+      router.replace('/sign-in');
+    } catch {
+      setAccountError('ログアウトできませんでした。通信状態を確認してもう一度お試しください。');
+    } finally {
+      setIsSigningOut(false);
+    }
+  }
+
+  function confirmSignOut() {
+    const message = 'この端末からログアウトします。';
+    if (Platform.OS === 'web') {
+      if (globalThis.confirm(message)) void performSignOut();
+      return;
+    }
+    Alert.alert('ログアウトしますか？', message, [
+      { text: 'キャンセル', style: 'cancel' },
+      { text: 'ログアウト', style: 'destructive', onPress: () => void performSignOut() },
+    ]);
+  }
+
   return (
     <View style={styles.screen}>
       <SafeAreaView edges={['top']} style={styles.safeArea}>
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.safeArea}>
-          <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+          <ScrollView automaticallyAdjustKeyboardInsets contentContainerStyle={styles.content} keyboardDismissMode="interactive" keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
             <Text style={styles.eyebrow}>MY PAGE</Text>
             <Text style={styles.title}>マイページ</Text>
             <Text style={styles.account}>{user?.primaryEmailAddress?.emailAddress ?? 'ログイン中のユーザー'}</Text>
@@ -144,6 +172,10 @@ export default function MyPageScreen() {
               {isSaving ? <ActivityIndicator color="#0A0A0A" /> : <Text style={styles.saveText}>プロフィールを保存</Text>}
             </Pressable>
             <Text style={styles.previewNote}>現在はフロントエンド内の仮保存です。プロフィールAPI接続後にサーバー保存へ切り替えます。</Text>
+            {accountError ? <Text style={styles.accountError}>{accountError}</Text> : null}
+            <Pressable disabled={isSigningOut} onPress={confirmSignOut} style={[styles.signOutButton, isSigningOut && styles.disabledButton]}>
+              {isSigningOut ? <ActivityIndicator color="#FF8D98" /> : <Text style={styles.signOutText}>ログアウト</Text>}
+            </Pressable>
           </ScrollView>
         </KeyboardAvoidingView>
       </SafeAreaView>
@@ -197,4 +229,7 @@ const styles = StyleSheet.create({
   disabledButton: { opacity: 0.5 },
   saveText: { color: '#0A0A0A', fontSize: 15, fontWeight: '700' },
   previewNote: { marginTop: 12, color: '#59605A', fontSize: 9, lineHeight: 15, textAlign: 'center' },
+  accountError: { marginTop: 14, color: '#FF7676', fontSize: 11, lineHeight: 17, textAlign: 'center' },
+  signOutButton: { minHeight: 50, alignItems: 'center', justifyContent: 'center', marginTop: 14, borderWidth: 1, borderColor: '#6B3138', borderRadius: 14 },
+  signOutText: { color: '#FF8D98', fontSize: 13, fontWeight: '700' },
 });

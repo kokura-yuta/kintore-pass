@@ -1,4 +1,4 @@
-import { ClerkProvider } from '@clerk/expo';
+import { ClerkProvider, useAuth } from '@clerk/expo';
 import { tokenCache } from '@clerk/expo/token-cache';
 import { DarkTheme, ThemeProvider } from 'expo-router';
 import { Stack } from 'expo-router';
@@ -42,19 +42,30 @@ export default function RootLayout() {
       <SafeAreaProvider>
         <ThemeProvider value={musclePasTheme}>
           <StatusBar style="light" />
-          <OnboardingProvider>
-            <TrainingDraftProvider>
-              <TrainingHistoryProvider>
-                <WeightHistoryProvider>
-                  <ChatHistoryProvider>
-                    <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#0A0A0A' } }} />
-                  </ChatHistoryProvider>
-                </WeightHistoryProvider>
-              </TrainingHistoryProvider>
-            </TrainingDraftProvider>
-          </OnboardingProvider>
+          <UserScopedApp />
         </ThemeProvider>
       </SafeAreaProvider>
     </ClerkProvider>
+  );
+}
+
+function UserScopedApp() {
+  const { userId } = useAuth({ treatPendingAsSignedOut: false });
+  return <UserDataProviders key={userId ?? 'signed-out'} />;
+}
+
+function UserDataProviders() {
+  return (
+    <OnboardingProvider>
+      <TrainingDraftProvider>
+        <TrainingHistoryProvider>
+          <WeightHistoryProvider>
+            <ChatHistoryProvider>
+              <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#0A0A0A' } }} />
+            </ChatHistoryProvider>
+          </WeightHistoryProvider>
+        </TrainingHistoryProvider>
+      </TrainingDraftProvider>
+    </OnboardingProvider>
   );
 }
