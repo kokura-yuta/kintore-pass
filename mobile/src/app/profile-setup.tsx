@@ -1,7 +1,9 @@
+import { useAuth } from '@clerk/expo';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import {
   KeyboardAvoidingView,
+  ActivityIndicator,
   Platform,
   Pressable,
   ScrollView,
@@ -18,6 +20,7 @@ import {
   type TrainingStyle,
   useOnboarding,
 } from '@/contexts/OnboardingContext';
+import { saveUserProfile } from '@/lib/profiles';
 
 const locations: { value: TrainingLocation; label: string; description: string }[] = [
   { value: 'home', label: '自宅', description: '自重・ダンベル中心' },
@@ -38,9 +41,16 @@ type Errors = Partial<Record<'heightCm' | 'weightKg' | 'bodyFatPercentage' | 'tr
 
 export default function ProfileSetupScreen() {
   const router = useRouter();
+  const { getToken } = useAuth({
+    treatPendingAsSignedOut: false,
+  });
   const { profile: savedProfile, setProfile } = useOnboarding();
   const [form, setForm] = useState<ProfileDraft>(savedProfile);
   const [errors, setErrors] = useState<Errors>({});
+  const [submitError, setSubmitError] =
+    useState('');
+  const [isSaving, setIsSaving] =
+    useState(false);
 
   function updateField<K extends keyof ProfileDraft>(field: K, value: ProfileDraft[K]) {
     setForm((current) => ({ ...current, [field]: value }));
@@ -59,7 +69,7 @@ export default function ProfileSetupScreen() {
     );
   }
 
-  function continueToAnalysis() {
+  async function continueToAnalysis() {
     const nextErrors: Errors = {};
     const height = Number(form.heightCm);
     const weight = Number(form.weightKg);
@@ -74,13 +84,34 @@ export default function ProfileSetupScreen() {
     if (form.bodyFatPercentage && (bodyFat < 2 || bodyFat > 70)) {
       nextErrors.bodyFatPercentage = '2〜70%で入力してください。';
     }
-    if (!form.trainingStyle) nextErrors.trainingStyle = 'トレーニング形式を選択してください。';
-
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return;
 
-    setProfile(form);
-    router.push('/initial-analysis');
+    setSubmitError('');
+    setIsSaving(true);
+
+    try {
+      const token = await getToken();
+
+      if (!token) {
+        throw new Error(
+          'ログイン状態を確認できませんでした。',
+        );
+      }
+
+      // 身体プロフィールをバックエンド経由でNeonへ保存する
+      await saveUserProfile(token, form);
+      setProfile(form);
+      router.push('/initial-analysis');
+    } catch (error) {
+      setSubmitError(
+        error instanceof Error
+          ? error.message
+          : '身体情報を保存できませんでした。',
+      );
+    } finally {
+      setIsSaving(false);
+    }
   }
 
   return (
@@ -176,7 +207,7 @@ export default function ProfileSetupScreen() {
                 <Text style={styles.optionalBadge}>任意</Text>
               </View>
 
-              <Text style={styles.optionLabel}>トレーニング形式 <Text style={styles.requiredText}>必須</Text></Text>
+              <Text style={styles.optionLabel}>トレーニング形式 <Text style={styles.optionalBadge}>任意</Text></Text>
               <View style={styles.chipRow}>
                 {trainingStyleOptions.map((style) => (
                   <Pressable key={style.value} onPress={() => updateField('trainingStyle', style.value)} style={[styles.chip, form.trainingStyle === style.value && styles.selectedChip]}>
@@ -233,8 +264,9 @@ export default function ProfileSetupScreen() {
               </View>
             </View>
 
-            <Pressable onPress={continueToAnalysis} style={styles.continueButton}>
-              <Text style={styles.continueText}>入力内容を確認して次へ</Text>
+            {submitError ? <Text style={styles.fieldError}>{submitError}</Text> : null}
+            <Pressable disabled={isSaving} onPress={continueToAnalysis} style={[styles.continueButton, isSaving && { opacity: 0.5 }]}>
+              {isSaving ? <ActivityIndicator color="#0A0A0A" /> : <Text style={styles.continueText}>入力内容を保存して次へ</Text>}
               <Text style={styles.continueArrow}>→</Text>
             </Pressable>
             <Text style={styles.note}>入力内容はあとからマイページで変更できます。</Text>

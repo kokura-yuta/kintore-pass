@@ -5,6 +5,9 @@ import type { MenuBodyPart } from '@/lib/aiMenuPreview';
 
 export type TrainingDraftExercise = {
   exerciseId: string;
+  exerciseName?: string;
+  category?: MenuBodyPart;
+  equipment?: string;
   sets: { weightKg: string; reps: string }[];
 };
 

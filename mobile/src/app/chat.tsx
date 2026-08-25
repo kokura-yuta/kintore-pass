@@ -1,42 +1,179 @@
-import { useRef, useState } from 'react';
+import { useAuth } from '@clerk/expo';
+import { Redirect } from 'expo-router';
+import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-
+import Markdown from 'react-native-markdown-display';
 import { BottomNavigation } from '@/components/BottomNavigation';
 import { type ChatMessage, useChatHistory } from '@/contexts/ChatHistoryContext';
-import { useOnboarding } from '@/contexts/OnboardingContext';
-import { useTrainingDraft } from '@/contexts/TrainingDraftContext';
-import { useTrainingHistory } from '@/contexts/TrainingHistoryContext';
+import { deleteChatConversation, fetchChatHistory, sendChatMessage } from '@/lib/chatApi';
 
-function createAssistantReply(message: string, trainingCount: number, hasMenu: boolean, weakParts: string[]) {
-  if (message.includes('胸') && (message.includes('伸び') || message.includes('重量'))) {
-    return `直近の保存済みトレーニングは${trainingCount}件です。胸の重量が停滞している場合は、同じ重量だけで続けず、回数を1〜2回増やす週と重量を少し上げる週を分けてみましょう。前回記録を見ながら、補助種目としてインクラインプレスを追加するのもおすすめです。`;
-  }
-  if (message.includes('疲') || message.includes('休')) {
-    return '疲労が強い日は、重量を普段の70〜80%に下げるか休養日にして問題ありません。関節の痛みがある場合は無理に続けず、必要に応じて医療専門家へ相談してください。';
-  }
-  if (message.includes('メニュー')) {
-    return hasMenu
-      ? '今日生成したメニューがあります。まずは最初のセットを軽めに行い、調子に合わせて重量を調整してください。記録画面ではAIの推奨値をそのまま引き継げます。'
-      : 'まだ今日のAIメニューが生成されていません。AIコーチ画面で今日の調子を入力すると、履歴と目標に合わせたメニューを作れます。';
-  }
-  const focus = weakParts.length ? weakParts.join('・') : '全身';
-  return `現在の設定では、苦手部位は「${focus}」です。これまでの記録と今日の調子を見ながら、無理なく継続できる内容を提案します。種目名や困っている動きをもう少し具体的に教えてもらえれば、より詳しく答えられます。`;
+// APIから届く日付文字列を画面で扱う数値へ変換する
+function toTimestamp(value: string) {
+  const timestamp = Date.parse(value);
+  return Number.isNaN(timestamp) ? Date.now() : timestamp;
 }
 
 export default function ChatScreen() {
-  const { conversations, createConversation, deleteConversation, addMessage } = useChatHistory();
-  const { profile } = useOnboarding();
-  const { records } = useTrainingHistory();
-  const { draft } = useTrainingDraft();
+  const { getToken, isLoaded, isSignedIn } = useAuth({ treatPendingAsSignedOut: false });
+  const {
+    conversations,
+    createConversation,
+    deleteConversation,
+    addMessage,
+    setServerConversationId,
+    replaceConversations,
+    setConversationMessages,
+  } = useChatHistory();
   const [activeId, setActiveId] = useState<string | null>(null);
   const [input, setInput] = useState('');
   const [drawerVisible, setDrawerVisible] = useState(false);
   const [isSending, setIsSending] = useState(false);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [isLoadingMessages, setIsLoadingMessages] = useState(false);
+  const [deletingConversationId, setDeletingConversationId] = useState<string | null>(null);
   const [error, setError] = useState('');
   const scrollRef = useRef<ScrollView>(null);
+  const getTokenRef = useRef(getToken);
+  const loadedMessageConversationIds = useRef(new Set<string>());
+  const messageRequestId = useRef(0);
   const resolvedActiveId = activeId ?? conversations[0]?.id ?? null;
   const activeConversation = conversations.find((chat) => chat.id === resolvedActiveId) ?? null;
+
+  // 最新のClerkトークン取得関数を、履歴通信を再実行させずに保持する
+  useEffect(() => {
+    getTokenRef.current = getToken;
+  }, [getToken]);
+
+  // 画面を開いたとき、Neonに保存された本人のチャット一覧を取得する
+  useEffect(() => {
+    if (!isLoaded || !isSignedIn) return;
+
+    let cancelled = false;
+
+    async function loadConversationList() {
+      setIsLoadingHistory(true);
+      setError('');
+
+      try {
+        const token = await getTokenRef.current();
+        if (!token) {
+          throw new Error('ログインを確認できませんでした。');
+        }
+
+        const response = await fetchChatHistory(token);
+        if (cancelled) return;
+
+        const loadedConversations = response.conversations.map((conversation) => ({
+          id: conversation.id,
+          serverConversationId: conversation.id,
+          title: conversation.title,
+          messages: [],
+          updatedAt: toTimestamp(conversation.updatedAt),
+        }));
+
+        loadedMessageConversationIds.current.clear();
+        replaceConversations(loadedConversations);
+        setActiveId((current) => (
+          loadedConversations.some((conversation) => conversation.id === current)
+            ? current
+            : loadedConversations[0]?.id ?? null
+        ));
+      } catch (historyError) {
+        if (!cancelled) {
+          setError(
+            historyError instanceof Error
+              ? historyError.message
+              : 'チャット履歴を取得できませんでした。',
+          );
+        }
+      } finally {
+        if (!cancelled) setIsLoadingHistory(false);
+      }
+    }
+
+    void loadConversationList();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isLoaded, isSignedIn, replaceConversations]);
+
+  // 開いているチャットのメッセージをまだ取得していなければNeonから取得する
+  useEffect(() => {
+    const localConversationId = activeConversation?.id ?? null;
+    const serverConversationId = activeConversation?.serverConversationId ?? null;
+
+    if (!isLoaded || !isSignedIn || !localConversationId || !serverConversationId) {
+      return;
+    }
+    if ((activeConversation?.messages.length ?? 0) > 0) {
+      return;
+    }
+
+    const selectedLocalConversationId: string = localConversationId;
+    const selectedServerConversationId: string = serverConversationId;
+
+    if (loadedMessageConversationIds.current.has(selectedServerConversationId)) {
+      return;
+    }
+
+    loadedMessageConversationIds.current.add(selectedServerConversationId);
+    const currentRequestId = messageRequestId.current + 1;
+    messageRequestId.current = currentRequestId;
+    let cancelled = false;
+
+    async function loadMessages() {
+      setIsLoadingMessages(true);
+      setError('');
+
+      try {
+        const token = await getTokenRef.current();
+        if (!token) {
+          throw new Error('ログインを確認できませんでした。');
+        }
+
+        const response = await fetchChatHistory(token, selectedServerConversationId);
+        if (cancelled) return;
+
+        const loadedMessages: ChatMessage[] = response.messages.map((message) => ({
+          id: message.id,
+          role: message.role,
+          content: message.content,
+          createdAt: toTimestamp(message.createdAt),
+        }));
+
+        setConversationMessages(selectedLocalConversationId, loadedMessages);
+      } catch (messageError) {
+        loadedMessageConversationIds.current.delete(selectedServerConversationId);
+        if (!cancelled) {
+          setError(
+            messageError instanceof Error
+              ? messageError.message
+              : '過去のメッセージを取得できませんでした。',
+          );
+        }
+      } finally {
+        // 古い通信ではなく、現在の通信が終わったときだけ読み込み表示を消す
+        if (messageRequestId.current === currentRequestId) {
+          setIsLoadingMessages(false);
+        }
+      }
+    }
+
+    void loadMessages();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    activeConversation?.id,
+    activeConversation?.messages.length,
+    activeConversation?.serverConversationId,
+    isLoaded,
+    isSignedIn,
+    setConversationMessages,
+  ]);
 
   function startNewChat() {
     const id = createConversation();
@@ -48,34 +185,109 @@ export default function ChatScreen() {
   async function sendMessage() {
     const content = input.trim();
     if (!content || isSending) return;
-    let conversationId = resolvedActiveId;
-    if (!conversationId) {
-      conversationId = createConversation();
-      setActiveId(conversationId);
+
+    // 画面内で使うチャットIDを用意する
+    let localConversationId = resolvedActiveId;
+    let serverConversationId = activeConversation?.serverConversationId ?? null;
+
+    if (!localConversationId) {
+      localConversationId = createConversation();
+      serverConversationId = null;
+      setActiveId(localConversationId);
     }
+
     const userMessage: ChatMessage = { id: `user-${Date.now()}`, role: 'user', content, createdAt: Date.now() };
-    addMessage(conversationId, userMessage);
+    addMessage(localConversationId, userMessage);
     setInput('');
     setError('');
     setIsSending(true);
-    await new Promise((resolve) => setTimeout(resolve, 900));
+
     try {
-      addMessage(conversationId, {
+      // Clerkのトークンでログイン中の本人だと証明する
+      const token = await getToken();
+      if (!token) {
+        throw new Error('ログインを確認できませんでした。');
+      }
+
+      // 質問をTypeScriptバックエンドへ送り、AIの回答を待つ
+      const response = await sendChatMessage(
+        token,
+        content,
+        serverConversationId,
+      );
+
+      // バックエンドが作成したNeon側のチャットIDを保存する
+      setServerConversationId(
+        localConversationId,
+        response.conversationId,
+      );
+
+      // OpenAIから返った回答をチャット画面へ追加する
+      addMessage(localConversationId, {
         id: `assistant-${Date.now()}`,
         role: 'assistant',
-        content: createAssistantReply(content, records.length, Boolean(draft), profile.weakBodyParts),
+        content: response.reply,
         createdAt: Date.now(),
       });
-    } catch {
-      setError('AIからの返信を取得できませんでした。もう一度お試しください。');
+    } catch (sendError) {
+      setError(
+        sendError instanceof Error
+          ? sendError.message
+          : 'AIからの返信を取得できませんでした。もう一度お試しください。',
+      );
     } finally {
       setIsSending(false);
     }
   }
 
-  function removeChat(id: string) {
-    deleteConversation(id);
-    if (resolvedActiveId === id) setActiveId(null);
+  // 保存済みチャットはNeonから削除し、成功後に画面上からも削除する
+  async function removeChat(id: string) {
+    if (deletingConversationId) return;
+
+    const conversation = conversations.find((chat) => chat.id === id) ?? null;
+    if (!conversation) return;
+
+    setError('');
+
+    // まだ一度も送信していない新規チャットはNeonに存在しないため画面だけ消す
+    if (!conversation.serverConversationId) {
+      deleteConversation(id);
+      if (resolvedActiveId === id) setActiveId(null);
+      return;
+    }
+
+    setDeletingConversationId(id);
+
+    try {
+      const token = await getTokenRef.current();
+      if (!token) {
+        throw new Error('ログインを確認できませんでした。');
+      }
+
+      await deleteChatConversation(
+        token,
+        conversation.serverConversationId,
+      );
+
+      loadedMessageConversationIds.current.delete(
+        conversation.serverConversationId,
+      );
+      deleteConversation(id);
+      if (resolvedActiveId === id) setActiveId(null);
+    } catch (deleteError) {
+      setError(
+        deleteError instanceof Error
+          ? deleteError.message
+          : 'チャットを削除できませんでした。',
+      );
+    } finally {
+      setDeletingConversationId(null);
+    }
+  }
+
+  // 未ログインの場合はClerkのログイン画面へ移動する
+  if (isLoaded && !isSignedIn) {
+    return <Redirect href="/sign-in" />;
   }
 
   return (
@@ -89,7 +301,12 @@ export default function ChatScreen() {
           </View>
 
           <ScrollView contentContainerStyle={styles.messages} onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })} ref={scrollRef} showsVerticalScrollIndicator={false}>
-            {!activeConversation?.messages.length ? (
+            {isLoadingHistory || isLoadingMessages ? (
+              <View style={styles.welcome}>
+                <ActivityIndicator color="#F6D365" size="large" />
+                <Text style={styles.welcomeText}>保存済みのチャットを読み込んでいます…</Text>
+              </View>
+            ) : !activeConversation?.messages.length ? (
               <View style={styles.welcome}>
                 <View style={styles.aiMark}><Text style={styles.aiMarkText}>AI</Text></View><Text style={styles.welcomeTitle}>筋トレについて相談してください</Text><Text style={styles.welcomeText}>あなたの目標・身体情報・トレーニング履歴を参考に回答します。</Text>
                 <View style={styles.suggestions}>{['最近、胸の重量が伸びない', '疲れている日は休んでもいい？', '今日のメニューについて教えて'].map((suggestion) => <Pressable key={suggestion} onPress={() => setInput(suggestion)} style={styles.suggestion}><Text style={styles.suggestionText}>{suggestion}</Text></Pressable>)}</View>
@@ -112,9 +329,9 @@ export default function ChatScreen() {
           <View style={styles.drawerHeader}><Text style={styles.drawerTitle}>チャット履歴</Text><Pressable onPress={() => setDrawerVisible(false)}><Text style={styles.closeText}>×</Text></Pressable></View>
           <Pressable onPress={startNewChat} style={styles.drawerNewButton}><Text style={styles.drawerNewText}>＋ 新しいチャット</Text></Pressable>
           <ScrollView contentContainerStyle={styles.chatList}>
-            {conversations.length === 0 ? <Text style={styles.emptyHistory}>過去のチャットはありません。</Text> : conversations.map((chat) => <View key={chat.id} style={[styles.chatRow, resolvedActiveId === chat.id && styles.activeChatRow]}><Pressable onPress={() => { setActiveId(chat.id); setDrawerVisible(false); }} style={styles.chatSelect}><Text numberOfLines={1} style={styles.chatTitle}>{chat.title}</Text><Text style={styles.chatMeta}>{chat.messages.length}メッセージ</Text></Pressable><Pressable accessibilityLabel={`${chat.title}を削除`} onPress={() => removeChat(chat.id)} style={styles.deleteButton}><Text style={styles.deleteText}>削除</Text></Pressable></View>)}
+            {conversations.length === 0 ? <Text style={styles.emptyHistory}>過去のチャットはありません。</Text> : conversations.map((chat) => <View key={chat.id} style={[styles.chatRow, resolvedActiveId === chat.id && styles.activeChatRow]}><Pressable onPress={() => { setActiveId(chat.id); setDrawerVisible(false); }} style={styles.chatSelect}><Text numberOfLines={1} style={styles.chatTitle}>{chat.title}</Text><Text style={styles.chatMeta}>{chat.serverConversationId ? (chat.messages.length > 0 ? `${chat.messages.length}メッセージ` : '保存済み') : '新しいチャット'}</Text></Pressable><Pressable accessibilityLabel={`${chat.title}を削除`} disabled={deletingConversationId !== null} onPress={() => void removeChat(chat.id)} style={styles.deleteButton}><Text style={styles.deleteText}>{deletingConversationId === chat.id ? '削除中…' : '削除'}</Text></Pressable></View>)}
           </ScrollView>
-          <Text style={styles.drawerNote}>現在は起動中のみ履歴を保持します。</Text>
+          <Text style={styles.drawerNote}>Neonに保存された本人のチャット履歴を表示しています。</Text>
         </SafeAreaView></View>
       </Modal>
     </View>

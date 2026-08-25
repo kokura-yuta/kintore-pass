@@ -1,3 +1,4 @@
+import { useAuth } from '@clerk/expo';
 import * as ImagePicker from 'expo-image-picker';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
@@ -7,6 +8,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { BodyTypeCard } from '@/components/BodyTypeCard';
 import { type GoalBodySelection, useOnboarding } from '@/contexts/OnboardingContext';
+import { saveGoalBodyType } from '@/lib/goals';
 import bulkUpImage from '../../assets/images/body-types/bulk-up.png';
 import leanMuscleImage from '../../assets/images/body-types/lean-muscle.png';
 import physiqueImage from '../../assets/images/body-types/physique.png';
@@ -43,9 +45,14 @@ const bodyTypes = [
 
 export default function IdealBodyScreen() {
   const router = useRouter();
+    // Clerkからバックエンドへ送る認証トークンを取得する
+  const { getToken } = useAuth();
   const { goalBody, setGoalBody } = useOnboarding();
   const [selection, setSelection] = useState<GoalBodySelection | null>(goalBody);
   const [errorMessage, setErrorMessage] = useState('');
+    // 保存中の二重送信を防ぐための状態
+  const [isSaving, setIsSaving] =
+    useState(false);
 
   async function pickReferenceImage() {
     setErrorMessage('');
@@ -74,15 +81,78 @@ export default function IdealBodyScreen() {
     setSelection({ kind: 'custom-image', imageUri: asset.uri, fileName: asset.fileName ?? null });
   }
 
-  function continueToProfile() {
+    // 選択した理想体型をNeonへ保存し、成功後に身体情報画面へ進む
+  async function continueToProfile() {
+    // 何も選ばれていなければ保存処理を開始しない
     if (!selection) {
-      setErrorMessage('目標にする体型または参考画像を選んでください。');
+      setErrorMessage(
+        '目標にする体型または参考画像を選んでください。',
+      );
       return;
     }
 
-    // 保存API完成後、このselectionを送信してから身体情報入力へ進みます。
-    setGoalBody(selection);
-    router.push('/profile-setup');
+    // 参考画像は保存先を作成するまでNeon保存を行わない
+    if (selection.kind === 'custom-image') {
+      setErrorMessage(
+        '参考画像の保存機能は現在準備中です。',
+      );
+      return;
+    }
+
+    // 選択されたIDと一致する理想体型の表示名を取得する
+    const selectedBodyType =
+      bodyTypes.find(
+        (bodyType) =>
+          bodyType.id ===
+          selection.bodyTypeId,
+      );
+
+    // 一致する理想体型がなければ不正な選択として中止する
+    if (!selectedBodyType) {
+      setErrorMessage(
+        '選択した理想体型を確認してください。',
+      );
+      return;
+    }
+
+    // 前回のエラーを消して保存中にする
+    setErrorMessage('');
+    setIsSaving(true);
+
+    try {
+      // Clerkから現在のログイン用トークンを取得する
+      const token = await getToken();
+
+      // トークンがなければ本人確認できないため保存しない
+      if (!token) {
+        setErrorMessage(
+          'ログイン状態を確認できませんでした。',
+        );
+        return;
+      }
+
+      // バックエンド経由で選択した理想体型をNeonへ保存する
+      await saveGoalBodyType(
+        token,
+        selectedBodyType.name,
+      );
+
+      // 通信中の画面表示にも選択内容を保持する
+      setGoalBody(selection);
+
+      // Neonへの保存成功後だけ身体情報入力画面へ進む
+      router.push('/profile-setup');
+    } catch (error) {
+      // APIから返されたエラーを画面へ表示する
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : '理想体型を保存できませんでした。',
+      );
+    } finally {
+      // 成功・失敗に関係なく保存中の状態を解除する
+      setIsSaving(false);
+    }
   }
 
   const selectedLabel =
@@ -153,9 +223,19 @@ export default function IdealBodyScreen() {
 
           {errorMessage ? <Text style={styles.error}>{errorMessage}</Text> : null}
 
-          <Pressable onPress={continueToProfile} style={styles.continueButton}>
-            <Text style={styles.continueText}>この目標で次へ</Text>
-            <Text style={styles.continueArrow}>→</Text>
+          <Pressable
+            disabled={isSaving}
+            onPress={continueToProfile}
+            style={styles.continueButton}
+          >
+            <Text style={styles.continueText}>
+              {isSaving
+                ? '保存しています…'
+                : 'この目標で次へ'}
+            </Text>
+            <Text style={styles.continueArrow}>
+              →
+            </Text>
           </Pressable>
           <Text style={styles.note}>目標体型はあとからマイページで変更できます。</Text>
         </ScrollView>

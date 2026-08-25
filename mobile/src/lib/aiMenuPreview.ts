@@ -2,6 +2,7 @@ export type GeneratedMenuExercise = {
   exerciseId: string;
   name: string;
   equipment: string;
+  category?: MenuBodyPart;
   weightKg: string;
   reps: string;
   setCount: number;

@@ -1,7 +1,10 @@
 import { useAuth } from '@clerk/expo';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
-import { useRouter } from 'expo-router';
+import {
+  useLocalSearchParams,
+  useRouter,
+} from 'expo-router';
 import { useState } from 'react';
 import {
   ActivityIndicator,
@@ -18,6 +21,7 @@ import {
   ApiError,
   apiUploadRequest,
 } from '@/lib/api';
+import { completeOnboarding } from '@/lib/onboarding';
 
 
 type PhotoPosition = 'front' | 'side' | 'back';
@@ -87,6 +91,11 @@ async function appendPhotoToFormData(
 
 export default function BodyAnalysisScreen() {
   const router = useRouter();
+  const { initial } = useLocalSearchParams<{
+    initial?: string;
+  }>();
+  const isInitialAnalysis =
+    initial === 'true';
     // 身体画像を本人のデータとして送るためClerkトークンを取得する
   const { getToken } = useAuth({
     treatPendingAsSignedOut: false,
@@ -95,6 +104,8 @@ export default function BodyAnalysisScreen() {
   const [weightKg, setWeightKg] = useState('');
   const [status, setStatus] = useState<AnalysisStatus>('input');
   const [error, setError] = useState('');
+  const [isCompleting, setIsCompleting] =
+    useState(false);
   // APIから返った分析結果を画面表示用に保存する
   const [analysisResult, setAnalysisResult] =
   useState<BodyAnalysisApiResponse | null>(
@@ -218,6 +229,39 @@ async function beginAnalysis() {
   }
 }
 
+// 初回分析なら完了状態を保存し、定期分析なら履歴へ移動する
+async function finishAnalysis() {
+  if (!isInitialAnalysis) {
+    router.replace('/analysis-history');
+    return;
+  }
+
+  setError('');
+  setIsCompleting(true);
+
+  try {
+    const token = await getToken();
+
+    if (!token) {
+      throw new ApiError(
+        'ログイン情報を確認できませんでした。',
+        401,
+      );
+    }
+
+    await completeOnboarding(token);
+    router.replace('/home');
+  } catch (caughtError) {
+    setError(
+      caughtError instanceof Error
+        ? caughtError.message
+        : '初回設定を完了できませんでした。',
+    );
+  } finally {
+    setIsCompleting(false);
+  }
+}
+
   if (status === 'loading') {
     return <View style={styles.screen}><SafeAreaView edges={['top', 'bottom']} style={styles.loadingArea}><ActivityIndicator color="#F6D365" size="large" /><Text style={styles.loadingTitle}>身体を分析しています</Text><Text style={styles.loadingText}>写真とこれまでの記録を照らし合わせています…</Text></SafeAreaView></View>;
   }
@@ -307,17 +351,29 @@ if (
             ),
           )}
 
-          <Pressable
-            onPress={() =>
-              router.replace(
-                '/analysis-history',
-              )
-            }
-            style={styles.primaryButton}
-          >
-            <Text style={styles.primaryText}>
-              分析履歴へ
+          {error ? (
+            <Text style={styles.error}>
+              {error}
             </Text>
+          ) : null}
+
+          <Pressable
+            disabled={isCompleting}
+            onPress={finishAnalysis}
+            style={[
+              styles.primaryButton,
+              isCompleting && { opacity: 0.5 },
+            ]}
+          >
+            {isCompleting ? (
+              <ActivityIndicator color="#0A0A0A" />
+            ) : (
+              <Text style={styles.primaryText}>
+                {isInitialAnalysis
+                  ? '初回設定を完了してホームへ'
+                  : '分析履歴へ'}
+              </Text>
+            )}
 
             <Text style={styles.primaryArrow}>
               ›
