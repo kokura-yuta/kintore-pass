@@ -13,8 +13,11 @@ import OpenAI from "openai";
 import {
   and,
   asc,
+  count,
   desc,
   eq,
+  gte,
+  lt,
 } from "drizzle-orm";
 import { getClerkUserId } from "@/app/lib/auth/clerk-auth";
 import { systemPrompt } from "@/app/lib/ai/systemPrompt";
@@ -27,6 +30,59 @@ import {
 
 // 環境変数のAPIキーを使ってOpenAIと通信する準備をする場所
 const openai = new OpenAI();
+
+// 1日と日本時間の時差をミリ秒で表す
+const millisecondsPerDay =
+  24 * 60 * 60 * 1000;
+
+const japanTimeOffsetMilliseconds =
+  9 * 60 * 60 * 1000;
+
+// 環境変数からAIチャットの1日上限を読み取る
+const parsedDailyChatLimit =
+  Number.parseInt(
+    process.env.AI_CHAT_DAILY_LIMIT ??
+      "100",
+    10,
+  );
+
+// 不正な設定値だった場合は開発用の初期値100を使用する
+const dailyChatLimit =
+  Number.isInteger(
+    parsedDailyChatLimit,
+  ) &&
+  parsedDailyChatLimit > 0
+    ? parsedDailyChatLimit
+    : 100;
+
+// 日本時間の今日0時と明日0時をUTCのDateへ変換する
+function getJapanDayRange(now: Date) {
+  const japanNow = new Date(
+    now.getTime() +
+      japanTimeOffsetMilliseconds,
+  );
+
+  const japanDayStartAsUtc = Date.UTC(
+    japanNow.getUTCFullYear(),
+    japanNow.getUTCMonth(),
+    japanNow.getUTCDate(),
+  );
+
+  const start = new Date(
+    japanDayStartAsUtc -
+      japanTimeOffsetMilliseconds,
+  );
+
+  const end = new Date(
+    start.getTime() +
+      millisecondsPerDay,
+  );
+
+  return {
+    start,
+    end,
+  };
+}
 
 // ログイン中の本人のチャットルームを新しい順で取得する
 export async function GET(request: Request) {
@@ -338,6 +394,73 @@ export async function POST(request: Request) {
       );
     }
 
+    // 日本時間で今日の開始時刻と終了時刻を作る
+    const { start, end } =
+      getJapanDayRange(new Date());
+
+    // 本人が今日送った質問数をNeonから数える
+    const dailyUsageResults = await db
+      .select({
+        usageCount: count(chatMessages.id),
+      })
+      .from(chatMessages)
+      .innerJoin(
+        chatConversations,
+        eq(
+          chatMessages.conversationId,
+          chatConversations.id,
+        ),
+      )
+      .where(
+        and(
+          eq(
+            chatConversations.userId,
+            user.id,
+          ),
+          eq(chatMessages.role, "user"),
+          gte(chatMessages.createdAt, start),
+          lt(chatMessages.createdAt, end),
+        ),
+      );
+
+    // 検索結果から今日の質問数を取り出す
+    const usedChatCount =
+      Number(
+        dailyUsageResults[0]?.usageCount ?? 0,
+      );
+
+    // 明日の日本時間0時まで何秒あるか計算する
+    const retryAfterSeconds =
+      Math.max(
+        1,
+        Math.ceil(
+          (end.getTime() - Date.now()) /
+            1000,
+        ),
+      );
+
+    // 1日の上限に達していたらAIを呼ばずに終了する
+    if (usedChatCount >= dailyChatLimit) {
+      return Response.json(
+        {
+          error:
+            "本日のAIチャット利用上限に達しました。",
+          limit: dailyChatLimit,
+          used: usedChatCount,
+          remaining: 0,
+          nextAvailableAt:
+            end.toISOString(),
+        },
+        {
+          status: 429,
+          headers: {
+            "Retry-After":
+              String(retryAfterSeconds),
+          },
+        },
+      );
+    }
+
     let conversationId =
       body?.conversationId?.trim() || null;
 
@@ -540,10 +663,28 @@ export async function POST(request: Request) {
           conversationId,
         ),
       );
+      // 今回保存した質問を含めた使用回数を計算する
+    const updatedUsedChatCount =
+      usedChatCount + 1;
 
+    // 今日あと何回質問できるか計算する
+    const remainingChatCount =
+      Math.max(
+        0,
+        dailyChatLimit -
+          updatedUsedChatCount,
+      );
+
+    // AIの回答と今日の利用状況をフロントへ返す
     return Response.json({
       conversationId,
       reply,
+      usage: {
+        limit: dailyChatLimit,
+        used: updatedUsedChatCount,
+        remaining: remainingChatCount,
+        resetsAt: end.toISOString(),
+      },
     });
   } catch (error) {
     console.error(

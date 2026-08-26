@@ -10104,6 +10104,16 @@ deleteConversation()で画面から削除
 
 バックエンド全体の`npx tsc --noEmit`は、今回の変更とは別の既存Cloudflare設定`vite.config.ts`と`worker/index.ts`の型エラーで停止します。今回変更したチャットファイルはESLint、スマホ側はTypeScriptで検査済みです。
 
+## AIチャットの1日利用上限
+
+開発中は`.env.local`の`AI_CHAT_DAILY_LIMIT=100`により、1人が1日に送信できるAIチャットの上限を100回にします。
+
+`AI_CHAT_DAILY_LIMIT`はOpenAIが決めた無料回数ではなく、このアプリが使いすぎを防ぐために決める設定値です。OpenAI APIの料金は21回目や101回目から始まるのではなく、1回目から使用したトークン量に応じて残高から消費されます。
+
+`process.env.AI_CHAT_DAILY_LIMIT`は`.env.local`の文字列を読み取り、`Number.parseInt(..., 10)`はその文字列を10進数の整数へ変換します。設定がない場合や不正な値の場合は、開発用の初期値`100`を使用します。
+
+本番公開時はコードを変更せず、公開先の環境変数だけを`30`や`50`などへ変更できます。
+
 ## AIチャットのSystem PromptとTool選択
 
 `app/lib/ai/systemPrompt.js`は、AIの役割・回答方針・安全上のルール・Toolを使う判断基準を書くJavaScriptファイルです。
