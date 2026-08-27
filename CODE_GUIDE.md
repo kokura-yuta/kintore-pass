@@ -10450,4 +10450,66 @@ Macで動かす開発環境は`.env.local`の`APP_ENV=development`と各種設�
 
 Cloudflare上の本番環境は、Sitesへ登録した`APP_ENV=production`と環境変数を使用します。秘密鍵はGit管理ファイルや`.openai/hosting.json`へ書かず、Sitesの秘密設定として保存します。
 
-現在、Neon・Clerk・Render URL・タイムアウト・利用回数上限は本番環境へ登録済みです。`OPENAI_API_KEY`はOpenAI Developers連携から安全に登録した後、公開を行います。
+Neon・Clerk・Render URL・OpenAI・タイムアウト・利用回数上限は本番環境へ登録済みです。`DATABASE_URL`、`CLERK_SECRET_KEY`、`OPENAI_API_KEY`などの秘密値は、コードやGitへ書かずSitesの秘密設定として保存しています。
+
+### Cloudflareへ公開したAPI
+
+TypeScriptバックエンドの開発用公開URLは次です。
+
+```text
+https://musclepas-api.y0u2t1a8.chatgpt.site
+```
+
+公開後、`GET /api/health`がHTTP 200を返し、JSONの`environment`が`production`になることを確認しました。
+
+プロフィール、理想体型、トレーニング記録、身体分析、AIメニュー、AIチャットの取得APIは、ログイン情報を付けずにアクセスするとすべてHTTP 401を返しました。これは公開後も個人データAPIがClerk認証で守られていることを表します。
+
+### Expoから公開APIへ接続する設定
+
+担当ファイルは`mobile/.env.local`です。
+
+```env
+EXPO_PUBLIC_API_BASE_URL=https://musclepas-api.y0u2t1a8.chatgpt.site
+```
+
+`mobile/src/lib/api.ts`は、この値と`/api/users/bootstrap`などのパスをつないで通信先を作ります。
+
+```text
+公開APIの基本URL
++ APIごとのパス
+= 実際の通信先
+```
+
+`.env.local`はExpoの起動時に読み込まれるため、値を変更した後はExpoを再起動する必要があります。
+
+### CORSは何のためにあるか
+
+Expo Webは`http://127.0.0.1:8081`、公開APIは`https://musclepas-api...`で、ドメインが異なります。ブラウザは別ドメインへ勝手に個人情報を送らないように通信を止めるため、バックエンド側で許可するアクセス元を明示します。この仕組みがCORSです。
+
+担当ファイルは`worker/index.ts`です。
+
+```text
+Expo Web
+↓ OPTIONSで「この通信を送ってよいか」確認
+Cloudflare Worker
+↓ 許可リストとOriginを比較
+許可済みならCORSヘッダーを返す
+↓
+Expo Webが認証付きAPI本体を送信
+```
+
+`DEFAULT_CORS_ALLOWED_ORIGINS`には、開発で使用する`localhost`と`127.0.0.1`の8081・8082番ポートだけを登録しています。`*`ですべてのサイトを許可しないのは、Authorizationヘッダーを使う個人データAPIを不要なWebサイトから呼ばせないためです。
+
+`isAllowedCorsOrigin()`は、アクセス元が固定の開発URLまたは`CORS_ALLOWED_ORIGINS`環境変数に含まれるか確認します。本番フロントのWeb URLが決まったら、コードを変更せず環境変数へカンマ区切りで追加できます。
+
+`addCorsHeaders()`は許可された応答にだけ、次の情報を追加します。
+
+- `Access-Control-Allow-Origin`：通信を許可する画面のURL
+- `Access-Control-Allow-Methods`：使用を許可するHTTPメソッド
+- `Access-Control-Allow-Headers`：AuthorizationとContent-Typeを送ってよい指定
+- `Access-Control-Max-Age`：事前確認の結果を24時間再利用する指定
+- `Vary: Origin`：アクセス元ごとに応答が違うことをキャッシュへ伝える指定
+
+`OPTIONS`は実データの保存や取得を行う通信ではありません。ブラウザが本通信の前に送る安全確認なので、`/api/`へのOPTIONSにはHTTP 204で本文なしの応答を返します。
+
+ネイティブのiPhoneアプリにはブラウザと同じCORS制限はありません。ただし、開発中にExpo WebでもAPIを確認できるように今回の設定が必要です。

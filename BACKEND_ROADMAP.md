@@ -14,8 +14,8 @@
 
 ## 現在地
 
-- バックエンドMVP進捗の目安：約80%
-- 現在の次作業：セクション3「TypeScriptバックエンドの開発用公開」を一緒に進める
+- バックエンドMVP進捗の目安：約82%
+- 現在の次作業：公開APIとExpoの認証付き実通信を確認する
 - 保留：Neon上限回復後に二重送信テーブルを反映・実通信テスト
 - 開発中の設定値：`AI_CHAT_DAILY_LIMIT=100`
 - AIメニューの設定値：`AI_MENU_DAILY_LIMIT=3`
@@ -80,16 +80,22 @@
 
 - [x] 公開先をCloudflareに決定（Python画像分析は既存Renderを継続）
 - [x] Cloudflare・Worker型エラーをすべて修正
-- [ ] 公開先へNeon・Clerk・OpenAI・Python URLの環境変数を設定
+- [x] 公開先へNeon・Clerk・OpenAI・Python URLの環境変数を設定
   - [x] Neon・Clerk・Python URL・利用上限をSitesへ登録
-  - [ ] OpenAI Developers連携から`OPENAI_API_KEY`を秘密設定として登録
+  - [x] `OPENAI_API_KEY`を値を公開せず秘密設定として登録
 - [x] `.env.local`を開発用、Sites環境変数を本番用として分離
-- [ ] 公開API URLをフロント担当へ共有
+- [x] 公開API URLをフロント担当へ共有できる状態にする
+  - [x] `mobile/.env.local`の接続先を公開APIへ変更
+  - [x] `mobile/.env.example`へ公開API URLを記載
 - [ ] Expoから全APIへ接続できるか確認
-- [ ] 公開環境のヘルスチェックを追加
+  - [x] Expo WebでCORSエラーを再現して原因を特定
+  - [x] 許可した開発URLだけを通すCORS処理を追加
+  - [ ] CORS修正版を再公開して認証付きAPIを通し確認
+- [x] 公開環境のヘルスチェックを追加
   - [x] `GET /api/health`を作成
   - [x] ローカルの本番起動方式で正常応答を確認
-  - [ ] Cloudflare公開URLで正常応答を確認
+  - [x] Cloudflare公開URLでHTTP 200・`production`を確認
+  - [x] 未ログインの個人データAPI6本がHTTP 401になることを確認
 
 ### 4. 体重履歴API
 
@@ -186,7 +192,7 @@
 
 ## テストとセキュリティ
 
-- [ ] 未ログインAPIがHTTP 401を返す
+- [x] 未ログインAPIがHTTP 401を返す
 - [ ] 他人のデータへアクセスできない
 - [ ] 不正入力がHTTP 400を返す
 - [ ] 利用上限がHTTP 429を返す
