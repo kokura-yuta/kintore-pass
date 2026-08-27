@@ -1,10 +1,17 @@
 # 身体画像を分析し、TypeScriptバックエンドへ結果JSONを返すPython API
-import base64 
+import base64
+import os
 from io import BytesIO
 from pathlib import Path
 
 from dotenv import load_dotenv
-from openai import AsyncOpenAI
+from openai import (
+    APIConnectionError,
+    APIStatusError,
+    APITimeoutError,
+    AsyncOpenAI,
+    RateLimitError,
+)
 from fastapi import (
     FastAPI,
     File,
@@ -22,17 +29,56 @@ ENV_FILE_PATH = (
 )
 load_dotenv(ENV_FILE_PATH)
 
-# OpenAI APIへ画像分析を依頼するクライアントを作る
-openai_client = AsyncOpenAI()
 
-# Pythonが受け付ける画像形式と1枚あたりの最大容量
+def read_positive_float_env(
+    name: str,
+    fallback: float,
+) -> float:
+    try:
+        value = float(os.getenv(name, str(fallback)))
+    except ValueError:
+        return fallback
+
+    return value if value > 0 else fallback
+
+
+def read_non_negative_int_env(
+    name: str,
+    fallback: int,
+) -> int:
+    try:
+        value = int(os.getenv(name, str(fallback)))
+    except ValueError:
+        return fallback
+
+    return value if value >= 0 else fallback
+
+
+# OpenAI通信1回の待ち時間と、一時的な失敗時の再試行回数を読み込む
+OPENAI_TIMEOUT_SECONDS = read_positive_float_env(
+    "PYTHON_OPENAI_TIMEOUT_SECONDS",
+    50.0,
+)
+OPENAI_MAX_RETRIES = read_non_negative_int_env(
+    "PYTHON_OPENAI_MAX_RETRIES",
+    1,
+)
+
+# OpenAI APIへ画像分析を依頼する共通クライアントを作る
+openai_client = AsyncOpenAI(
+    timeout=OPENAI_TIMEOUT_SECONDS,
+    max_retries=OPENAI_MAX_RETRIES,
+)
+
+# Pythonが受け付ける画像形式・1枚の容量・3枚合計の容量
 ALLOWED_IMAGE_TYPES = {
     "image/jpeg",
     "image/png",
     "image/webp",
 }
 
-MAX_IMAGE_SIZE_BYTES = 10 * 1024 * 1024
+MAX_IMAGE_SIZE_BYTES = 8 * 1024 * 1024
+MAX_TOTAL_IMAGE_SIZE_BYTES = 24 * 1024 * 1024
 
 ALLOWED_IMAGE_FORMATS = {
     "JPEG",
@@ -77,8 +123,9 @@ class BodyAnalysisResponse(BaseModel):
     goal_difference: str
     areas: list[BodyAreaResult]
 
+
 # アップロード画像1枚の形式・容量を安全確認する
-async def validate_image(image: UploadFile) -> None:
+async def validate_image(image: UploadFile) -> int:
     if image.content_type not in ALLOWED_IMAGE_TYPES:
         raise HTTPException(
             status_code=415,
@@ -98,10 +145,10 @@ async def validate_image(image: UploadFile) -> None:
     if len(image_bytes) > MAX_IMAGE_SIZE_BYTES:
         raise HTTPException(
             status_code=413,
-            detail="画像は1枚につき10MB以下にしてください。",
+            detail="画像は1枚につき8MB以下にしてください。",
         )
 
-        # 受信データを実際に画像として開いて検査する
+    # 受信データを実際に画像として開いて検査する
     try:
         with Image.open(
             BytesIO(image_bytes)
@@ -148,6 +195,9 @@ async def validate_image(image: UploadFile) -> None:
 
     await image.seek(0)
 
+    return len(image_bytes)
+
+
 # 検査済みの画像をOpenAIへ送れるBase64データURLへ変換する
 async def image_to_data_url(
     image: UploadFile,
@@ -162,7 +212,7 @@ async def image_to_data_url(
     return (
         f"data:{image.content_type};base64,"
         f"{encoded_image}"
-    ) 
+    )
 
 
 @app.get("/health")
@@ -201,13 +251,23 @@ async def analyze_body(
         le=80,
     ),
 ):
-    # 正面・横・背面を同じ検査関数で安全確認する
+    # 正面・横・背面を同じ検査関数で安全確認し、3枚の容量を合計する
+    total_image_size_bytes = 0
+
     for image in (
         front_image,
         side_image,
         back_image,
     ):
-        await validate_image(image)
+        total_image_size_bytes += await validate_image(
+            image
+        )
+
+    if total_image_size_bytes > MAX_TOTAL_IMAGE_SIZE_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail="画像3枚の合計は24MB以下にしてください。",
+        )
 
     # 検査済みの3枚をOpenAIへ送れる文字列に変換する
     front_image_url = await image_to_data_url(
@@ -220,7 +280,7 @@ async def analyze_body(
         back_image
     )
 
-        # 任意の体脂肪率をAIへ渡せる表示へ変換する
+    # 任意の体脂肪率をAIへ渡せる表示へ変換する
     body_fat_text = (
         f"{body_fat_percentage}%"
         if body_fat_percentage is not None
@@ -238,51 +298,93 @@ async def analyze_body(
         "理想体型との差を説明してください。"
     )
 
-        # 画像3枚をOpenAIへ送り、決まった形式の分析結果を受け取る
-    response = await openai_client.responses.parse(
-        model="gpt-5.6",
-        instructions=BODY_ANALYSIS_INSTRUCTIONS,
-        input=[
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "input_text",
-                        "text": user_body_context,
-                    },
-                    {
-                        "type": "input_text",
-                        "text": "1枚目は正面画像です。",
-                    },
-                    {
-                        "type": "input_image",
-                        "image_url": front_image_url,
-                        "detail": "low",
-                    },
-                    {
-                        "type": "input_text",
-                        "text": "2枚目は横画像です。",
-                    },
-                    {
-                        "type": "input_image",
-                        "image_url": side_image_url,
-                        "detail": "low",
-                    },
-                    {
-                        "type": "input_text",
-                        "text": "3枚目は背面画像です。",
-                    },
-                    {
-                        "type": "input_image",
-                        "image_url": back_image_url,
-                        "detail": "low",
-                    },
-                ],
-            },
-        ],
-        text_format=BodyAnalysisResponse,
-        store=False,
-    )
+    # 画像3枚をOpenAIへ送り、決まった形式の分析結果を受け取る
+    try:
+        response = await openai_client.responses.parse(
+            model="gpt-5.6",
+            instructions=BODY_ANALYSIS_INSTRUCTIONS,
+            input=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "input_text",
+                            "text": user_body_context,
+                        },
+                        {
+                            "type": "input_text",
+                            "text": "1枚目は正面画像です。",
+                        },
+                        {
+                            "type": "input_image",
+                            "image_url": front_image_url,
+                            "detail": "low",
+                        },
+                        {
+                            "type": "input_text",
+                            "text": "2枚目は横画像です。",
+                        },
+                        {
+                            "type": "input_image",
+                            "image_url": side_image_url,
+                            "detail": "low",
+                        },
+                        {
+                            "type": "input_text",
+                            "text": "3枚目は背面画像です。",
+                        },
+                        {
+                            "type": "input_image",
+                            "image_url": back_image_url,
+                            "detail": "low",
+                        },
+                    ],
+                },
+            ],
+            text_format=BodyAnalysisResponse,
+            store=False,
+        )
+    except APITimeoutError as error:
+        raise HTTPException(
+            status_code=504,
+            detail=(
+                "AI身体分析が時間内に完了しませんでした。"
+                "少し待ってからもう一度お試しください。"
+            ),
+        ) from error
+    except APIConnectionError as error:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "AI身体分析サービスへ接続できません。"
+                "少し待ってからもう一度お試しください。"
+            ),
+        ) from error
+    except RateLimitError as error:
+        raise HTTPException(
+            status_code=429,
+            detail=(
+                "AI身体分析が混み合っています。"
+                "少し待ってからもう一度お試しください。"
+            ),
+        ) from error
+    except APIStatusError as error:
+        if error.status_code >= 500:
+            status_code = 502
+            detail = (
+                "AI身体分析サービスで一時的なエラーが発生しました。"
+            )
+        elif error.status_code in (401, 403):
+            status_code = 500
+            detail = "AI身体分析の設定を確認できませんでした。"
+        else:
+            status_code = 502
+            detail = "AI身体分析へ画像を送信できませんでした。"
+
+        raise HTTPException(
+            status_code=status_code,
+            detail=detail,
+        ) from error
 
     # AIが形式どおりの結果を返さなかった場合はエラーにする
     if response.output_parsed is None:

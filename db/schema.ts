@@ -7,6 +7,7 @@ import {
   real,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 
@@ -409,6 +410,55 @@ export const chatMessages = pgTable(
   (table) => [
     index("chat_messages_conversation_created_idx").on(
       table.conversationId,
+      table.createdAt,
+    ),
+  ],
+);
+
+// AIチャット・AIメニューの二重送信を防ぐため、処理開始済みのリクエストを保存する
+export const aiRequestGuards = pgTable(
+  "ai_request_guards",
+  {
+    id: uuid("id")
+      .defaultRandom()
+      .primaryKey(),
+
+    // どの利用者のリクエストかを保存する
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, {
+        onDelete: "cascade",
+      }),
+
+    // chatまたはmenuのどちらの処理かを保存する
+    requestType: text("request_type")
+      .notNull(),
+
+    // フロントが送るリクエスト固有のUUIDを保存する
+    requestId: uuid("request_id")
+      .notNull(),
+
+    createdAt: timestamp("created_at", {
+      withTimezone: true,
+    })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    // 同じ利用者・処理・リクエストIDを2回登録できなくする
+    uniqueIndex(
+      "ai_request_guards_user_type_request_uidx",
+    ).on(
+      table.userId,
+      table.requestType,
+      table.requestId,
+    ),
+
+    // 本人の古い管理記録を探しやすくする
+    index(
+      "ai_request_guards_user_created_idx",
+    ).on(
+      table.userId,
       table.createdAt,
     ),
   ],

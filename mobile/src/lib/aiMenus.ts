@@ -45,6 +45,7 @@ export function generateAiMenu(
   token: string,
   conditionScore: number,
   requestedBodyPart: MenuBodyPart | null,
+  requestId: string,
 ) {
   return apiRequest<AiMenuResponse>('/api/ai-menu', {
     method: 'POST',
@@ -53,6 +54,7 @@ export function generateAiMenu(
       conditionScore,
       note: null,
       requestedBodyPart,
+      requestId,
     }),
   });
 }

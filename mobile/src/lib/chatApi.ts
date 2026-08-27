@@ -38,6 +38,7 @@ export type DeleteChatResponse = {
 export async function sendChatMessage(
   token: string,
   message: string,
+  requestId: string,
   conversationId?: string | null,
 ) {
   return apiRequest<ChatResponse>(
@@ -48,6 +49,7 @@ export async function sendChatMessage(
       body: JSON.stringify({
         message,
         conversationId,
+        requestId,
       }),
     },
   );

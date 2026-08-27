@@ -1,7 +1,6 @@
 import vinext from "vinext";
 import { defineConfig } from "vite";
 import hostingConfig from "./.openai/hosting.json";
-import nextConfig from "./next.config";
 import { sites } from "./build/sites-vite-plugin";
 
 const SITE_CREATOR_PLACEHOLDER_DATABASE_ID =
@@ -15,16 +14,6 @@ const isCodexSeatbeltSandbox = process.env.CODEX_SANDBOX === "seatbelt";
 const localBindingConfig = {
   main: "./worker/index.ts",
   compatibility_flags: ["nodejs_compat"],
-  // 同じWi-Fi上のスマホから開発中のAPIへ接続できるよう、Workerを全てのLANアドレスで待ち受ける
-  dev: {
-    // デバッグ用InspectorはMac内部だけに限定し、LANへ公開しない
-    inspector: {
-      hostname: "127.0.0.1",
-    },
-    server: {
-      hostname: "0.0.0.0",
-    },
-  },
   d1_databases: d1
     ? [
         {
@@ -68,10 +57,8 @@ export default defineConfig(async () => {
         : {}),
     },
     plugins: [
-      vinext({
-        // next.config.tsの画像送信設定をVinextへ明示的に渡す
-        nextConfig,
-      }),
+      // next.config.tsはVinextが自動で読み込む
+      vinext(),
       sites(),
       cloudflare({
         viteEnvironment: { name: "rsc", childEnvironments: ["ssr"] },

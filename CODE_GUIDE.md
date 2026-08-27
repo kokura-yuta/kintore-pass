@@ -6359,25 +6359,27 @@ Pythonの`class`は、関連するデータや処理を1つの型としてまと
 
 Pythonでは、途中で変更しない設定値を`ALLOWED_IMAGE_TYPES`のような大文字名で書く慣習があります。
 
-`MAX_IMAGE_SIZE_BYTES = 10 * 1024 * 1024`は、1枚あたり10MBという上限をバイト単位で表します。
+`MAX_IMAGE_SIZE_BYTES = 8 * 1024 * 1024`は、1枚あたり8MBという上限をバイト単位で表します。
+
+`MAX_TOTAL_IMAGE_SIZE_BYTES = 24 * 1024 * 1024`は、正面・横・背面の画像データ3枚を合計24MB以下にする設定です。
 
 TypeScript側だけでなくPython側でも確認することで、Python APIが直接呼ばれた場合にも不正な画像を拒否できます。この考え方を多層防御と呼びます。
 
 ### Pythonの画像検査関数
 
-`async def validate_image(image: UploadFile) -> None:`は、アップロード画像1枚を検査する非同期関数です。`-> None`は、正常時に結果データを返さないことを表します。
+`async def validate_image(image: UploadFile) -> int:`は、アップロード画像1枚を検査する非同期関数です。`-> int`は、正常な画像の容量を整数で返すことを表します。
 
 `image.content_type not in ALLOWED_IMAGE_TYPES`は、送信者が申告した画像形式が許可一覧にないか確認します。
 
 `raise HTTPException(...)`は、その場で通常処理を中断し、FastAPIから指定したHTTPエラーを返します。
 
-`await image.read(MAX_IMAGE_SIZE_BYTES + 1)`は、上限より1バイト多い位置まで読み、10MBを超えたか判定できるようにします。
+`await image.read(MAX_IMAGE_SIZE_BYTES + 1)`は、上限より1バイト多い位置まで読み、8MBを超えたか判定できるようにします。
 
 `len(image_bytes)`は読み取った実際のバイト数を返します。`0`なら空ファイル、上限より大きければ容量超過です。
 
 `await image.seek(0)`は、検査で末尾へ進んだファイルの読み取り位置を先頭へ戻します。これを行わないと、後の画像分析が空の続きから読もうとして失敗します。
 
-`for image in (front_image, side_image, back_image):`は、3枚を順番に取り出し、同じ`validate_image()`を繰り返します。
+`for image in (front_image, side_image, back_image):`は、3枚を順番に取り出し、同じ`validate_image()`を繰り返します。返された容量を`total_image_size_bytes`へ足し、3枚合計も確認します。
 
 現時点ではMIMEタイプと容量を確認しています。ファイルの中身が本物の画像かどうかは、次に画像ライブラリで検証します。
 
@@ -6663,7 +6665,9 @@ TypeScript側の`POST()`は、最初に`getClerkUserId(request)`でClerkトー�
 
 `Set`の`.has(image.type)`は、現在の画像形式が許可一覧に含まれているか確認します。
 
-`maxImageSizeBytes = 10 * 1024 * 1024`は、1枚の上限である10MBをバイト単位で表した値です。
+`maxImageSizeBytes = 8 * 1024 * 1024`は、1枚の上限である8MBをバイト単位で表した値です。
+
+`maxTotalImageSizeBytes = 24 * 1024 * 1024`は、画像3枚そのものの合計上限です。`reduce()`で各画像の`size`を足し、24MBを超えた場合はPythonへ送る前にHTTP 413を返します。
 
 `bodyImages`へ正面・横・背面をまとめることで、同じ検査コードを3回書かずに済みます。
 
@@ -10114,6 +10118,237 @@ deleteConversation()で画面から削除
 
 本番公開時はコードを変更せず、公開先の環境変数だけを`30`や`50`などへ変更できます。
 
+AIメニュー生成はAIチャットと分けて、`.env.local`の`AI_MENU_DAILY_LIMIT=3`で1人1日3回に制限します。AIチャットの質問回数を使い切ってもAIメニュー回数は減らず、その逆も同じです。
+
+### AIメニューの1日3回制限
+
+`app/api/ai-menu/route.ts`は、OpenAIへ生成依頼を送る前に`ai_generated_menus`を検索します。
+
+```text
+Clerkで本人を確認
+↓
+フロント入力を検証
+↓
+日本時間の今日0時と明日0時を計算
+↓
+本人が今日生成したメニュー数をNeonで数える
+↓
+3回未満ならOpenAIで生成／3回以上ならHTTP 429で終了
+```
+
+`aiGeneratedMenus`には`userId`と`createdAt`が保存されているため、本人と今日の時間範囲を条件にして直接数えられます。AIチャットのようにメッセージからチャットルームを経由して本人を探す必要はありません。
+
+上限到達時は`limit`、`used`、`remaining`、`nextAvailableAt`と`Retry-After`を返します。生成成功時は今回の1回を加算し、`usage`として残り回数とリセット日時をフロントへ返します。
+
+この判定をOpenAI通信より前に置くことで、4回目以降はOpenAI料金が発生しません。`npx eslint app/api/ai-menu/route.ts`でエラーがないことも確認済みです。
+
+### AIリクエストの5秒クールダウン
+
+`.env.local`の`AI_REQUEST_COOLDOWN_SECONDS=5`は、AIチャットの質問またはAIメニュー生成の直後に、同じ利用者が連続してリクエストするのを5秒間止める設定です。
+
+AIチャットは最新の利用者メッセージ、AIメニューは最新の生成メニューについて、Neonに保存された`createdAt`を確認します。
+
+`max(createdAt)`は条件に一致する日時の中から最も新しい日時を1件だけ取得します。`count()`と同じ検索に含めているため、回数と最新日時を別々に検索する必要がありません。
+
+```text
+Neonから今日の件数と最新日時を取得
+↓
+最新日時 + 5秒を計算
+↓
+現在時刻がそれより前ならHTTP 429
+↓
+5秒以上経過していれば通常処理へ進む
+```
+
+拒否時には`Retry-After`、待ち秒数、次回利用可能日時を返すため、フロントは「あと何秒待つか」を表示できます。
+
+この処理は、すでにNeonへ保存された直近の操作を基準にする連続送信対策です。ほぼ同時に到着した2つのリクエストは、どちらも保存前の状態を読む可能性があるため、完全な二重送信対策は別途リクエストIDを使って追加します。
+
+### 二重送信を防ぐai_request_guardsテーブル
+
+`db/schema.ts`の`aiRequestGuards`は、AI処理を開始したリクエストの受付番号をNeonへ保存するための設計図です。
+
+- `userId`：誰の操作かを表す
+- `requestType`：`chat`と`menu`を区別する
+- `requestId`：1回のボタン操作ごとにフロントが作るUUID
+- `createdAt`：受付記録を作った日時
+
+`uniqueIndex()`は、`userId`・`requestType`・`requestId`の同じ組み合わせを2回登録できなくします。1件目だけが登録に成功してOpenAIへ進み、同じ受付番号の2件目はOpenAIを呼ぶ前に拒否できるようにします。
+
+`index()`は重複禁止ではなく、本人の古い受付記録を日時順で検索・削除しやすくする索引です。`uniqueIndex()`と`index()`は名前が似ていますが、目的が異なります。
+
+`mobile`ではExpo公式の`expo-crypto`を使い、`Crypto.randomUUID()`でボタン操作ごとのUUIDを作ります。`useRef`にも処理中のIDを保存するため、Reactの画面更新を待たずに同じ画面内の2回目の関数実行を止めます。
+
+チャットAPIとAIメニューAPIは、受け取った`requestId`をOpenAI通信より前に`ai_request_guards`へ追加します。
+
+`.onConflictDoNothing()`は、ユニーク索引と同じ組み合わせがすでに存在してもサーバーをクラッシュさせず、追加しない処理です。`.returning()`で新しい受付記録が返れば1件目、何も返らなければ重複した2件目だと判断します。
+
+```text
+スマホでUUIDを1つ作る
+↓
+バックエンドへrequestIdとして送る
+↓
+ai_request_guardsへ追加を試す
+↓
+追加成功：OpenAIへ進む
+追加なし：HTTP 409で終了
+```
+
+途中でOpenAI通信や保存に失敗した場合は、その受付記録を削除します。これにより、エラー後に同じ操作を正しく再試行できます。成功時の受付記録は残すため、通信結果が遅れて同じリクエストが再到着しても二重処理しません。
+
+マイグレーション`0005_add_ai_request_guards.sql`は、既存テーブルを再作成せず、新しいテーブル・外部キー・2つの索引だけを作る内容に確認・修正済みです。`drizzle-kit check`、バックエンドESLint、スマホTypeScript検査は成功しています。
+
+Neonへの反映確認時に、Neonプロジェクトのデータ転送量上限超過による`HTTP 402`が返りました。そのため、コードとマイグレーションは完成していますが、実際のNeonへの適用と二重送信の実通信テストは上限回復後に行います。
+
+### OpenAI通信のタイムアウトと再試行
+
+`app/lib/ai/openAiClient.ts`は、AIチャットとAIメニューが共通で使うOpenAIクライアントを作るTypeScriptファイルです。
+
+`.env.local`では次の値を設定します。
+
+```env
+OPENAI_TIMEOUT_MS=60000
+OPENAI_MAX_RETRIES=1
+```
+
+`OPENAI_TIMEOUT_MS=60000`は、OpenAIへの1回の通信を最大60秒待つ設定です。`OPENAI_MAX_RETRIES=1`は、一時的な通信エラーやタイムアウトが起きた場合にSDKへ最大1回だけ自動再試行させる設定です。そのため、再試行が発生した場合の全体時間は60秒より長くなる可能性があります。
+
+`readPositiveInteger()`は、タイムアウトが1以上の整数かを確認します。`readNonNegativeInteger()`は、再試行回数として`0`も許可しながら、負数や不正な文字列を拒否します。環境変数が不正なら、それぞれ`60_000`と`1`を安全な初期値として使用します。
+
+```text
+チャットまたはAIメニューAPI
+↓
+共通のopenaiクライアントを使用
+↓
+60秒以内に応答：通常処理
+一時エラー：最大1回再試行
+タイムアウト：受付記録を削除してHTTP 504
+```
+
+`APIConnectionTimeoutError`はOpenAI SDKが通信時間超過時に投げる専用エラーです。通常のサーバーエラーと区別し、フロントへ「少し待って再試行してください」と返します。
+
+共通ファイルにまとめた理由は、チャットとメニューでタイムアウト値・再試行回数・APIキー設定がずれるのを防ぐためです。設定変更は環境変数またはこの共通ファイルだけで済みます。
+
+### TypeScriptからPython身体分析APIへのタイムアウト
+
+`app/api/body-analysis/route.ts`は、正面・横・背面画像をRender上のPython APIへ送ります。`.env.local`の`PYTHON_ANALYSIS_TIMEOUT_MS=120000`により、Pythonからレスポンス本文を受け取るまで最大120秒待ちます。
+
+```text
+TypeScriptが画像3枚をPythonへ送信
+↓
+120秒のタイマーを開始
+↓
+Pythonの応答とJSON取得が完了：タイマー解除
+120秒を超過：通信を中止してHTTP 504
+```
+
+`AbortController`は実行中の`fetch()`を外側から中止するための機能です。`pythonAbortController.signal`を`fetch()`へ渡し、`setTimeout()`が120秒後に`.abort()`を呼びます。
+
+`let analysisResult: unknown`とする理由は、Pythonから届いたJSONをまだ信用できないためです。取得後に`isBodyAnalysisResult()`で必要な項目・型・スコア範囲を検査してからNeonへ保存します。
+
+`finally`は成功・通常エラー・タイムアウトのどの場合でも必ず実行されます。`clearTimeout()`で不要になったタイマーを解除し、処理終了後にタイマーだけが残ることを防ぎます。
+
+タイムアウト時は専用の`PythonAnalysisTimeoutError`へ変換し、通常の内部エラー`500`ではなく`HTTP 504`を返します。`504`は、このTypeScript APIより先にあるPython APIが時間内に応答しなかったことを表します。
+
+### PythonからOpenAIへのタイムアウトと安全な再試行
+
+`python-analysis/app/main.py`は、Render上で身体画像をOpenAIへ渡すPython APIです。OpenAI Python SDKの既定値は待ち時間が長く、再試行も2回なので、このアプリでは次の値へ明示的に制限します。
+
+```env
+PYTHON_OPENAI_TIMEOUT_SECONDS=50
+PYTHON_OPENAI_MAX_RETRIES=1
+```
+
+`PYTHON_OPENAI_TIMEOUT_SECONDS=50`は、PythonからOpenAIへの1回の通信を最大50秒待つ設定です。
+
+`PYTHON_OPENAI_MAX_RETRIES=1`は、一時的な失敗時だけ追加で1回試す設定です。最初の1回と再試行1回を合わせ、最大2回OpenAIへ接続する可能性があります。
+
+Python側を50秒、外側のTypeScript側を120秒にした理由は、次のように内側の処理が先に終了し、TypeScriptがPythonからエラーJSONを受け取るための余裕を残すためです。
+
+```text
+TypeScriptからPython：全体を最大120秒待つ
+└─ PythonからOpenAI：1回最大50秒、再試行は最大1回
+```
+
+`AsyncOpenAI(timeout=..., max_retries=...)`は、待ち時間と再試行回数を身体分析で使うOpenAIクライアント全体へ適用します。
+
+`read_positive_float_env()`は待ち時間が0より大きい数値かを確認し、`read_non_negative_int_env()`は再試行回数が0以上の整数かを確認します。Renderの環境変数に文字や負数を誤って入れても、Pythonが起動時に落ちず、安全な初期値の50秒・1回へ戻します。
+
+OpenAI SDKが再試行するのは、接続エラー、HTTP 408、409、429、500番台などの一時的に回復する可能性がある失敗です。入力ミスや認証設定の失敗など、同じ内容を送り直しても直らないエラーは再試行しません。すべての`Exception`を自作ループで再送しないのは、無駄な待ち時間とAPI料金を増やさないためです。
+
+### PythonのOpenAIエラーをHTTP番号へ変換する
+
+`try:`の中で`responses.parse()`を実行し、OpenAI通信だけを専用の`except`で分類します。
+
+- `APITimeoutError`：OpenAIが時間内に返らなかったためHTTP 504
+- `APIConnectionError`：OpenAIへ接続できなかったためHTTP 503
+- `RateLimitError`：利用制限や混雑のためHTTP 429
+- `APIStatusError`の500番台：OpenAI側の一時障害としてHTTP 502
+- 認証エラー：利用者へ秘密情報を見せずHTTP 500
+
+`raise HTTPException(...) from error`の`from error`は、利用者へ返す安全なエラーと、サーバーログで原因調査に使う元のエラーを結び付けます。
+
+### Render停止中のエラーを分かりやすく返す
+
+`PythonAnalysisUnavailableError`は、TypeScriptからRender上のPython APIへ接続そのものができない場合に使う専用エラーです。
+
+Renderが停止中・起動中・ネットワーク障害の場合、`fetch()`は正常なHTTPレスポンスを受け取れません。そのときはHTTP 503と「身体分析サービスを起動中、または一時的に利用できません」というメッセージをフロントへ返します。
+
+`PythonAnalysisApiError`は、Pythonへは接続できたものの、PythonまたはOpenAIがエラーを返した場合に使います。Pythonの`detail`を読み、413・429・504などの意味を保ってフロントへ返します。
+
+```text
+Renderへ接続できない
+→ PythonAnalysisUnavailableError
+→ HTTP 503
+
+Renderへ接続できたがOpenAIがタイムアウト
+→ PythonがHTTP 504を返す
+→ PythonAnalysisApiError
+→ フロントにもHTTP 504を返す
+```
+
+### 画像容量を3段階で統一する
+
+画像容量は、役割の違う3つの上限へ統一しました。
+
+- スマホ・TypeScript・Python：画像1枚につき8MB以下
+- TypeScript・Python：画像3枚そのものは合計24MB以下
+- Vinextの入口：FormDataの付加情報も含む通信全体を26MB以下
+
+26MBは画像1枚の上限ではありません。8MBの画像3枚で最大24MBになり、ファイル名や区切り情報など`multipart/form-data`の付加情報を通すため、入口だけ2MBの余裕を持たせています。
+
+同じ検査をTypeScriptとPythonの両方で行う理由は、通常のアプリ経由では早くエラーを返し、Python APIが直接呼ばれた場合にも不正な画像を拒否するためです。
+
+### 質問回数を確認する処理の流れ
+
+`POST()`は質問を保存してOpenAIへ送る前に、次の順番で利用回数を確認します。
+
+```text
+Clerkでログイン中の本人を確認
+↓
+getJapanDayRange()で日本時間の今日0時と明日0時を作る
+↓
+chatMessagesとchatConversationsをinnerJoin()でつなぐ
+↓
+本人・userロール・今日の範囲だけに絞る
+↓
+count()で今日の質問数を数える
+↓
+上限未満ならOpenAIへ進む／上限以上ならHTTP 429で終了
+```
+
+`count(chatMessages.id)`は、条件に一致した質問メッセージの件数を数えます。
+
+`innerJoin()`が必要なのは、`chatMessages`にはユーザーIDがなく、所属するチャットルームのIDだけが保存されているためです。`chatConversations`とつなぐことで、その質問がログイン中の本人のものか確認できます。
+
+`eq(chatMessages.role, "user")`は利用者の質問だけを対象にし、AIの回答を利用回数へ含めない条件です。
+
+`gte(chatMessages.createdAt, start)`は作成日時が今日0時以降、`lt(chatMessages.createdAt, end)`は明日0時より前という意味です。この2つを組み合わせて今日の質問だけを数えます。
+
+上限に達した場合は`HTTP 429`、`Retry-After`、次回利用可能日時を返し、OpenAIを呼びません。成功した場合は今回の質問を`+ 1`し、`usage`として上限・使用回数・残り回数・リセット日時をフロントへ返します。
+
+今回の`app/api/chat/route.ts`は`npx eslint app/api/chat/route.ts`で検査し、エラーがないことを確認済みです。
+
 ## AIチャットのSystem PromptとTool選択
 
 `app/lib/ai/systemPrompt.js`は、AIの役割・回答方針・安全上のルール・Toolを使う判断基準を書くJavaScriptファイルです。
@@ -10142,3 +10377,77 @@ AIチャットで利用する4つのToolは、すべてスマホ画面から実�
 - `get_latest_ai_menu`：最後に生成した部位、理由、推定時間、種目、回数、セット、休憩、注意点を取得できました。
 
 ToolにはClerkユーザーIDを直接AIから渡しません。`route.ts`で認証できた本人のClerk IDを`runChatTool()`へ渡し、そのIDに一致するデータだけをNeonから検索します。これにより、AIが別の利用者のIDを指定してデータを取得することを防いでいます。
+
+## TypeScriptバックエンドをCloudflareへ公開する準備
+
+### 公開サービスの役割分担
+
+筋トレPASでは、すべてを1つのサービスへ無理にまとめず、得意な役割で分けます。
+
+```text
+Expoスマホアプリ
+↓
+Cloudflare：TypeScriptバックエンド
+├─ Clerk認証
+├─ Neonへの保存・取得
+├─ AIチャット
+├─ AIメニュー
+└─ 身体分析の受付
+     ↓
+Render：Python身体画像分析
+     ↓
+OpenAI
+```
+
+現在のプロジェクトは`Vinext`、Cloudflare Viteプラグイン、`worker/index.ts`を使用しており、Cloudflare Worker向けの構成がすでにあります。そのため、TypeScriptはCloudflareへ公開し、作成済みのPython分析APIはRenderで継続します。
+
+### `vite.config.ts`の古い開発設定を削除
+
+`localBindingConfig`にあった古い`dev.inspector`・`dev.server`設定は、現在のCloudflare型定義と一致せずTypeScriptエラーになっていました。
+
+同じWi-Fi上のスマホから開発サーバーへ接続する設定は、Vite側の`server.host = "0.0.0.0"`ですでに行っています。そのため、重複していた古い`dev`部分だけを削除し、LAN接続機能は残しました。
+
+`vinext({ nextConfig })`は現在のVinextでは`next.config.ts`の自動読込と重複するため、`vinext()`へ変更しました。画像通信の`bodySizeLimit: "26mb"`は引き続き`next.config.ts`から自動で読み込まれます。
+
+### `worker/index.ts`のCloudflare型エラー
+
+`Fetcher`と`D1Database`はCloudflare専用のグローバル型ですが、このプロジェクトのTypeScript設定には定義がありませんでした。
+
+筋トレPASのデータベースはD1ではなくNeonなので、未使用の`DB: D1Database`を削除しました。
+
+`ASSETS`は実際に使用する`.fetch()`だけを次のローカル型で表します。
+
+```typescript
+ASSETS: {
+  fetch(request: Request): Promise<Response>;
+};
+```
+
+これは「`ASSETS`にはRequestを受け取り、後でResponseを返す非同期の`fetch()`がある」とTypeScriptへ教える型です。不要なCloudflare型パッケージを追加せず、実際に使用する機能だけを定義しています。
+
+修正後は`npx tsc --noEmit`と`npm run build`の両方が成功しました。
+
+### 公開APIのヘルスチェック
+
+担当ファイルは`app/api/health/route.ts`です。
+
+`GET /api/health`は、公開中のTypeScriptバックエンドが起動しているかを確認するAPIです。Clerk認証、Neon、OpenAIを呼ばないため、ログイン前でも確認でき、AI料金も発生しません。
+
+```json
+{
+  "status": "ok",
+  "service": "musclepas-api",
+  "environment": "production",
+  "checkedAt": "確認した時刻"
+}
+```
+
+`Cache-Control: no-store`は、ブラウザや中継サービスに古い成功結果を保存させず、毎回その時点のサーバー状態を確認する指定です。
+
+### 開発環境と本番環境を分ける
+
+Macで動かす開発環境は`.env.local`の`APP_ENV=development`と各種設定を使用します。
+
+Cloudflare上の本番環境は、Sitesへ登録した`APP_ENV=production`と環境変数を使用します。秘密鍵はGit管理ファイルや`.openai/hosting.json`へ書かず、Sitesの秘密設定として保存します。
+
+現在、Neon・Clerk・Render URL・タイムアウト・利用回数上限は本番環境へ登録済みです。`OPENAI_API_KEY`はOpenAI Developers連携から安全に登録した後、公開を行います。

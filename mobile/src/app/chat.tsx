@@ -1,4 +1,5 @@
 import { useAuth } from '@clerk/expo';
+import * as Crypto from 'expo-crypto';
 import { Redirect } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
@@ -37,6 +38,7 @@ export default function ChatScreen() {
   const getTokenRef = useRef(getToken);
   const loadedMessageConversationIds = useRef(new Set<string>());
   const messageRequestId = useRef(0);
+  const pendingSendRequestId = useRef<string | null>(null);
   const resolvedActiveId = activeId ?? conversations[0]?.id ?? null;
   const activeConversation = conversations.find((chat) => chat.id === resolvedActiveId) ?? null;
 
@@ -184,7 +186,11 @@ export default function ChatScreen() {
 
   async function sendMessage() {
     const content = input.trim();
-    if (!content || isSending) return;
+    if (!content || isSending || pendingSendRequestId.current) return;
+
+    // 1回の送信を識別するUUIDを作り、二重実行を同期的に止める
+    const requestId = Crypto.randomUUID();
+    pendingSendRequestId.current = requestId;
 
     // 画面内で使うチャットIDを用意する
     let localConversationId = resolvedActiveId;
@@ -213,6 +219,7 @@ export default function ChatScreen() {
       const response = await sendChatMessage(
         token,
         content,
+        requestId,
         serverConversationId,
       );
 
@@ -236,6 +243,7 @@ export default function ChatScreen() {
           : 'AIからの返信を取得できませんでした。もう一度お試しください。',
       );
     } finally {
+      pendingSendRequestId.current = null;
       setIsSending(false);
     }
   }

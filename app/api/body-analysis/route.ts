@@ -18,15 +18,62 @@ import {
 const pythonAnalysisUrl =
   process.env.PYTHON_ANALYSIS_URL ??
   "http://127.0.0.1:8000";
- // Pythonへ送信できる画像形式と1枚あたりの最大容量
+
+const parsedPythonAnalysisTimeout =
+  Number.parseInt(
+    process.env.PYTHON_ANALYSIS_TIMEOUT_MS ??
+      "120000",
+    10,
+  );
+
+const pythonAnalysisTimeoutMilliseconds =
+  Number.isInteger(
+    parsedPythonAnalysisTimeout,
+  ) && parsedPythonAnalysisTimeout > 0
+    ? parsedPythonAnalysisTimeout
+    : 120_000;
+
+class PythonAnalysisTimeoutError extends Error {
+  constructor() {
+    super(
+      "Python画像分析APIが時間内に応答しませんでした。",
+    );
+    this.name = "PythonAnalysisTimeoutError";
+  }
+}
+
+class PythonAnalysisUnavailableError extends Error {
+  constructor() {
+    super(
+      "Python画像分析APIへ接続できませんでした。",
+    );
+    this.name =
+      "PythonAnalysisUnavailableError";
+  }
+}
+
+class PythonAnalysisApiError extends Error {
+  status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = "PythonAnalysisApiError";
+    this.status = status;
+  }
+}
+
+// Pythonへ送信できる画像形式・1枚の容量・3枚合計の容量
 const allowedImageTypes = new Set([
-    "image/jpeg",
-    "image/png",
-    "image/webp",
-    ]);
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+]);
 
 const maxImageSizeBytes =
-    10 * 1024 * 1024;
+  8 * 1024 * 1024;
+
+const maxTotalImageSizeBytes =
+  24 * 1024 * 1024;
 
 const millisecondsPerDay =
   24 * 60 * 60 * 1000;
@@ -339,83 +386,104 @@ export async function POST(request: Request) {
     const requestFormData = await request.formData();
 
     const frontImage =
-    requestFormData.get("front_image");
+      requestFormData.get("front_image");
     const sideImage =
-    requestFormData.get("side_image");
+      requestFormData.get("side_image");
     const backImage =
-    requestFormData.get("back_image");
+      requestFormData.get("back_image");
 
     // 3枚すべてが画像ファイルとして送られたか確認する
     if (
-    !(frontImage instanceof File) ||
-    !(sideImage instanceof File) ||
-    !(backImage instanceof File)
+      !(frontImage instanceof File) ||
+      !(sideImage instanceof File) ||
+      !(backImage instanceof File)
     ) {
-    return Response.json(
+      return Response.json(
         {
-        error:
+          error:
             "正面・横・背面の画像が必要です。",
         },
         { status: 400 },
-    );
+      );
     }
+
     // 3枚をまとめて同じ安全確認に使用する
-const bodyImages = [
-  frontImage,
-  sideImage,
-  backImage,
-];
+    const bodyImages = [
+      frontImage,
+      sideImage,
+      backImage,
+    ];
 
-// 許可していない画像形式をPythonへ送らない
-if (
-  bodyImages.some(
-    (image) =>
-      !allowedImageTypes.has(image.type),
-  )
-) {
-  return Response.json(
-    {
-      error:
-        "JPEG・PNG・WebP画像を使用してください。",
-    },
-    { status: 415 },
-  );
-}
+    // 許可していない画像形式をPythonへ送らない
+    if (
+      bodyImages.some(
+        (image) =>
+          !allowedImageTypes.has(image.type),
+      )
+    ) {
+      return Response.json(
+        {
+          error:
+            "JPEG・PNG・WebP画像を使用してください。",
+        },
+        { status: 415 },
+      );
+    }
 
-// 空の画像や10MBを超える画像をPythonへ送らない
-if (
-  bodyImages.some(
-    (image) =>
-      image.size === 0 ||
-      image.size > maxImageSizeBytes,
-  )
-) {
-  return Response.json(
-    {
-      error:
-        "画像は1枚につき10MB以下にしてください。",
-    },
-    { status: 413 },
-  );
-}
+    // 空の画像や8MBを超える画像をPythonへ送らない
+    if (
+      bodyImages.some(
+        (image) =>
+          image.size === 0 ||
+          image.size > maxImageSizeBytes,
+      )
+    ) {
+      return Response.json(
+        {
+          error:
+            "画像は1枚につき8MB以下にしてください。",
+        },
+        { status: 413 },
+      );
+    }
+
+    // 3枚合計が24MBを超える場合もPythonへ送らない
+    const totalImageSizeBytes =
+      bodyImages.reduce(
+        (total, image) => total + image.size,
+        0,
+      );
+
+    if (
+      totalImageSizeBytes >
+      maxTotalImageSizeBytes
+    ) {
+      return Response.json(
+        {
+          error:
+            "画像3枚の合計は24MB以下にしてください。",
+        },
+        { status: 413 },
+      );
+    }
 
     // Pythonへ渡す画像データを作る
     const pythonFormData = new FormData();
 
     pythonFormData.append(
-    "front_image",
-    frontImage,
+      "front_image",
+      frontImage,
     );
     pythonFormData.append(
-    "side_image",
-    sideImage,
+      "side_image",
+      sideImage,
     );
     pythonFormData.append(
-    "back_image",
-    backImage,
+      "back_image",
+      backImage,
     );
 
-        // 理想体型と身体情報を文字列としてPythonへ渡す
+    // 理想体型と身体情報を文字列としてPythonへ渡す
     pythonFormData.append(
       "goal_body_type",
       user.goalBodyType,
@@ -437,23 +505,72 @@ if (
       );
     }
 
-        const pythonResponse = await fetch(
+    const pythonAbortController =
+      new AbortController();
+
+    const pythonTimeoutId = setTimeout(
+      () => {
+        pythonAbortController.abort();
+      },
+      pythonAnalysisTimeoutMilliseconds,
+    );
+
+    let pythonResponse: Response;
+    let pythonResponseBody: unknown;
+
+    try {
+      pythonResponse = await fetch(
         `${pythonAnalysisUrl}/analyze`,
-            
         {
-            method: "POST",
-            body: pythonFormData,
+          method: "POST",
+          body: pythonFormData,
+          signal:
+            pythonAbortController.signal,
         },
-        );
+      );
 
-        if (!pythonResponse.ok) {
-        throw new Error(
-            "Python画像分析APIがエラーを返しました。",
+      try {
+        pythonResponseBody =
+          await pythonResponse.json();
+      } catch {
+        throw new PythonAnalysisApiError(
+          502,
+          "Python画像分析APIから結果を読み取れませんでした。",
         );
-        }
+      }
+    } catch (error) {
+      if (pythonAbortController.signal.aborted) {
+        throw new PythonAnalysisTimeoutError();
+      }
 
-    const analysisResult =
-      await pythonResponse.json();
+      if (
+        error instanceof PythonAnalysisApiError
+      ) {
+        throw error;
+      }
+
+      throw new PythonAnalysisUnavailableError();
+    } finally {
+      clearTimeout(pythonTimeoutId);
+    }
+
+    if (!pythonResponse.ok) {
+      const pythonErrorDetail =
+        typeof pythonResponseBody === "object" &&
+        pythonResponseBody !== null &&
+        "detail" in pythonResponseBody &&
+        typeof pythonResponseBody.detail ===
+          "string"
+          ? pythonResponseBody.detail
+          : "身体分析サービスでエラーが発生しました。";
+
+      throw new PythonAnalysisApiError(
+        pythonResponse.status,
+        pythonErrorDetail,
+      );
+    }
+
+    const analysisResult = pythonResponseBody;
 
     // PythonのJSON形式が不正ならNeon保存やフロント返却を行わない
     if (!isBodyAnalysisResult(analysisResult)) {
@@ -515,6 +632,72 @@ if (
       { status: 201 },
     );
   } catch (error) {
+    if (
+      error instanceof
+      PythonAnalysisTimeoutError
+    ) {
+      console.error(
+        "Python身体分析APIタイムアウト:",
+        error,
+      );
+
+      return Response.json(
+        {
+          error:
+            "身体分析に時間がかかっています。少し待ってからもう一度お試しください。",
+        },
+        {
+          status: 504,
+        },
+      );
+    }
+
+    if (
+      error instanceof
+      PythonAnalysisUnavailableError
+    ) {
+      console.error(
+        "Python身体分析APIへ接続できません:",
+        error,
+      );
+
+      return Response.json(
+        {
+          error:
+            "身体分析サービスを起動中、または一時的に利用できません。少し待ってからもう一度お試しください。",
+        },
+        { status: 503 },
+      );
+    }
+
+    if (
+      error instanceof PythonAnalysisApiError
+    ) {
+      console.error(
+        "Python身体分析APIエラー:",
+        error,
+      );
+
+      const responseStatus =
+        error.status === 429
+          ? 429
+          : error.status === 504
+            ? 504
+            : error.status === 413
+              ? 413
+              : error.status === 400 ||
+                  error.status === 415
+                ? error.status
+                : error.status >= 500
+                  ? 503
+                  : 502;
+
+      return Response.json(
+        { error: error.message },
+        { status: responseStatus },
+      );
+    }
+
     console.error(
       "身体分析に失敗しました。",
       error,
