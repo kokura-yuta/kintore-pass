@@ -7,7 +7,10 @@ const nextConfig: NextConfig = {
       allowedOrigins: [
         "127.0.0.1:8081",
         "localhost:8081",
+        "127.0.0.1:8082",
+        "localhost:8082",
         "192.168.68.54:8081",
+        "192.168.68.51:8082",
       ],
 
       // 8MB画像3枚とフォーム情報をroute.tsまで通す

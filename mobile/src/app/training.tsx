@@ -43,7 +43,15 @@ export default function TrainingScreen() {
     if (!draft) return defaultExercises;
 
     return draft.exercises.flatMap((draftExercise) => {
-      const exercise = exerciseCatalog.find((item) => item.id === draftExercise.exerciseId);
+      const exercise = exerciseCatalog.find((item) => item.id === draftExercise.exerciseId) ??
+        (draftExercise.exerciseName && draftExercise.category
+          ? {
+              id: draftExercise.exerciseId,
+              name: draftExercise.exerciseName,
+              category: draftExercise.category,
+              equipment: draftExercise.equipment ?? 'AI提案',
+            }
+          : null);
       if (!exercise) return [];
       return [{
         ...exercise,

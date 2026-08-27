@@ -6,6 +6,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ApiError } from '@/lib/api';
 import { fetchBootstrap } from '@/lib/bootstrap';
+import { useOnboarding } from '@/contexts/OnboardingContext';
+import { goalBodyTypeToSelection } from '@/lib/goals';
+import {
+  fetchUserProfile,
+  userProfileToDraft,
+} from '@/lib/profiles';
 
 type Status = 'loading' | 'error' | 'onboarding-required';
 
@@ -13,6 +19,8 @@ export default function BootstrapScreen() {
   const router = useRouter();
   const { isLoaded, isSignedIn, getToken } = useAuth({ treatPendingAsSignedOut: false });
   const { signOut } = useClerk();
+  const { setGoalBody, setProfile } =
+    useOnboarding();
   const [status, setStatus] = useState<Status>('loading');
   const [errorMessage, setErrorMessage] = useState('');
   const [canUseDevelopmentBypass, setCanUseDevelopmentBypass] = useState(false);
@@ -28,12 +36,56 @@ export default function BootstrapScreen() {
         return;
       }
 
-      const data = await fetchBootstrap(token);
+            // Neonに保存された進行状態に応じて、次に必要な画面へ移動する
+      const data =
+        await fetchBootstrap(token);
+
+      // Neonの理想体型をReact Contextへ戻し、各画面で再表示できるようにする
+      if (data.goalBodyType !== null) {
+        const restoredGoal =
+          goalBodyTypeToSelection(
+            data.goalBodyType,
+          );
+
+        if (restoredGoal) {
+          setGoalBody(restoredGoal);
+        }
+      }
+
+      // 保存済みプロフィールを取得し、入力フォーム用の文字列へ戻す
+      if (data.profileCompleted) {
+        const profileResponse =
+          await fetchUserProfile(token);
+
+        if (profileResponse.profile) {
+          setProfile(
+            userProfileToDraft(
+              profileResponse.profile,
+            ),
+          );
+        }
+      }
+
+      // 初回設定全体が完了済みならホームへ移動する
       if (data.onboardingCompleted) {
         router.replace('/home');
-      } else {
-        setStatus('onboarding-required');
+        return;
       }
+
+      // 理想体型が未設定なら理想体型選択画面へ移動する
+      if (data.goalBodyType === null) {
+        router.replace('/ideal-body');
+        return;
+      }
+
+      // 身長・体重が未保存なら身体情報入力画面へ移動する
+      if (!data.profileCompleted) {
+        router.replace('/profile-setup');
+        return;
+      }
+
+      // 理想体型と身体情報が保存済みなら初回分析画面へ移動する
+      router.replace('/initial-analysis');
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) {
         await signOut();
@@ -49,7 +101,15 @@ export default function BootstrapScreen() {
       );
       setStatus('error');
     }
-  }, [getToken, isLoaded, isSignedIn, router, signOut]);
+  }, [
+    getToken,
+    isLoaded,
+    isSignedIn,
+    router,
+    setGoalBody,
+    setProfile,
+    signOut,
+  ]);
 
   useEffect(() => {
     const timerId = setTimeout(() => void loadBootstrap(), 0);

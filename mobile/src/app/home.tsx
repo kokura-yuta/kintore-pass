@@ -54,6 +54,9 @@ export default function HomeScreen() {
       menuId: displayedMenu.menuId,
       exercises: displayedMenu.exercises.map((exercise) => ({
         exerciseId: exercise.exerciseId,
+        exerciseName: exercise.name,
+        category: generatedMenu?.exercises.find((item) => item.exerciseId === exercise.exerciseId)?.category,
+        equipment: generatedMenu?.exercises.find((item) => item.exerciseId === exercise.exerciseId)?.equipment,
         sets: exercise.sets,
       })),
     });
