@@ -10513,3 +10513,27 @@ Expo Webが認証付きAPI本体を送信
 `OPTIONS`は実データの保存や取得を行う通信ではありません。ブラウザが本通信の前に送る安全確認なので、`/api/`へのOPTIONSにはHTTP 204で本文なしの応答を返します。
 
 ネイティブのiPhoneアプリにはブラウザと同じCORS制限はありません。ただし、開発中にExpo WebでもAPIを確認できるように今回の設定が必要です。
+
+### 公開後のExpo接続テスト結果
+
+CORS修正版はCloudflare Sitesのバージョン2として公開しました。事前確認の`OPTIONS`ではHTTP 204と次のCORSヘッダーが返ることを確認済みです。
+
+```text
+Access-Control-Allow-Origin: http://127.0.0.1:8081
+Access-Control-Allow-Headers: Authorization, Content-Type
+Access-Control-Allow-Methods: GET, POST, PATCH, DELETE, OPTIONS
+```
+
+Expo Webから`POST /api/users/bootstrap`を送ると、Cloudflareへ到達してClerkのAuthorizationトークンも認識され、Neon検索まで処理が進みました。
+
+その後のNeon検索は、プロジェクトのデータ転送量上限超過によりHTTP 402で停止しています。ローカルから同じ接続先へ`SELECT 1`だけを送っても同じHTTP 402になったため、Cloudflareのコードや環境変数の欠落ではなくNeon側の利用上限が原因です。
+
+```text
+Expo → 成功
+Cloudflare公開API → 成功
+CORS → 成功
+Clerk本人確認 → 成功
+Neon接続 → データ転送量上限のHTTP 402で停止
+```
+
+Neonの上限が回復するかプランを変更した後に、bootstrap、プロフィール、理想体型、記録、身体分析、AIメニュー、AIチャットの認証付き実通信を再確認します。
