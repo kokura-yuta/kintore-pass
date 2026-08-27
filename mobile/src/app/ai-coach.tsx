@@ -7,11 +7,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { BottomNavigation } from '@/components/BottomNavigation';
 import { useOnboarding } from '@/contexts/OnboardingContext';
 import { useTrainingDraft } from '@/contexts/TrainingDraftContext';
-import { ApiError } from '@/lib/api';
+import { ApiError, isApiBypassEnabled } from '@/lib/api';
 import { fetchLatestAiMenu, generateAiMenu, toGeneratedMenuPreview } from '@/lib/aiMenus';
-import type { GeneratedMenuPreview } from '@/lib/aiMenuPreview';
+import { getMenuPreview, type GeneratedMenuPreview, type MenuBodyPart } from '@/lib/aiMenuPreview';
 
 type GenerationStatus = 'condition' | 'loading' | 'result';
+const selectableBodyParts: MenuBodyPart[] = ['胸', '背中', '肩', '腕', '脚', '腹筋'];
 
 // 「8〜10回」のようなAI表示から記録画面へ入れる最初の数値だけを取り出す
 function getFirstNumber(value: string) {
@@ -22,16 +23,19 @@ export default function AiCoachScreen() {
   const router = useRouter();
   const { getToken, isLoaded, isSignedIn } = useAuth({ treatPendingAsSignedOut: false });
   const { profile } = useOnboarding();
-  const { setDraft, setLatestGeneratedMenu, todayBodyPart } = useTrainingDraft();
+  const { setDraft, setLatestGeneratedMenu, setTodayBodyPart, todayBodyPart } = useTrainingDraft();
   const [condition, setCondition] = useState<number | null>(null);
+  const [selectedBodyPart, setSelectedBodyPart] = useState<MenuBodyPart | null>(todayBodyPart);
+  const [generationIndex, setGenerationIndex] = useState(0);
   const [status, setStatus] = useState<GenerationStatus>('condition');
   const [menu, setMenu] = useState<GeneratedMenuPreview | null>(null);
   const [error, setError] = useState('');
-  const [isLoadingSavedMenu, setIsLoadingSavedMenu] = useState(true);
+  const [isLoadingSavedMenu, setIsLoadingSavedMenu] = useState(!isApiBypassEnabled);
   const trainingStyle = profile.trainingStyle ?? 'ai';
 
   // 画面を開いたとき、Neonに保存された本人の最新AIメニューを読み戻す
   useEffect(() => {
+    if (isApiBypassEnabled) return;
     if (!isLoaded) return;
 
     if (!isSignedIn) return;
@@ -70,20 +74,41 @@ export default function AiCoachScreen() {
     };
   }, [getToken, isLoaded, isSignedIn, setLatestGeneratedMenu]);
 
+  function selectBodyPart(bodyPart: MenuBodyPart | null) {
+    setSelectedBodyPart(bodyPart);
+    setTodayBodyPart(bodyPart);
+    setError('');
+  }
+
   // 今日の調子をバックエンドへ送り、OpenAI生成とNeon保存の完了を待つ
   async function generateMenu() {
     if (!condition) {
       setError('今日の調子を1〜10で選択してください。');
       return;
     }
-    if (trainingStyle === 'split' && !todayBodyPart) {
-      setError('ホームで今日鍛える部位を選択してください。');
+    if (trainingStyle === 'split' && !selectedBodyPart) {
+      setError('今日鍛える部位を選択してください。');
       return;
     }
     setError('');
     setStatus('loading');
 
     try {
+      if (isApiBypassEnabled) {
+        const nextGeneration = generationIndex + 1;
+        const generatedMenu = getMenuPreview(
+          condition,
+          nextGeneration,
+          selectedBodyPart ? 'split' : trainingStyle,
+          selectedBodyPart,
+        );
+        setGenerationIndex(nextGeneration);
+        setMenu(generatedMenu);
+        setLatestGeneratedMenu({ menu: generatedMenu, condition });
+        setStatus('result');
+        return;
+      }
+
       const token = await getToken();
       if (!token) {
         throw new ApiError('ログインを確認できませんでした。もう一度ログインしてください。', 401);
@@ -92,7 +117,7 @@ export default function AiCoachScreen() {
       const response = await generateAiMenu(
         token,
         condition,
-        trainingStyle === 'split' ? todayBodyPart : null,
+        selectedBodyPart,
       );
       const generatedMenu = toGeneratedMenuPreview(response.menu);
       setMenu(generatedMenu);
@@ -137,6 +162,19 @@ export default function AiCoachScreen() {
           {!isLoadingSavedMenu && status === 'condition' ? (
             <>
               <Text style={styles.lead}>今日の身体の状態を教えてください。目標や過去の記録と合わせてメニューを調整します。</Text>
+              <View style={styles.bodyPartCard}>
+                <View style={styles.cardHeading}>
+                  <View>
+                    <Text style={styles.cardTitle}>今日鍛える部位</Text>
+                    <Text style={styles.bodyPartHint}>{trainingStyle === 'split' ? '部位別設定では選択必須です' : '指定しない場合はAIが提案します'}</Text>
+                  </View>
+                  <Text style={styles.selectedPartLabel}>{selectedBodyPart ?? 'AIおまかせ'}</Text>
+                </View>
+                <View accessibilityRole="radiogroup" style={styles.bodyPartRow}>
+                  <Pressable accessibilityRole="radio" accessibilityState={{ checked: selectedBodyPart === null }} onPress={() => selectBodyPart(null)} style={[styles.bodyPartButton, selectedBodyPart === null && styles.selectedBodyPartButton]}><Text style={[styles.bodyPartText, selectedBodyPart === null && styles.selectedBodyPartText]}>AIおまかせ</Text></Pressable>
+                  {selectableBodyParts.map((bodyPart) => <Pressable accessibilityRole="radio" accessibilityState={{ checked: selectedBodyPart === bodyPart }} key={bodyPart} onPress={() => selectBodyPart(bodyPart)} style={[styles.bodyPartButton, selectedBodyPart === bodyPart && styles.selectedBodyPartButton]}><Text style={[styles.bodyPartText, selectedBodyPart === bodyPart && styles.selectedBodyPartText]}>{bodyPart}</Text></Pressable>)}
+                </View>
+              </View>
               <View style={styles.conditionCard}>
                 <View style={styles.cardHeading}><Text style={styles.cardTitle}>今日の調子</Text><Text style={styles.conditionValue}>{condition ?? '—'} / 10</Text></View>
                 <View style={styles.ratingRow}>{Array.from({ length: 10 }, (_, index) => index + 1).map((score) => <Pressable key={score} onPress={() => { setCondition(score); setError(''); }} style={[styles.ratingButton, condition === score && styles.selectedRating]}><Text style={[styles.ratingText, condition === score && styles.selectedRatingText]}>{score}</Text></Pressable>)}</View>
@@ -160,7 +198,7 @@ export default function AiCoachScreen() {
               {error ? <Text style={styles.error}>{error}</Text> : null}
               <Pressable onPress={startMenu} style={styles.primaryButton}><Text style={styles.primaryText}>このメニューで開始</Text><Text style={styles.primaryArrow}>›</Text></Pressable>
               <Pressable onPress={generateMenu} style={styles.secondaryButton}><Text style={styles.secondaryText}>メニューを再生成</Text></Pressable>
-              <Pressable onPress={() => setStatus('condition')} style={styles.textButton}><Text style={styles.textButtonText}>今日の調子を変更</Text></Pressable>
+              <Pressable onPress={() => setStatus('condition')} style={styles.textButton}><Text style={styles.textButtonText}>部位・今日の調子を変更</Text></Pressable>
             </>
           ) : null}
         </ScrollView>
@@ -172,6 +210,7 @@ export default function AiCoachScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#0A0A0A' }, safeArea: { flex: 1 }, content: { flexGrow: 1, paddingHorizontal: 18, paddingTop: 17, paddingBottom: 28 }, header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, eyebrow: { color: '#FFF1B8', fontSize: 9, fontWeight: '700', letterSpacing: 1.5 }, title: { marginTop: 5, color: '#F4F6F3', fontSize: 27, fontWeight: '700' }, aiBadge: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center', borderRadius: 21, backgroundColor: '#F6D365' }, aiBadgeText: { color: '#0A0A0A', fontSize: 12, fontWeight: '700' }, lead: { marginTop: 19, color: '#8E978F', fontSize: 12, lineHeight: 19 },
+  bodyPartCard: { marginTop: 17, padding: 17, borderWidth: 1, borderColor: '#303030', borderRadius: 18, backgroundColor: '#151515' }, bodyPartHint: { marginTop: 5, color: '#737B75', fontSize: 9 }, selectedPartLabel: { color: '#FFF1B8', fontSize: 11, fontWeight: '700' }, bodyPartRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 15 }, bodyPartButton: { minWidth: 57, alignItems: 'center', paddingHorizontal: 11, paddingVertical: 10, borderWidth: 1, borderColor: '#3A3A3A', borderRadius: 18, backgroundColor: '#0A0A0A' }, selectedBodyPartButton: { borderColor: '#F6D365', backgroundColor: '#F6D365' }, bodyPartText: { color: '#A5ADA7', fontSize: 10, fontWeight: '700' }, selectedBodyPartText: { color: '#0A0A0A' },
   conditionCard: { marginTop: 17, padding: 17, borderWidth: 1, borderColor: '#303030', borderRadius: 18, backgroundColor: '#151515' }, cardHeading: { flexDirection: 'row', justifyContent: 'space-between' }, cardTitle: { color: '#F4F6F3', fontSize: 16, fontWeight: '700' }, conditionValue: { color: '#FFF1B8', fontSize: 14, fontWeight: '700' }, ratingRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 17 }, ratingButton: { width: 35, height: 35, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#3A3A3A', borderRadius: 10, backgroundColor: '#0A0A0A' }, selectedRating: { borderColor: '#F6D365', backgroundColor: '#F6D365' }, ratingText: { color: '#8E978F', fontSize: 11, fontWeight: '700' }, selectedRatingText: { color: '#0A0A0A' }, ratingGuide: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 9 }, guideText: { color: '#59605A', fontSize: 8 },
   referenceCard: { marginTop: 13, padding: 15, borderRadius: 16, backgroundColor: '#121212' }, referenceTitle: { color: '#A5ADA7', fontSize: 10, fontWeight: '700' }, chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 10 }, infoChip: { paddingHorizontal: 10, paddingVertical: 7, borderRadius: 14, backgroundColor: '#292929' }, infoChipText: { color: '#8E978F', fontSize: 8, fontWeight: '600' }, error: { marginTop: 12, color: '#FF7676', fontSize: 11 },
   primaryButton: { minHeight: 57, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 15, paddingHorizontal: 17, borderRadius: 15, backgroundColor: '#F6D365' }, primaryText: { color: '#0A0A0A', fontSize: 14, fontWeight: '700' }, primaryArrow: { color: '#0A0A0A', fontSize: 27 }, loadingArea: { flex: 1, minHeight: 500, alignItems: 'center', justifyContent: 'center' }, loadingTitle: { marginTop: 21, color: '#F4F6F3', fontSize: 22, fontWeight: '700', textAlign: 'center' }, loadingText: { marginTop: 9, color: '#737B75', fontSize: 11 },
