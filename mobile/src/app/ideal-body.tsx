@@ -8,6 +8,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { BodyTypeCard } from '@/components/BodyTypeCard';
 import { type GoalBodySelection, useOnboarding } from '@/contexts/OnboardingContext';
+import { isApiBypassEnabled } from '@/lib/api';
 import { saveGoalBodyType } from '@/lib/goals';
 import bulkUpImage from '../../assets/images/body-types/bulk-up.png';
 import leanMuscleImage from '../../assets/images/body-types/lean-muscle.png';
@@ -120,6 +121,12 @@ export default function IdealBodyScreen() {
     setIsSaving(true);
 
     try {
+      if (isApiBypassEnabled) {
+        setGoalBody(selection);
+        router.push('/profile-setup');
+        return;
+      }
+
       // Clerkから現在のログイン用トークンを取得する
       const token = await getToken();
 
