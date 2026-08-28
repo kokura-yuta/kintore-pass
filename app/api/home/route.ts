@@ -75,7 +75,7 @@ export async function GET(
       );
     }
 
-        // 本人が最後に生成したAIメニューを1件取得する
+    // 本人が最後に生成したAIメニューを1件取得する
     const matchedMenus = await db
       .select({
         id: aiGeneratedMenus.id,
@@ -118,12 +118,61 @@ export async function GET(
       });
     }
 
-    // 現段階では目標体型だけを返し、メニューは次の作業で追加する
+    // 最新AIメニューに含まれる種目を表示順に取得する
+    const exercises = await db
+      .select({
+        exerciseName:
+          aiGeneratedMenuExercises.exerciseName,
+        bodyPart:
+          aiGeneratedMenuExercises.bodyPart,
+        bodyArea:
+          aiGeneratedMenuExercises.bodyArea,
+        targetWeightKg:
+          aiGeneratedMenuExercises.targetWeightKg,
+        targetReps:
+          aiGeneratedMenuExercises.targetReps,
+        sets:
+          aiGeneratedMenuExercises.sets,
+        restSeconds:
+          aiGeneratedMenuExercises.restSeconds,
+        note:
+          aiGeneratedMenuExercises.note,
+      })
+      .from(aiGeneratedMenuExercises)
+      .where(
+        eq(
+          aiGeneratedMenuExercises.menuId,
+          latestMenu.id,
+        ),
+      )
+      .orderBy(
+        aiGeneratedMenuExercises.displayOrder,
+      );
+
+    // 目標体型・最新AIメニュー・種目をホーム画面へ返す
     return Response.json({
       goalBodyType:
         currentUser.goalBodyType,
-      menu: null,
-      aiMessage: null,
+      menu: {
+        id:
+          latestMenu.id,
+        recommendedBodyPart:
+          latestMenu.recommendedBodyPart,
+        reason:
+          latestMenu.reason,
+        estimatedMinutes:
+          latestMenu.estimatedMinutes,
+        advice:
+          latestMenu.advice,
+        conditionScore:
+          latestMenu.conditionScore,
+        createdAt:
+          latestMenu.createdAt,
+        exercises,
+      },
+      aiMessage:
+        latestMenu.advice[0] ??
+        latestMenu.reason,
     });
   } catch (error) {
     // 詳しい原因は利用者へ返さずサーバーログへ残す
@@ -142,6 +191,4 @@ export async function GET(
     );
   }
 }
-
-
 

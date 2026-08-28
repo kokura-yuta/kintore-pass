@@ -10753,3 +10753,93 @@ npx drizzle-kit migrate
 ```
 
 現時点ではNeonの実データベースは変更されていません。
+
+## ホーム画面用API（GET /api/home）
+
+対象ファイルは`app/api/home/route.ts`です。このAPIは、スマホのホーム画面が必要とする本人の目標体型と最新AIメニューを、1回の通信でまとめて返します。
+
+### 大きな処理の流れ
+
+```text
+スマホがGET /api/homeを呼ぶ
+↓
+Clerkトークンからログイン中の本人を確認
+↓
+ClerkユーザーIDに一致するユーザーをNeonから取得
+↓
+本人が最後に生成したAIメニューを1件取得
+↓
+そのメニューに含まれる種目一覧を取得
+↓
+ホーム画面用のJSONとしてスマホへ返す
+```
+
+### 本人のユーザー情報を取得する部分
+
+`getClerkUserId(request)`は、スマホから送られたClerkトークンを確認し、ログイン中の本人のClerkユーザーIDを取得します。取得できなければHTTP 401を返し、Neonを検索しません。
+
+`.where(eq(users.clerkUserId, clerkUserId))`は、Neonの`users`テーブルからClerkユーザーIDが一致する本人だけを検索します。
+
+`.limit(1)`は検索結果を最大1件に制限します。ユーザーは1人につき1行なので、不要なデータを受け取らずNeonの通信量も抑えられます。
+
+```typescript
+const currentUser = matchedUsers[0] ?? null;
+```
+
+`matchedUsers`は検索結果の配列です。`[0]`で先頭のユーザーを取り出し、結果がないときは`?? null`によって明確に`null`へ統一します。
+
+### 最新AIメニューを取得する部分
+
+`.where(eq(aiGeneratedMenus.userId, currentUser.id))`は、ログイン中の本人が持つAIメニューだけに絞ります。
+
+`desc(aiGeneratedMenus.createdAt)`は生成日時を新しい順へ並べます。その後の`.limit(1)`と組み合わせることで、最新メニューだけを取得します。
+
+```text
+orderBy(desc(createdAt))
+→ 新しい順に並べる
+
+limit(1)
+→ 先頭の最新1件だけ取る
+```
+
+メニューが存在しない場合は、次のように`menu`と`aiMessage`を`null`で返します。フロントはこれを使い、「AIメニューはまだありません」と生成ボタンを表示できます。
+
+```json
+{
+  "goalBodyType": "細マッチョ",
+  "menu": null,
+  "aiMessage": null
+}
+```
+
+### 最新メニューの種目を取得する部分
+
+`aiGeneratedMenuExercises.menuId`と`latestMenu.id`を比較し、最新メニューに所属する種目だけを取得します。
+
+`.orderBy(aiGeneratedMenuExercises.displayOrder)`は、AIメニューで決めた実施順に種目を並べます。ここでは`.limit(1)`を付けません。メニューには複数種目があるため、該当する全種目が必要だからです。
+
+### ホームへ返すJSON
+
+メニューが存在する場合は、目標体型、最新メニュー、種目配列をまとめて返します。
+
+```text
+goalBodyType
+→ 本人が設定した理想体型
+
+menu
+→ 最新AIメニューの部位・理由・時間・調子・アドバイス
+
+menu.exercises
+→ 最新メニューに含まれる全種目
+
+aiMessage
+→ ホームに表示する短いAIメッセージ
+```
+
+```typescript
+latestMenu.advice[0] ?? latestMenu.reason
+```
+
+`advice[0]`はアドバイス配列の先頭です。アドバイスが空で先頭が`undefined`の場合は、`??`によってメニューを選んだ理由である`reason`を代わりに使用します。
+
+この`route.ts`はデータを画面へ直接表示するファイルではありません。本人のデータをNeonから集め、フロントが表示しやすいJSONへまとめるバックエンドの受け渡し役です。
