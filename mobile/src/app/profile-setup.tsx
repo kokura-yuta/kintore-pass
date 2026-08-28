@@ -20,6 +20,7 @@ import {
   type TrainingStyle,
   useOnboarding,
 } from '@/contexts/OnboardingContext';
+import { isApiBypassEnabled } from '@/lib/api';
 import { saveUserProfile } from '@/lib/profiles';
 
 const locations: { value: TrainingLocation; label: string; description: string }[] = [
@@ -91,6 +92,12 @@ export default function ProfileSetupScreen() {
     setIsSaving(true);
 
     try {
+      if (isApiBypassEnabled) {
+        setProfile(form);
+        router.push('/initial-analysis');
+        return;
+      }
+
       const token = await getToken();
 
       if (!token) {

@@ -12,7 +12,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useOnboarding } from '@/contexts/OnboardingContext';
-import { ApiError } from '@/lib/api';
+import { ApiError, isApiBypassEnabled } from '@/lib/api';
 import { getGoalBodyLabel } from '@/lib/initialAnalysisPreview';
 import { completeOnboarding } from '@/lib/onboarding';
 
@@ -44,6 +44,11 @@ export default function InitialAnalysisScreen() {
     setIsSkipping(true);
 
     try {
+      if (isApiBypassEnabled) {
+        router.replace('/home');
+        return;
+      }
+
       const token = await getToken();
 
       if (!token) {

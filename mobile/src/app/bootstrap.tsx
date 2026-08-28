@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { ApiError } from '@/lib/api';
+import { ApiError, isApiBypassEnabled } from '@/lib/api';
 import { fetchBootstrap } from '@/lib/bootstrap';
 import { useOnboarding } from '@/contexts/OnboardingContext';
 import { goalBodyTypeToSelection } from '@/lib/goals';
@@ -97,7 +97,7 @@ export default function BootstrapScreen() {
         error instanceof Error ? error.message : 'ユーザー情報の取得に失敗しました。',
       );
       setCanUseDevelopmentBypass(
-        __DEV__ && error instanceof ApiError && error.message.includes('接続先'),
+        isApiBypassEnabled,
       );
       setStatus('error');
     }
