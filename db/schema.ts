@@ -1,6 +1,7 @@
 // PostgreSQLへユーザー情報と身体プロフィールを保存するテーブルの型を読み込む場所
 import {
   boolean,
+  date,
   index,
   integer,
   pgTable,
@@ -113,6 +114,54 @@ export const userProfiles = pgTable(
       .notNull()
       .defaultNow(),
   },
+);
+// ユーザーが日ごとに入力した体重を保存するテーブル
+export const weightRecords = pgTable(
+  "weight_records",
+  {
+    // 体重記録を重複なく識別するID
+    id: uuid("id")
+      .defaultRandom()
+      .primaryKey(),
+
+    // この体重記録が誰のものかをusersテーブルと結び付ける
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, {
+        onDelete: "cascade",
+      }),
+
+    // 記録した日をYYYY-MM-DD形式で保存する
+    recordedDate: date("recorded_date", {
+      mode: "string",
+    }).notNull(),
+
+    // その日に入力した体重をkgで保存する
+    weightKg: real("weight_kg")
+      .notNull(),
+
+    // 記録を作成・更新した日時
+    createdAt: timestamp("created_at", {
+      withTimezone: true,
+    })
+      .notNull()
+      .defaultNow(),
+
+    updatedAt: timestamp("updated_at", {
+      withTimezone: true,
+    })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    // 同じユーザーが同じ日に2件登録することを防ぐ
+    uniqueIndex(
+      "weight_records_user_date_unique",
+    ).on(
+      table.userId,
+      table.recordedDate,
+    ),
+  ],
 );
 
 // 1回分のトレーニング日時・時間・調子・メモをユーザーごとに保存するテーブル

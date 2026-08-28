@@ -10537,3 +10537,219 @@ Neon接続 → データ転送量上限のHTTP 402で停止
 ```
 
 Neonの上限が回復するかプランを変更した後に、bootstrap、プロフィール、理想体型、記録、身体分析、AIメニュー、AIチャットの認証付き実通信を再確認します。
+
+## 体重履歴API
+
+### `weight_records`テーブルの役割
+
+担当ファイルは`db/schema.ts`です。
+
+`weight_records`は、利用者が日ごとに入力した体重を履歴として残すテーブルです。プロフィールの`weightKg`は現在の体重を1つだけ持ち、`weight_records`は過去から現在までの変化を複数件持つという違いがあります。
+
+```text
+user_profiles.weightKg
+→ 現在のプロフィール体重
+
+weight_records
+→ 8月1日 65.0kg
+→ 8月2日 64.8kg
+→ 8月3日 64.6kg
+```
+
+`date`はPostgreSQLの「日付だけ」を保存する型です。時刻を含めないため、タイムゾーンによって前日や翌日にずれる問題を避けられます。
+
+```typescript
+recordedDate: date("recorded_date", {
+  mode: "string",
+}).notNull()
+```
+
+`mode: "string"`は、TypeScript側で日付を`YYYY-MM-DD`形式の文字列として扱う指定です。
+
+`userId`はこの記録が誰のものかを`users.id`と結び付けます。利用者が削除された場合は`onDelete: "cascade"`により、その人の体重履歴も一緒に削除されます。
+
+`weightKg`は小数を含むkgを保存します。`.notNull()`により、体重の入っていない履歴は作れません。
+
+`uniqueIndex("weight_records_user_date_unique")`は、同じ利用者が同じ日付へ2件の体重を登録することをDB側で防ぎます。
+
+```text
+ユーザーA・2026-08-28 → 1件だけ
+ユーザーB・2026-08-28 → 別ユーザーなので登録可能
+```
+
+フロントの二重タップや同じ日付の再送信があっても、最後の安全装置としてPostgreSQLが重複を拒否します。
+
+### 体重記録を保存する`POST()`
+
+担当ファイルは`app/api/weight-records/route.ts`です。
+
+`POST()`は、フロントから受け取った日付と体重をログイン中の本人の履歴として保存します。
+
+```text
+Clerkで本人確認
+↓
+JSONからrecordedDateとweightKgを取得
+↓
+日付形式と20〜500kgの範囲を検査
+↓
+Clerk IDに一致するNeonのusers.idを取得
+↓
+weight_recordsへINSERT
+↓
+保存結果をHTTP 201で返す
+```
+
+`isValidWeight(value): value is number`の`value is number`は、この関数が`true`を返した後は値をnumberとして扱ってよいとTypeScriptへ伝える型ガードです。
+
+`isValidDate()`は正規表現で`YYYY-MM-DD`の形を確認した後、`Date`へ変換して実在する日付か確認します。文字の形だけでなく、2月30日などの存在しない日付も拒否するためです。
+
+`.onConflictDoNothing()`は、`userId + recordedDate`の組み合わせが登録済みの場合に、新しい行を追加せず終了します。
+
+```typescript
+.onConflictDoNothing({
+  target: [
+    weightRecords.userId,
+    weightRecords.recordedDate,
+  ],
+})
+```
+
+`target`は、どの重複ルールにぶつかったとき追加を中止するかを指定します。今回は同じ人・同じ日の組み合わせです。
+
+`.returning()`は、PostgreSQLへ保存できた行を配列で返します。重複で保存されなかった場合は空配列になるため、`createdRecords[0] ?? null`で先頭がなければnullへ統一します。
+
+保存成功はHTTP 201、入力不正は400、未ログインは401、ユーザー未登録は404、同じ日の重複は409を返します。
+
+### 体重履歴を取得する`GET()`
+
+`GET()`はログイン中の本人の体重記録だけを最大365件取得し、一覧・グラフ・概要表示用のJSONを返します。
+
+`orderBy(desc(weightRecords.recordedDate))`は新しい記録から並べ、`.limit(365)`はNeonから必要以上のデータを受け取らないための上限です。
+
+DBから新しい順で取得した後、`[...newestRecords].reverse()`で配列をコピーして古い順へ変えます。グラフは左から右へ日付が進むため、古い順の方がそのまま表示に使えます。
+
+`records.at(-1)`の`-1`は配列の最後を表します。今回は古い順へ並べ直した後なので、最後の要素が最新の体重です。
+
+`firstRecord?.weightKg`の`?.`は、記録が存在する場合だけ`weightKg`を読みます。記録が0件でもエラーになりません。
+
+`firstRecord?.weightKg ?? null`の`??`は、左側が`null`または`undefined`なら右側のnullを使用する演算子です。フロントへ「データなし」を一定の形で返せます。
+
+`toFixed(1)`は最新体重と最初の体重の差を小数第1位へ揃えます。`toFixed()`の返り値は文字列なので、外側の`Number()`で数値へ戻しています。
+
+返却する`summary`には最初の体重、最新体重、変化量、記録件数を含めます。フロントは全履歴を再計算せず、カード表示へ使用できます。
+
+### 体重記録を修正する`PATCH()`
+
+`PATCH()`は、フロントから`recordId`と新しい`weightKg`を受け取り、指定した1件の体重を更新します。
+
+`isValidRecordId()`は、記録IDがPostgreSQLで使うUUID形式か正規表現で確認します。不正な文字列をDB検索へ渡さずHTTP 400で終了するための検査です。
+
+```typescript
+and(
+  eq(weightRecords.id, recordId),
+  eq(weightRecords.userId, currentUser.id),
+)
+```
+
+`and()`は中に書いた条件を両方満たすデータだけを対象にします。記録IDだけで更新すると他人のIDを指定された場合に危険なので、必ずログイン中の本人の`userId`も条件へ含めます。
+
+`.update(weightRecords)`は更新対象テーブル、`.set({ weightKg, updatedAt: new Date() })`は変更する列、`.where(...)`は変更してよい行の条件です。
+
+`.returning()`で更新後の行を受け取り、0件なら対象が存在しないか本人の記録ではないためHTTP 404を返します。他人の記録が存在するかどうかも利用者へ教えません。
+
+### 体重記録を削除する`DELETE()`
+
+`DELETE()`はURLの`?recordId=UUID`から削除対象を受け取り、ログイン中の本人が持つ記録だけを削除します。
+
+`new URL(request.url)`はリクエストURLを、パスや検索パラメータへ分けて扱える`URL`オブジェクトへ変換します。
+
+`requestUrl.searchParams.get("recordId")`は、URLの`?`以降から`recordId`の値を取得します。指定がない場合はnullになるため、`isValidRecordId()`で拒否できます。
+
+`.delete(weightRecords)`は削除するテーブルを指定します。更新処理と同じく、`and()`で記録IDと本人のユーザーIDを両方確認します。
+
+```text
+記録IDが一致 + 本人のuserIdが一致
+→ 削除する
+
+記録IDだけ一致 + 他人のuserId
+→ 削除しない
+```
+
+`.returning({ id: weightRecords.id })`は削除できた行のIDだけを返します。削除結果が空ならHTTP 404、成功したら`deletedRecordId`をフロントへ返します。
+
+POST・GET・PATCH・DELETEは`npx tsc --noEmit`に成功しています。Neonへ`weight_records`を反映した後に実通信テストを行います。
+
+### AIチャットの体重履歴Tool
+
+体重履歴Toolは`chatTools.ts`と`runChatTool.ts`の2ファイルをセットで使用します。
+
+```text
+chatTools.ts
+→ AIへToolの名前・目的・入力形式を教える説明書
+→ Neonは検索しない
+
+runChatTool.ts
+→ AIが選んだTool名を受け取る実行係
+→ Clerkで確認済みの本人IDを使ってNeonを検索する
+```
+
+`chatTools.ts`の`get_weight_history`定義により、AIは体重の増減・減量・増量・停滞について答えるときに体重履歴を取得できると判断します。
+
+`runChatTool.ts`の`if (toolName === "get_weight_history")`は、選ばれたTool名を`getWeightHistory()`の実処理へつなぎます。
+
+`getWeightHistory()`は`weight_records`と`users`を`innerJoin()`し、ClerkユーザーIDが一致する本人の最近90件だけを取得します。件数を制限する理由は、Neonの通信量とOpenAIへ渡す文字数を増やしすぎないためです。
+
+取得結果は古い順へ並べ、最初の体重、最新体重、合計変化、経過日数、1週間あたりの平均変化を計算します。
+
+```text
+totalChangeKg
+＝ 最新体重 − 最初の体重
+
+weeklyChangeKg
+＝ 合計変化 ÷ 経過日数 × 7日
+```
+
+`JSON.stringify()`を使う理由は、Neonから取得したJavaScriptオブジェクトをOpenAIがTool結果として読めるJSON文字列へ変換するためです。
+
+AIからユーザーIDは受け取りません。`route.ts`でClerk認証できた本人のIDだけを`runChatTool()`へ渡すため、AIが別ユーザーのIDを指定できない構造です。
+
+`systemPrompt.js`には、体重の増減・減量・増量・停滞について質問された場合に`get_weight_history`を使用するルールを追加しました。
+
+```text
+systemPrompt.js：どんな質問で使うかを指示
+chatTools.ts：Toolの名前と説明を定義
+runChatTool.ts：Neonから本人の履歴を取得
+```
+
+### 体重テーブルのマイグレーション
+
+`npm run db:generate`は、`db/schema.ts`の変更と前回のスナップショットを比較し、PostgreSQLへ必要な変更をSQLファイルとして生成します。
+
+今回生成されたファイルは`drizzle-postgres/0006_many_namora.sql`です。
+
+```text
+CREATE TABLE weight_records
+→ 体重履歴テーブルを作る
+
+ALTER TABLE ... FOREIGN KEY
+→ weight_records.user_idとusers.idを結ぶ
+
+CREATE UNIQUE INDEX
+→ 同じ人・同じ日付の重複を防ぐ
+```
+
+`drizzle-postgres/meta/0006_snapshot.json`は、今回のスキーマ状態をDrizzleが次回の差分比較に使う記録です。手作業で編集しません。
+
+マイグレーションの「生成」と「適用」は別です。
+
+```text
+npm run db:generate
+→ SQLファイルをMac内へ作るだけ
+→ 今回完了
+
+npx drizzle-kit migrate
+→ SQLをNeonへ実行して実テーブルを作る
+→ Neonの上限回復後に実行
+```
+
+現時点ではNeonの実データベースは変更されていません。

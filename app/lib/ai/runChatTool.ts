@@ -15,6 +15,7 @@ import {
   bodyAnalysisAreas,
   userProfiles,
   users,
+  weightRecords,
 } from "@/db/schema";
 
 // OpenAIが選んだToolを認証済みの本人情報で実行する
@@ -56,6 +57,15 @@ export async function runChatTool(
     // 最新AIメニューToolが選ばれた場合は本人の最新メニューを取得する
   if (toolName === "get_latest_ai_menu") {
     return getLatestAiMenu(clerkUserId);
+  }
+    // 体重履歴Toolが選ばれた場合は本人の最近の体重を取得する
+  if (
+    toolName ===
+    "get_weight_history"
+  ) {
+    return getWeightHistory(
+      clerkUserId,
+    );
   }
   if (toolName !== "get_user_profile") {
     return JSON.stringify({
@@ -293,6 +303,126 @@ async function getLatestAiMenu(
       requestNote: menu.requestNote,
       createdAt: menu.createdAt,
       exercises,
+    },
+  });
+}
+
+// 認証済みの本人の最近の体重履歴を取得する
+async function getWeightHistory(
+  clerkUserId: string,
+) {
+  // Neonを操作するDB接続を取得する
+  const db = getDb();
+
+  // ClerkユーザーIDが一致する本人の体重履歴を新しい順で取得する
+  const newestRecords = await db
+    .select({
+      recordedDate:
+        weightRecords.recordedDate,
+      weightKg:
+        weightRecords.weightKg,
+    })
+    .from(weightRecords)
+    .innerJoin(
+      users,
+      eq(
+        weightRecords.userId,
+        users.id,
+      ),
+    )
+    .where(
+      eq(
+        users.clerkUserId,
+        clerkUserId,
+      ),
+    )
+    .orderBy(
+      desc(
+        weightRecords.recordedDate,
+      ),
+    )
+    // AIへ渡すデータ量を増やしすぎないよう最大90件にする
+    .limit(90);
+
+  // 体重記録がまだない場合はデータなしを返す
+  if (newestRecords.length === 0) {
+    return JSON.stringify({
+      records: [],
+      message:
+        "体重履歴はまだありません。",
+    });
+  }
+
+  // AIが変化を読みやすいように古い日付順へ並べ直す
+  const records = [
+    ...newestRecords,
+  ].reverse();
+
+  // 最も古い記録と最新記録を取得する
+  const firstRecord =
+    records[0];
+
+  const latestRecord =
+    records.at(-1);
+
+  // 念のため記録を取得できなければデータなしを返す
+  if (
+    !firstRecord ||
+    !latestRecord
+  ) {
+    return JSON.stringify({
+      records: [],
+      message:
+        "体重履歴はまだありません。",
+    });
+  }
+
+  // 最初から最新までの体重変化を計算する
+  const totalChangeKg = Number(
+    (
+      latestRecord.weightKg -
+      firstRecord.weightKg
+    ).toFixed(1),
+  );
+
+  // 最初と最新の記録が何日離れているか計算する
+  const elapsedDays = Math.round(
+    (
+      Date.parse(
+        latestRecord.recordedDate,
+      ) -
+      Date.parse(
+        firstRecord.recordedDate,
+      )
+    ) /
+      (1000 * 60 * 60 * 24),
+  );
+
+  // 1週間あたりの平均体重変化を計算する
+  const weeklyChangeKg =
+    elapsedDays > 0
+      ? Number(
+          (
+            totalChangeKg /
+            elapsedDays *
+            7
+          ).toFixed(2),
+        )
+      : null;
+
+  // 履歴と変化の概要をOpenAIへ渡せるJSON文字列にする
+  return JSON.stringify({
+    records,
+    summary: {
+      firstWeightKg:
+        firstRecord.weightKg,
+      latestWeightKg:
+        latestRecord.weightKg,
+      totalChangeKg,
+      elapsedDays,
+      weeklyChangeKg,
+      recordCount:
+        records.length,
     },
   });
 }
