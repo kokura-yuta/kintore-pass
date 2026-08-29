@@ -8,7 +8,6 @@ import {
   useState,
 } from 'react';
 import {
-  ActivityIndicator,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -16,6 +15,8 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+
+import { ScreenStateCard } from '@/components/ScreenStateCard';
 
 import {
   type BodyAnalysisHistoryItem,
@@ -162,31 +163,21 @@ export default function AnalysisHistoryScreen() {
           </View>
 
           {status === 'loading' ? (
-            <View style={styles.statusCard}>
-              <ActivityIndicator
-                color="#F6D365"
-                size="large"
-              />
-              <Text style={styles.statusText}>
-                分析履歴を読み込んでいます…
-              </Text>
-            </View>
+            <ScreenStateCard
+              message="保存済みの分析結果を確認しています。"
+              title="分析履歴を読み込み中"
+              type="loading"
+            />
           ) : null}
 
           {status === 'error' ? (
-            <View style={styles.statusCard}>
-              <Text style={styles.errorText}>
-                {errorMessage}
-              </Text>
-              <Pressable
-                onPress={() => void loadHistory()}
-                style={styles.retryButton}
-              >
-                <Text style={styles.retryText}>
-                  もう一度試す
-                </Text>
-              </Pressable>
-            </View>
+            <ScreenStateCard
+              actionLabel="もう一度試す"
+              message={errorMessage}
+              onAction={() => void loadHistory()}
+              title="分析履歴を読み込めませんでした"
+              type="error"
+            />
           ) : null}
 
           {status === 'ready' ? (
@@ -278,11 +269,12 @@ export default function AnalysisHistoryScreen() {
                   item={selected}
                 />
               ) : (
-                <View style={styles.emptyCard}>
-                  <Text style={styles.emptyText}>
-                    分析履歴はまだありません。
-                  </Text>
-                </View>
+                <ScreenStateCard
+                  compact
+                  message="正面・横・背面の写真を使って、最初の分析結果を作成しましょう。"
+                  title="分析履歴はまだありません"
+                  type="empty"
+                />
               )}
 
               <Pressable
@@ -428,11 +420,6 @@ const styles = StyleSheet.create({
   backText: { color: '#F4F6F3', fontSize: 30, lineHeight: 32 },
   eyebrow: { color: '#FFF1B8', fontSize: 8, fontWeight: '700', letterSpacing: 1.4 },
   title: { marginTop: 3, color: '#F4F6F3', fontSize: 27, fontWeight: '700' },
-  statusCard: { alignItems: 'center', marginTop: 24, padding: 24, borderWidth: 1, borderColor: '#303030', borderRadius: 16, backgroundColor: '#151515' },
-  statusText: { marginTop: 12, color: '#A5ADA7', fontSize: 11 },
-  errorText: { color: '#FF7676', fontSize: 11, lineHeight: 18, textAlign: 'center' },
-  retryButton: { marginTop: 14, paddingHorizontal: 18, paddingVertical: 11, borderRadius: 12, backgroundColor: '#F6D365' },
-  retryText: { color: '#0A0A0A', fontSize: 11, fontWeight: '700' },
   summaryRow: { flexDirection: 'row', gap: 10, marginTop: 18 },
   summaryCard: { flex: 1, padding: 15, borderWidth: 1, borderColor: '#303030', borderRadius: 16, backgroundColor: '#151515' },
   summaryLabel: { color: '#737B75', fontSize: 9, fontWeight: '600' },
@@ -462,8 +449,6 @@ const styles = StyleSheet.create({
   areaName: { color: '#F4F6F3', fontSize: 12, fontWeight: '700' },
   areaScore: { color: '#FFF1B8', fontSize: 11, fontWeight: '700' },
   recommendationText: { marginTop: 8, color: '#FFF1B8', fontSize: 9, lineHeight: 15 },
-  emptyCard: { marginTop: 13, padding: 18, borderWidth: 1, borderColor: '#303030', borderRadius: 16, backgroundColor: '#151515' },
-  emptyText: { color: '#737B75', fontSize: 11 },
   analysisButton: { minHeight: 63, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 14, paddingHorizontal: 17, borderRadius: 15, backgroundColor: '#F6D365' },
   buttonEyebrow: { color: '#5C4D00', fontSize: 7, fontWeight: '700', letterSpacing: 1.1 },
   buttonText: { marginTop: 4, color: '#0A0A0A', fontSize: 14, fontWeight: '700' },

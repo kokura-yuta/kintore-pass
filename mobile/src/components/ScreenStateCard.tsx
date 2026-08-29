@@ -3,6 +3,7 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-nati
 type ScreenStateCardProps = {
   actionLabel?: string;
   compact?: boolean;
+  embedded?: boolean;
   message?: string;
   onAction?: () => void;
   title: string;
@@ -12,6 +13,7 @@ type ScreenStateCardProps = {
 export function ScreenStateCard({
   actionLabel,
   compact = false,
+  embedded = false,
   message,
   onAction,
   title,
@@ -23,6 +25,7 @@ export function ScreenStateCard({
       style={[
         styles.card,
         compact && styles.compactCard,
+        embedded && styles.embeddedCard,
         type === 'error' && styles.errorCard,
       ]}
     >
@@ -52,6 +55,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#151515',
   },
   compactCard: { minHeight: 132, marginTop: 11, padding: 18 },
+  embeddedCard: { minHeight: 100, marginTop: 10, padding: 12, borderWidth: 0, backgroundColor: 'transparent' },
   errorCard: { borderColor: '#613535', backgroundColor: '#201414' },
   errorEyebrow: { color: '#FF7676', fontSize: 9, fontWeight: '700', letterSpacing: 1.4 },
   title: { marginTop: 15, color: '#F4F6F3', fontSize: 20, fontWeight: '700', textAlign: 'center' },

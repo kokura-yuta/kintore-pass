@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react';
 import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { ScreenStateCard } from '@/components/ScreenStateCard';
 import { useWeightHistory } from '@/contexts/WeightHistoryContext';
 import { sanitizeDecimalInput } from '@/lib/numberInput';
 
@@ -88,7 +89,7 @@ export default function WeightHistoryScreen() {
                     );
                   })}
                 </View>
-              ) : <Text style={styles.emptyText}>記録を追加するとグラフが表示されます。</Text>}
+              ) : <ScreenStateCard compact embedded message="体重を記録すると、直近7件の変化をグラフで確認できます。" title="体重の推移はまだありません" type="empty" />}
             </View>
 
             <View style={styles.card}>
@@ -109,7 +110,7 @@ export default function WeightHistoryScreen() {
 
             <View style={styles.card}>
               <Text style={styles.cardTitle}>記録履歴</Text>
-              {sortedRecords.length === 0 ? <Text style={styles.emptyText}>まだ体重記録はありません。</Text> : [...sortedRecords].reverse().map((record, index) => {
+              {sortedRecords.length === 0 ? <ScreenStateCard compact embedded message="最初の体重を入力すると、ここへ日付ごとの履歴が残ります。" title="体重記録はまだありません" type="empty" /> : [...sortedRecords].reverse().map((record, index) => {
                 const previous = [...sortedRecords].reverse()[index + 1];
                 const difference = previous ? Number((record.weightKg - previous.weightKg).toFixed(1)) : null;
                 return <View key={record.id} style={styles.historyRow}><Text style={styles.historyDate}>{record.recordedOn.replaceAll('-', '.')}</Text><View style={styles.historyRight}><Text style={styles.historyWeight}>{record.weightKg} kg</Text><Text style={styles.historyDiff}>{difference === null ? '—' : `${difference > 0 ? '+' : ''}${difference} kg`}</Text></View></View>;
@@ -129,7 +130,7 @@ const styles = StyleSheet.create({
   eyebrow: { color: '#FFF1B8', fontSize: 8, fontWeight: '700', letterSpacing: 1.4 }, title: { marginTop: 3, color: '#F4F6F3', fontSize: 27, fontWeight: '700' },
   summaryRow: { flexDirection: 'row', gap: 10, marginTop: 18 }, summaryCard: { flex: 1, padding: 15, borderWidth: 1, borderColor: '#303030', borderRadius: 16, backgroundColor: '#151515' }, summaryLabel: { color: '#737B75', fontSize: 9, fontWeight: '600' }, summaryValue: { marginTop: 8, color: '#F4F6F3', fontSize: 23, fontWeight: '700' }, greenValue: { color: '#FFF1B8' }, summaryUnit: { color: '#8E978F', fontSize: 10 },
   card: { marginTop: 13, padding: 16, borderWidth: 1, borderColor: '#303030', borderRadius: 17, backgroundColor: '#151515' }, cardHeading: { flexDirection: 'row', justifyContent: 'space-between' }, cardTitle: { color: '#F4F6F3', fontSize: 15, fontWeight: '700' }, cardHint: { color: '#737B75', fontSize: 9, fontWeight: '600' },
-  chart: { height: 190, flexDirection: 'row', alignItems: 'flex-end', gap: 7, marginTop: 18, paddingTop: 14 }, barColumn: { flex: 1, alignItems: 'center' }, barValue: { marginBottom: 5, color: '#C9CECA', fontSize: 8, fontWeight: '600' }, bar: { width: '65%', maxWidth: 28, borderRadius: 7, backgroundColor: '#F6D365' }, barDate: { marginTop: 6, color: '#697169', fontSize: 7, fontWeight: '700' }, emptyText: { marginTop: 15, color: '#737B75', fontSize: 10 },
+  chart: { height: 190, flexDirection: 'row', alignItems: 'flex-end', gap: 7, marginTop: 18, paddingTop: 14 }, barColumn: { flex: 1, alignItems: 'center' }, barValue: { marginBottom: 5, color: '#C9CECA', fontSize: 8, fontWeight: '600' }, bar: { width: '65%', maxWidth: 28, borderRadius: 7, backgroundColor: '#F6D365' }, barDate: { marginTop: 6, color: '#697169', fontSize: 7, fontWeight: '700' },
   fieldLabel: { marginTop: 16, marginBottom: 7, color: '#A5ADA7', fontSize: 10, fontWeight: '600' }, textInput: { minHeight: 50, paddingHorizontal: 13, borderWidth: 1, borderColor: '#3A3A3A', borderRadius: 12, backgroundColor: '#0A0A0A', color: '#F4F6F3', fontSize: 13 }, weightInputWrap: { minHeight: 50, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#3A3A3A', borderRadius: 12, backgroundColor: '#0A0A0A' }, weightInput: { flex: 1, paddingHorizontal: 13, color: '#F4F6F3', fontSize: 15, fontWeight: '600' }, inputUnit: { paddingRight: 13, color: '#737B75', fontSize: 10 },
   error: { marginTop: 9, color: '#FF7676', fontSize: 10 }, success: { marginTop: 9, color: '#FFF1B8', fontSize: 10 }, saveButton: { minHeight: 51, alignItems: 'center', justifyContent: 'center', marginTop: 13, borderRadius: 13, backgroundColor: '#F6D365' }, disabledButton: { opacity: 0.5 }, saveText: { color: '#0A0A0A', fontSize: 13, fontWeight: '700' },
   historyRow: { minHeight: 53, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: 1, borderBottomColor: '#303030' }, historyDate: { color: '#A5ADA7', fontSize: 10, fontWeight: '700' }, historyRight: { flexDirection: 'row', alignItems: 'center', gap: 12 }, historyWeight: { color: '#F4F6F3', fontSize: 12, fontWeight: '700' }, historyDiff: { width: 45, color: '#737B75', fontSize: 8, textAlign: 'right' }, previewNote: { marginTop: 14, color: '#59605A', fontSize: 9, lineHeight: 15, textAlign: 'center' },
