@@ -154,9 +154,15 @@ export default function BootstrapScreen() {
                 >
                   <Text style={styles.developmentButtonText}>開発用に初回設定へ進む</Text>
                 </Pressable>
+                <Pressable
+                  onPress={() => router.replace('/home')}
+                  style={styles.developmentHomeButton}
+                >
+                  <Text style={styles.developmentHomeButtonText}>開発用にホームを確認する</Text>
+                </Pressable>
                 <Text style={styles.developmentNote}>
                   API接続先を設定した場合はExpoを再起動してから再試行してください。
-                  開発中は下のボタンから初回設定を確認できます。
+                  開発中は初回設定またはホーム画面を直接確認できます。
                 </Text>
               </>
             ) : null}
@@ -206,6 +212,15 @@ const styles = StyleSheet.create({
     borderRadius: 14,
   },
   developmentButtonText: { color: '#FFF1B8', fontSize: 14, fontWeight: '700' },
+  developmentHomeButton: {
+    minHeight: 52,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 12,
+    borderRadius: 14,
+    backgroundColor: '#242424',
+  },
+  developmentHomeButtonText: { color: '#F4F6F3', fontSize: 14, fontWeight: '700' },
   developmentNote: {
     marginTop: 12,
     color: '#697169',

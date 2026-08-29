@@ -1,4 +1,5 @@
 export type HomePreview = {
+  goalBodyType: string;
   targetArea: string;
   recommendedMinutes: number;
   conditionLabel: string;
@@ -14,6 +15,7 @@ export type HomePreview = {
 };
 
 export const homePreview: HomePreview = {
+  goalBodyType: '細マッチョ',
   targetArea: '胸・肩・上腕三頭筋',
   recommendedMinutes: 60,
   conditionLabel: 'GOOD',

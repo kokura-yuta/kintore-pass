@@ -1,9 +1,10 @@
 import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useTrainingHistory } from '@/contexts/TrainingHistoryContext';
+import { ScreenStateCard } from '@/components/ScreenStateCard';
 
 const weekdayLabels = ['日', '月', '火', '水', '木', '金', '土'];
 
@@ -71,15 +72,12 @@ export default function CalendarScreen() {
           </View>
 
           <Text style={styles.selectedTitle}>{selectedDate.replaceAll('-', '.')} の記録</Text>
-          {isLoading ? <ActivityIndicator color="#F6D365" style={styles.loading} /> : null}
+          {isLoading ? <ScreenStateCard compact title="記録を読み込み中" type="loading" /> : null}
           {errorMessage ? (
-            <View style={styles.errorCard}>
-              <Text style={styles.errorText}>{errorMessage}</Text>
-              <Pressable onPress={() => void reloadRecords()}><Text style={styles.retryText}>もう一度読み込む</Text></Pressable>
-            </View>
+            <ScreenStateCard actionLabel="もう一度読み込む" compact message={errorMessage} onAction={() => void reloadRecords()} title="記録を読み込めませんでした" type="error" />
           ) : null}
           {!isLoading && !errorMessage && selectedRecords.length === 0 ? (
-            <View style={styles.emptyCard}><Text style={styles.emptyTitle}>記録はありません</Text><Text style={styles.emptyText}>トレーニングを保存すると、この日に金色の印が付きます。</Text></View>
+            <ScreenStateCard compact message="トレーニングを保存すると、この日に金色の印が付きます。" title="記録はありません" type="empty" />
           ) : null}
           {!isLoading && !errorMessage ? selectedRecords.map((record, recordIndex) => (
             <View key={record.id} style={styles.recordCard}>
@@ -127,9 +125,6 @@ const styles = StyleSheet.create({
   legend: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 9 },
   legendText: { color: '#737B75', fontSize: 9 },
   selectedTitle: { marginTop: 22, color: '#F4F6F3', fontSize: 15, fontWeight: '700' },
-  emptyCard: { marginTop: 11, padding: 18, borderWidth: 1, borderColor: '#303030', borderRadius: 16, backgroundColor: '#151515' },
-  emptyTitle: { color: '#DDE1DD', fontSize: 13, fontWeight: '700' },
-  emptyText: { marginTop: 6, color: '#737B75', fontSize: 10, lineHeight: 16 },
   recordCard: { marginTop: 11, padding: 16, borderWidth: 1, borderColor: '#303030', borderRadius: 16, backgroundColor: '#151515' },
   recordHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   recordTitle: { color: '#FFF1B8', fontSize: 12, fontWeight: '700' },
@@ -139,8 +134,4 @@ const styles = StyleSheet.create({
   setSummary: { marginTop: 5, color: '#8E978F', fontSize: 9, lineHeight: 14 },
   memo: { marginTop: 12, color: '#A5ADA7', fontSize: 10, lineHeight: 16 },
   previewNote: { marginTop: 14, color: '#59605A', fontSize: 9, lineHeight: 15, textAlign: 'center' },
-  loading: { marginTop: 24 },
-  errorCard: { marginTop: 11, padding: 16, borderWidth: 1, borderColor: '#613535', borderRadius: 16, backgroundColor: '#201414' },
-  errorText: { color: '#FF9696', fontSize: 11, lineHeight: 17 },
-  retryText: { marginTop: 10, color: '#FFF1B8', fontSize: 11, fontWeight: '700' },
 });
