@@ -73,4 +73,26 @@ export const chatTools = [
     // 上で決めた形式以外の入力を許可しない
     strict: true,
   },
+    {
+    // AIが呼び出す体重履歴Toolの種類
+    type: "function",
+
+    // AIがToolを指定するときに使う名前
+    name: "get_weight_history",
+
+    // AIがこのToolを使用する判断基準
+    description:
+      "ログイン中の利用者の最近の体重履歴を取得する。体重の増減、減量・増量ペース、停滞、最新体重、過去からの変化を確認して回答するときに使用する。",
+
+    // 本人はClerk認証で判断するため、AIから入力値は受け取らない
+    parameters: {
+      type: "object",
+      properties: {},
+      required: [],
+      additionalProperties: false,
+    },
+
+    // 定義していない入力をAIから受け取らない
+    strict: true,
+  },
 ] as const;

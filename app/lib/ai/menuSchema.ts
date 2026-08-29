@@ -4,6 +4,7 @@ import { z } from "zod";
 
 // フロントから任意で受け取る今日の調子と補足情報を検証する
 export const aiMenuRequestSchema = z.object({
+  requestId: z.string().uuid(),
   conditionScore: z
     .number()
     .int()

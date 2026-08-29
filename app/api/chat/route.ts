@@ -9,7 +9,9 @@ import {
 import {
   runChatTool,
 } from "@/app/lib/ai/runChatTool";
-import OpenAI from "openai";
+import {
+  APIConnectionTimeoutError,
+} from "openai";
 import {
   and,
   asc,
@@ -18,18 +20,18 @@ import {
   eq,
   gte,
   lt,
+  max,
 } from "drizzle-orm";
 import { getClerkUserId } from "@/app/lib/auth/clerk-auth";
 import { systemPrompt } from "@/app/lib/ai/systemPrompt";
+import { openai } from "@/app/lib/ai/openAiClient";
 import { getDb } from "@/db";
 import {
+  aiRequestGuards,
   chatConversations,
   chatMessages,
   users,
 } from "@/db/schema";
-
-// 環境変数のAPIキーを使ってOpenAIと通信する準備をする場所
-const openai = new OpenAI();
 
 // 1日と日本時間の時差をミリ秒で表す
 const millisecondsPerDay =
@@ -54,6 +56,21 @@ const dailyChatLimit =
   parsedDailyChatLimit > 0
     ? parsedDailyChatLimit
     : 100;
+
+// AIへの連続送信を止める秒数を環境変数から読み取る
+const parsedRequestCooldownSeconds =
+  Number.parseInt(
+    process.env.AI_REQUEST_COOLDOWN_SECONDS ??
+      "5",
+    10,
+  );
+
+const requestCooldownMilliseconds =
+  (Number.isInteger(
+    parsedRequestCooldownSeconds,
+  ) && parsedRequestCooldownSeconds > 0
+    ? parsedRequestCooldownSeconds
+    : 5) * 1000;
 
 // 日本時間の今日0時と明日0時をUTCのDateへ変換する
 function getJapanDayRange(now: Date) {
@@ -317,10 +334,16 @@ export async function DELETE(request: Request) {
 type ChatRequestBody = {
   conversationId?: string | null;
   message?: string;
+  requestId?: string;
 };
+
+const uuidPattern =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 // フロントから質問を受け取り、本人確認後にOpenAIへ送る
 export async function POST(request: Request) {
+  let requestGuardId: string | null = null;
+
   try {
     const clerkUserId =
       await getClerkUserId(request);
@@ -343,6 +366,21 @@ export async function POST(request: Request) {
 
     const message =
       body?.message?.trim() ?? "";
+
+    const requestId =
+      body?.requestId?.trim() ?? "";
+
+    if (!uuidPattern.test(requestId)) {
+      return Response.json(
+        {
+          error:
+            "リクエストIDの形式が正しくありません。",
+        },
+        {
+          status: 400,
+        },
+      );
+    }
 
     if (!message) {
       return Response.json(
@@ -402,6 +440,9 @@ export async function POST(request: Request) {
     const dailyUsageResults = await db
       .select({
         usageCount: count(chatMessages.id),
+        latestCreatedAt: max(
+          chatMessages.createdAt,
+        ),
       })
       .from(chatMessages)
       .innerJoin(
@@ -428,6 +469,49 @@ export async function POST(request: Request) {
       Number(
         dailyUsageResults[0]?.usageCount ?? 0,
       );
+
+    const latestQuestionCreatedAt =
+      dailyUsageResults[0]?.latestCreatedAt ??
+      null;
+
+    // 最新の質問から5秒以内ならOpenAIを呼ばずに終了する
+    if (latestQuestionCreatedAt) {
+      const nextRequestAt = new Date(
+        latestQuestionCreatedAt.getTime() +
+          requestCooldownMilliseconds,
+      );
+
+      if (nextRequestAt.getTime() > Date.now()) {
+        const cooldownRetryAfterSeconds =
+          Math.max(
+            1,
+            Math.ceil(
+              (nextRequestAt.getTime() -
+                Date.now()) /
+                1000,
+            ),
+          );
+
+        return Response.json(
+          {
+            error:
+              "連続送信を防ぐため、少し待ってから再送してください。",
+            retryAfterSeconds:
+              cooldownRetryAfterSeconds,
+            nextAvailableAt:
+              nextRequestAt.toISOString(),
+          },
+          {
+            status: 429,
+            headers: {
+              "Retry-After": String(
+                cooldownRetryAfterSeconds,
+              ),
+            },
+          },
+        );
+      }
+    }
 
     // 明日の日本時間0時まで何秒あるか計算する
     const retryAfterSeconds =
@@ -461,6 +545,41 @@ export async function POST(request: Request) {
       );
     }
 
+    // 同じリクエストIDは1件目だけ登録し、二重送信を止める
+    const insertedGuards = await db
+      .insert(aiRequestGuards)
+      .values({
+        userId: user.id,
+        requestType: "chat",
+        requestId,
+      })
+      .onConflictDoNothing({
+        target: [
+          aiRequestGuards.userId,
+          aiRequestGuards.requestType,
+          aiRequestGuards.requestId,
+        ],
+      })
+      .returning({
+        id: aiRequestGuards.id,
+      });
+
+    requestGuardId =
+      insertedGuards[0]?.id ?? null;
+
+    if (!requestGuardId) {
+      return Response.json(
+        {
+          error:
+            "同じ質問を処理中または処理済みです。",
+          requestId,
+        },
+        {
+          status: 409,
+        },
+      );
+    }
+
     let conversationId =
       body?.conversationId?.trim() || null;
 
@@ -486,6 +605,16 @@ export async function POST(request: Request) {
         .limit(1);
 
       if (!matchedConversations[0]) {
+        await db
+          .delete(aiRequestGuards)
+          .where(
+            eq(
+              aiRequestGuards.id,
+              requestGuardId,
+            ),
+          );
+        requestGuardId = null;
+
         return Response.json(
           {
             error:
@@ -679,6 +808,7 @@ export async function POST(request: Request) {
     return Response.json({
       conversationId,
       reply,
+      requestId,
       usage: {
         limit: dailyChatLimit,
         used: updatedUsedChatCount,
@@ -687,6 +817,45 @@ export async function POST(request: Request) {
       },
     });
   } catch (error) {
+    // 処理失敗時は受付記録を削除し、同じ操作を再試行できるようにする
+    if (requestGuardId) {
+      try {
+        await getDb()
+          .delete(aiRequestGuards)
+          .where(
+            eq(
+              aiRequestGuards.id,
+              requestGuardId,
+            ),
+          );
+      } catch (cleanupError) {
+        console.error(
+          "チャット受付記録の削除エラー:",
+          cleanupError,
+        );
+      }
+    }
+
+    if (
+      error instanceof
+      APIConnectionTimeoutError
+    ) {
+      console.error(
+        "AIチャットOpenAIタイムアウト:",
+        error,
+      );
+
+      return Response.json(
+        {
+          error:
+            "AIの応答に時間がかかっています。少し待ってからもう一度お試しください。",
+        },
+        {
+          status: 504,
+        },
+      );
+    }
+
     console.error(
       "AIチャットAPIエラー:",
       error,

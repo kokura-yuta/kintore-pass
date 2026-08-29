@@ -1,6 +1,7 @@
 import { useAuth } from '@clerk/expo';
+import * as Crypto from 'expo-crypto';
 import { Redirect, useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -31,6 +32,7 @@ export default function AiCoachScreen() {
   const [menu, setMenu] = useState<GeneratedMenuPreview | null>(null);
   const [error, setError] = useState('');
   const [isLoadingSavedMenu, setIsLoadingSavedMenu] = useState(!isApiBypassEnabled);
+  const pendingMenuRequestId = useRef<string | null>(null);
   const trainingStyle = profile.trainingStyle ?? 'ai';
 
   // 画面を開いたとき、Neonに保存された本人の最新AIメニューを読み戻す
@@ -82,6 +84,8 @@ export default function AiCoachScreen() {
 
   // 今日の調子をバックエンドへ送り、OpenAI生成とNeon保存の完了を待つ
   async function generateMenu() {
+    if (pendingMenuRequestId.current) return;
+
     if (!condition) {
       setError('今日の調子を1〜10で選択してください。');
       return;
@@ -92,6 +96,10 @@ export default function AiCoachScreen() {
     }
     setError('');
     setStatus('loading');
+
+    // 1回の生成操作を識別するUUIDを作り、二重実行を同期的に止める
+    const requestId = Crypto.randomUUID();
+    pendingMenuRequestId.current = requestId;
 
     try {
       if (isApiBypassEnabled) {
@@ -118,6 +126,7 @@ export default function AiCoachScreen() {
         token,
         condition,
         selectedBodyPart,
+        requestId,
       );
       const generatedMenu = toGeneratedMenuPreview(response.menu);
       setMenu(generatedMenu);
@@ -126,6 +135,8 @@ export default function AiCoachScreen() {
     } catch (generationError) {
       setError(generationError instanceof Error ? generationError.message : 'AIメニューの生成に失敗しました。');
       setStatus(menu ? 'result' : 'condition');
+    } finally {
+      pendingMenuRequestId.current = null;
     }
   }
 

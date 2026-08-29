@@ -6359,25 +6359,27 @@ Pythonの`class`は、関連するデータや処理を1つの型としてまと
 
 Pythonでは、途中で変更しない設定値を`ALLOWED_IMAGE_TYPES`のような大文字名で書く慣習があります。
 
-`MAX_IMAGE_SIZE_BYTES = 10 * 1024 * 1024`は、1枚あたり10MBという上限をバイト単位で表します。
+`MAX_IMAGE_SIZE_BYTES = 8 * 1024 * 1024`は、1枚あたり8MBという上限をバイト単位で表します。
+
+`MAX_TOTAL_IMAGE_SIZE_BYTES = 24 * 1024 * 1024`は、正面・横・背面の画像データ3枚を合計24MB以下にする設定です。
 
 TypeScript側だけでなくPython側でも確認することで、Python APIが直接呼ばれた場合にも不正な画像を拒否できます。この考え方を多層防御と呼びます。
 
 ### Pythonの画像検査関数
 
-`async def validate_image(image: UploadFile) -> None:`は、アップロード画像1枚を検査する非同期関数です。`-> None`は、正常時に結果データを返さないことを表します。
+`async def validate_image(image: UploadFile) -> int:`は、アップロード画像1枚を検査する非同期関数です。`-> int`は、正常な画像の容量を整数で返すことを表します。
 
 `image.content_type not in ALLOWED_IMAGE_TYPES`は、送信者が申告した画像形式が許可一覧にないか確認します。
 
 `raise HTTPException(...)`は、その場で通常処理を中断し、FastAPIから指定したHTTPエラーを返します。
 
-`await image.read(MAX_IMAGE_SIZE_BYTES + 1)`は、上限より1バイト多い位置まで読み、10MBを超えたか判定できるようにします。
+`await image.read(MAX_IMAGE_SIZE_BYTES + 1)`は、上限より1バイト多い位置まで読み、8MBを超えたか判定できるようにします。
 
 `len(image_bytes)`は読み取った実際のバイト数を返します。`0`なら空ファイル、上限より大きければ容量超過です。
 
 `await image.seek(0)`は、検査で末尾へ進んだファイルの読み取り位置を先頭へ戻します。これを行わないと、後の画像分析が空の続きから読もうとして失敗します。
 
-`for image in (front_image, side_image, back_image):`は、3枚を順番に取り出し、同じ`validate_image()`を繰り返します。
+`for image in (front_image, side_image, back_image):`は、3枚を順番に取り出し、同じ`validate_image()`を繰り返します。返された容量を`total_image_size_bytes`へ足し、3枚合計も確認します。
 
 現時点ではMIMEタイプと容量を確認しています。ファイルの中身が本物の画像かどうかは、次に画像ライブラリで検証します。
 
@@ -6663,7 +6665,9 @@ TypeScript側の`POST()`は、最初に`getClerkUserId(request)`でClerkトー�
 
 `Set`の`.has(image.type)`は、現在の画像形式が許可一覧に含まれているか確認します。
 
-`maxImageSizeBytes = 10 * 1024 * 1024`は、1枚の上限である10MBをバイト単位で表した値です。
+`maxImageSizeBytes = 8 * 1024 * 1024`は、1枚の上限である8MBをバイト単位で表した値です。
+
+`maxTotalImageSizeBytes = 24 * 1024 * 1024`は、画像3枚そのものの合計上限です。`reduce()`で各画像の`size`を足し、24MBを超えた場合はPythonへ送る前にHTTP 413を返します。
 
 `bodyImages`へ正面・横・背面をまとめることで、同じ検査コードを3回書かずに済みます。
 
@@ -10114,6 +10118,237 @@ deleteConversation()で画面から削除
 
 本番公開時はコードを変更せず、公開先の環境変数だけを`30`や`50`などへ変更できます。
 
+AIメニュー生成はAIチャットと分けて、`.env.local`の`AI_MENU_DAILY_LIMIT=3`で1人1日3回に制限します。AIチャットの質問回数を使い切ってもAIメニュー回数は減らず、その逆も同じです。
+
+### AIメニューの1日3回制限
+
+`app/api/ai-menu/route.ts`は、OpenAIへ生成依頼を送る前に`ai_generated_menus`を検索します。
+
+```text
+Clerkで本人を確認
+↓
+フロント入力を検証
+↓
+日本時間の今日0時と明日0時を計算
+↓
+本人が今日生成したメニュー数をNeonで数える
+↓
+3回未満ならOpenAIで生成／3回以上ならHTTP 429で終了
+```
+
+`aiGeneratedMenus`には`userId`と`createdAt`が保存されているため、本人と今日の時間範囲を条件にして直接数えられます。AIチャットのようにメッセージからチャットルームを経由して本人を探す必要はありません。
+
+上限到達時は`limit`、`used`、`remaining`、`nextAvailableAt`と`Retry-After`を返します。生成成功時は今回の1回を加算し、`usage`として残り回数とリセット日時をフロントへ返します。
+
+この判定をOpenAI通信より前に置くことで、4回目以降はOpenAI料金が発生しません。`npx eslint app/api/ai-menu/route.ts`でエラーがないことも確認済みです。
+
+### AIリクエストの5秒クールダウン
+
+`.env.local`の`AI_REQUEST_COOLDOWN_SECONDS=5`は、AIチャットの質問またはAIメニュー生成の直後に、同じ利用者が連続してリクエストするのを5秒間止める設定です。
+
+AIチャットは最新の利用者メッセージ、AIメニューは最新の生成メニューについて、Neonに保存された`createdAt`を確認します。
+
+`max(createdAt)`は条件に一致する日時の中から最も新しい日時を1件だけ取得します。`count()`と同じ検索に含めているため、回数と最新日時を別々に検索する必要がありません。
+
+```text
+Neonから今日の件数と最新日時を取得
+↓
+最新日時 + 5秒を計算
+↓
+現在時刻がそれより前ならHTTP 429
+↓
+5秒以上経過していれば通常処理へ進む
+```
+
+拒否時には`Retry-After`、待ち秒数、次回利用可能日時を返すため、フロントは「あと何秒待つか」を表示できます。
+
+この処理は、すでにNeonへ保存された直近の操作を基準にする連続送信対策です。ほぼ同時に到着した2つのリクエストは、どちらも保存前の状態を読む可能性があるため、完全な二重送信対策は別途リクエストIDを使って追加します。
+
+### 二重送信を防ぐai_request_guardsテーブル
+
+`db/schema.ts`の`aiRequestGuards`は、AI処理を開始したリクエストの受付番号をNeonへ保存するための設計図です。
+
+- `userId`：誰の操作かを表す
+- `requestType`：`chat`と`menu`を区別する
+- `requestId`：1回のボタン操作ごとにフロントが作るUUID
+- `createdAt`：受付記録を作った日時
+
+`uniqueIndex()`は、`userId`・`requestType`・`requestId`の同じ組み合わせを2回登録できなくします。1件目だけが登録に成功してOpenAIへ進み、同じ受付番号の2件目はOpenAIを呼ぶ前に拒否できるようにします。
+
+`index()`は重複禁止ではなく、本人の古い受付記録を日時順で検索・削除しやすくする索引です。`uniqueIndex()`と`index()`は名前が似ていますが、目的が異なります。
+
+`mobile`ではExpo公式の`expo-crypto`を使い、`Crypto.randomUUID()`でボタン操作ごとのUUIDを作ります。`useRef`にも処理中のIDを保存するため、Reactの画面更新を待たずに同じ画面内の2回目の関数実行を止めます。
+
+チャットAPIとAIメニューAPIは、受け取った`requestId`をOpenAI通信より前に`ai_request_guards`へ追加します。
+
+`.onConflictDoNothing()`は、ユニーク索引と同じ組み合わせがすでに存在してもサーバーをクラッシュさせず、追加しない処理です。`.returning()`で新しい受付記録が返れば1件目、何も返らなければ重複した2件目だと判断します。
+
+```text
+スマホでUUIDを1つ作る
+↓
+バックエンドへrequestIdとして送る
+↓
+ai_request_guardsへ追加を試す
+↓
+追加成功：OpenAIへ進む
+追加なし：HTTP 409で終了
+```
+
+途中でOpenAI通信や保存に失敗した場合は、その受付記録を削除します。これにより、エラー後に同じ操作を正しく再試行できます。成功時の受付記録は残すため、通信結果が遅れて同じリクエストが再到着しても二重処理しません。
+
+マイグレーション`0005_add_ai_request_guards.sql`は、既存テーブルを再作成せず、新しいテーブル・外部キー・2つの索引だけを作る内容に確認・修正済みです。`drizzle-kit check`、バックエンドESLint、スマホTypeScript検査は成功しています。
+
+Neonへの反映確認時に、Neonプロジェクトのデータ転送量上限超過による`HTTP 402`が返りました。そのため、コードとマイグレーションは完成していますが、実際のNeonへの適用と二重送信の実通信テストは上限回復後に行います。
+
+### OpenAI通信のタイムアウトと再試行
+
+`app/lib/ai/openAiClient.ts`は、AIチャットとAIメニューが共通で使うOpenAIクライアントを作るTypeScriptファイルです。
+
+`.env.local`では次の値を設定します。
+
+```env
+OPENAI_TIMEOUT_MS=60000
+OPENAI_MAX_RETRIES=1
+```
+
+`OPENAI_TIMEOUT_MS=60000`は、OpenAIへの1回の通信を最大60秒待つ設定です。`OPENAI_MAX_RETRIES=1`は、一時的な通信エラーやタイムアウトが起きた場合にSDKへ最大1回だけ自動再試行させる設定です。そのため、再試行が発生した場合の全体時間は60秒より長くなる可能性があります。
+
+`readPositiveInteger()`は、タイムアウトが1以上の整数かを確認します。`readNonNegativeInteger()`は、再試行回数として`0`も許可しながら、負数や不正な文字列を拒否します。環境変数が不正なら、それぞれ`60_000`と`1`を安全な初期値として使用します。
+
+```text
+チャットまたはAIメニューAPI
+↓
+共通のopenaiクライアントを使用
+↓
+60秒以内に応答：通常処理
+一時エラー：最大1回再試行
+タイムアウト：受付記録を削除してHTTP 504
+```
+
+`APIConnectionTimeoutError`はOpenAI SDKが通信時間超過時に投げる専用エラーです。通常のサーバーエラーと区別し、フロントへ「少し待って再試行してください」と返します。
+
+共通ファイルにまとめた理由は、チャットとメニューでタイムアウト値・再試行回数・APIキー設定がずれるのを防ぐためです。設定変更は環境変数またはこの共通ファイルだけで済みます。
+
+### TypeScriptからPython身体分析APIへのタイムアウト
+
+`app/api/body-analysis/route.ts`は、正面・横・背面画像をRender上のPython APIへ送ります。`.env.local`の`PYTHON_ANALYSIS_TIMEOUT_MS=120000`により、Pythonからレスポンス本文を受け取るまで最大120秒待ちます。
+
+```text
+TypeScriptが画像3枚をPythonへ送信
+↓
+120秒のタイマーを開始
+↓
+Pythonの応答とJSON取得が完了：タイマー解除
+120秒を超過：通信を中止してHTTP 504
+```
+
+`AbortController`は実行中の`fetch()`を外側から中止するための機能です。`pythonAbortController.signal`を`fetch()`へ渡し、`setTimeout()`が120秒後に`.abort()`を呼びます。
+
+`let analysisResult: unknown`とする理由は、Pythonから届いたJSONをまだ信用できないためです。取得後に`isBodyAnalysisResult()`で必要な項目・型・スコア範囲を検査してからNeonへ保存します。
+
+`finally`は成功・通常エラー・タイムアウトのどの場合でも必ず実行されます。`clearTimeout()`で不要になったタイマーを解除し、処理終了後にタイマーだけが残ることを防ぎます。
+
+タイムアウト時は専用の`PythonAnalysisTimeoutError`へ変換し、通常の内部エラー`500`ではなく`HTTP 504`を返します。`504`は、このTypeScript APIより先にあるPython APIが時間内に応答しなかったことを表します。
+
+### PythonからOpenAIへのタイムアウトと安全な再試行
+
+`python-analysis/app/main.py`は、Render上で身体画像をOpenAIへ渡すPython APIです。OpenAI Python SDKの既定値は待ち時間が長く、再試行も2回なので、このアプリでは次の値へ明示的に制限します。
+
+```env
+PYTHON_OPENAI_TIMEOUT_SECONDS=50
+PYTHON_OPENAI_MAX_RETRIES=1
+```
+
+`PYTHON_OPENAI_TIMEOUT_SECONDS=50`は、PythonからOpenAIへの1回の通信を最大50秒待つ設定です。
+
+`PYTHON_OPENAI_MAX_RETRIES=1`は、一時的な失敗時だけ追加で1回試す設定です。最初の1回と再試行1回を合わせ、最大2回OpenAIへ接続する可能性があります。
+
+Python側を50秒、外側のTypeScript側を120秒にした理由は、次のように内側の処理が先に終了し、TypeScriptがPythonからエラーJSONを受け取るための余裕を残すためです。
+
+```text
+TypeScriptからPython：全体を最大120秒待つ
+└─ PythonからOpenAI：1回最大50秒、再試行は最大1回
+```
+
+`AsyncOpenAI(timeout=..., max_retries=...)`は、待ち時間と再試行回数を身体分析で使うOpenAIクライアント全体へ適用します。
+
+`read_positive_float_env()`は待ち時間が0より大きい数値かを確認し、`read_non_negative_int_env()`は再試行回数が0以上の整数かを確認します。Renderの環境変数に文字や負数を誤って入れても、Pythonが起動時に落ちず、安全な初期値の50秒・1回へ戻します。
+
+OpenAI SDKが再試行するのは、接続エラー、HTTP 408、409、429、500番台などの一時的に回復する可能性がある失敗です。入力ミスや認証設定の失敗など、同じ内容を送り直しても直らないエラーは再試行しません。すべての`Exception`を自作ループで再送しないのは、無駄な待ち時間とAPI料金を増やさないためです。
+
+### PythonのOpenAIエラーをHTTP番号へ変換する
+
+`try:`の中で`responses.parse()`を実行し、OpenAI通信だけを専用の`except`で分類します。
+
+- `APITimeoutError`：OpenAIが時間内に返らなかったためHTTP 504
+- `APIConnectionError`：OpenAIへ接続できなかったためHTTP 503
+- `RateLimitError`：利用制限や混雑のためHTTP 429
+- `APIStatusError`の500番台：OpenAI側の一時障害としてHTTP 502
+- 認証エラー：利用者へ秘密情報を見せずHTTP 500
+
+`raise HTTPException(...) from error`の`from error`は、利用者へ返す安全なエラーと、サーバーログで原因調査に使う元のエラーを結び付けます。
+
+### Render停止中のエラーを分かりやすく返す
+
+`PythonAnalysisUnavailableError`は、TypeScriptからRender上のPython APIへ接続そのものができない場合に使う専用エラーです。
+
+Renderが停止中・起動中・ネットワーク障害の場合、`fetch()`は正常なHTTPレスポンスを受け取れません。そのときはHTTP 503と「身体分析サービスを起動中、または一時的に利用できません」というメッセージをフロントへ返します。
+
+`PythonAnalysisApiError`は、Pythonへは接続できたものの、PythonまたはOpenAIがエラーを返した場合に使います。Pythonの`detail`を読み、413・429・504などの意味を保ってフロントへ返します。
+
+```text
+Renderへ接続できない
+→ PythonAnalysisUnavailableError
+→ HTTP 503
+
+Renderへ接続できたがOpenAIがタイムアウト
+→ PythonがHTTP 504を返す
+→ PythonAnalysisApiError
+→ フロントにもHTTP 504を返す
+```
+
+### 画像容量を3段階で統一する
+
+画像容量は、役割の違う3つの上限へ統一しました。
+
+- スマホ・TypeScript・Python：画像1枚につき8MB以下
+- TypeScript・Python：画像3枚そのものは合計24MB以下
+- Vinextの入口：FormDataの付加情報も含む通信全体を26MB以下
+
+26MBは画像1枚の上限ではありません。8MBの画像3枚で最大24MBになり、ファイル名や区切り情報など`multipart/form-data`の付加情報を通すため、入口だけ2MBの余裕を持たせています。
+
+同じ検査をTypeScriptとPythonの両方で行う理由は、通常のアプリ経由では早くエラーを返し、Python APIが直接呼ばれた場合にも不正な画像を拒否するためです。
+
+### 質問回数を確認する処理の流れ
+
+`POST()`は質問を保存してOpenAIへ送る前に、次の順番で利用回数を確認します。
+
+```text
+Clerkでログイン中の本人を確認
+↓
+getJapanDayRange()で日本時間の今日0時と明日0時を作る
+↓
+chatMessagesとchatConversationsをinnerJoin()でつなぐ
+↓
+本人・userロール・今日の範囲だけに絞る
+↓
+count()で今日の質問数を数える
+↓
+上限未満ならOpenAIへ進む／上限以上ならHTTP 429で終了
+```
+
+`count(chatMessages.id)`は、条件に一致した質問メッセージの件数を数えます。
+
+`innerJoin()`が必要なのは、`chatMessages`にはユーザーIDがなく、所属するチャットルームのIDだけが保存されているためです。`chatConversations`とつなぐことで、その質問がログイン中の本人のものか確認できます。
+
+`eq(chatMessages.role, "user")`は利用者の質問だけを対象にし、AIの回答を利用回数へ含めない条件です。
+
+`gte(chatMessages.createdAt, start)`は作成日時が今日0時以降、`lt(chatMessages.createdAt, end)`は明日0時より前という意味です。この2つを組み合わせて今日の質問だけを数えます。
+
+上限に達した場合は`HTTP 429`、`Retry-After`、次回利用可能日時を返し、OpenAIを呼びません。成功した場合は今回の質問を`+ 1`し、`usage`として上限・使用回数・残り回数・リセット日時をフロントへ返します。
+
+今回の`app/api/chat/route.ts`は`npx eslint app/api/chat/route.ts`で検査し、エラーがないことを確認済みです。
+
 ## AIチャットのSystem PromptとTool選択
 
 `app/lib/ai/systemPrompt.js`は、AIの役割・回答方針・安全上のルール・Toolを使う判断基準を書くJavaScriptファイルです。
@@ -10142,3 +10377,469 @@ AIチャットで利用する4つのToolは、すべてスマホ画面から実�
 - `get_latest_ai_menu`：最後に生成した部位、理由、推定時間、種目、回数、セット、休憩、注意点を取得できました。
 
 ToolにはClerkユーザーIDを直接AIから渡しません。`route.ts`で認証できた本人のClerk IDを`runChatTool()`へ渡し、そのIDに一致するデータだけをNeonから検索します。これにより、AIが別の利用者のIDを指定してデータを取得することを防いでいます。
+
+## TypeScriptバックエンドをCloudflareへ公開する準備
+
+### 公開サービスの役割分担
+
+筋トレPASでは、すべてを1つのサービスへ無理にまとめず、得意な役割で分けます。
+
+```text
+Expoスマホアプリ
+↓
+Cloudflare：TypeScriptバックエンド
+├─ Clerk認証
+├─ Neonへの保存・取得
+├─ AIチャット
+├─ AIメニュー
+└─ 身体分析の受付
+     ↓
+Render：Python身体画像分析
+     ↓
+OpenAI
+```
+
+現在のプロジェクトは`Vinext`、Cloudflare Viteプラグイン、`worker/index.ts`を使用しており、Cloudflare Worker向けの構成がすでにあります。そのため、TypeScriptはCloudflareへ公開し、作成済みのPython分析APIはRenderで継続します。
+
+### `vite.config.ts`の古い開発設定を削除
+
+`localBindingConfig`にあった古い`dev.inspector`・`dev.server`設定は、現在のCloudflare型定義と一致せずTypeScriptエラーになっていました。
+
+同じWi-Fi上のスマホから開発サーバーへ接続する設定は、Vite側の`server.host = "0.0.0.0"`ですでに行っています。そのため、重複していた古い`dev`部分だけを削除し、LAN接続機能は残しました。
+
+`vinext({ nextConfig })`は現在のVinextでは`next.config.ts`の自動読込と重複するため、`vinext()`へ変更しました。画像通信の`bodySizeLimit: "26mb"`は引き続き`next.config.ts`から自動で読み込まれます。
+
+### `worker/index.ts`のCloudflare型エラー
+
+`Fetcher`と`D1Database`はCloudflare専用のグローバル型ですが、このプロジェクトのTypeScript設定には定義がありませんでした。
+
+筋トレPASのデータベースはD1ではなくNeonなので、未使用の`DB: D1Database`を削除しました。
+
+`ASSETS`は実際に使用する`.fetch()`だけを次のローカル型で表します。
+
+```typescript
+ASSETS: {
+  fetch(request: Request): Promise<Response>;
+};
+```
+
+これは「`ASSETS`にはRequestを受け取り、後でResponseを返す非同期の`fetch()`がある」とTypeScriptへ教える型です。不要なCloudflare型パッケージを追加せず、実際に使用する機能だけを定義しています。
+
+修正後は`npx tsc --noEmit`と`npm run build`の両方が成功しました。
+
+### 公開APIのヘルスチェック
+
+担当ファイルは`app/api/health/route.ts`です。
+
+`GET /api/health`は、公開中のTypeScriptバックエンドが起動しているかを確認するAPIです。Clerk認証、Neon、OpenAIを呼ばないため、ログイン前でも確認でき、AI料金も発生しません。
+
+```json
+{
+  "status": "ok",
+  "service": "musclepas-api",
+  "environment": "production",
+  "checkedAt": "確認した時刻"
+}
+```
+
+`Cache-Control: no-store`は、ブラウザや中継サービスに古い成功結果を保存させず、毎回その時点のサーバー状態を確認する指定です。
+
+### 開発環境と本番環境を分ける
+
+Macで動かす開発環境は`.env.local`の`APP_ENV=development`と各種設定を使用します。
+
+Cloudflare上の本番環境は、Sitesへ登録した`APP_ENV=production`と環境変数を使用します。秘密鍵はGit管理ファイルや`.openai/hosting.json`へ書かず、Sitesの秘密設定として保存します。
+
+Neon・Clerk・Render URL・OpenAI・タイムアウト・利用回数上限は本番環境へ登録済みです。`DATABASE_URL`、`CLERK_SECRET_KEY`、`OPENAI_API_KEY`などの秘密値は、コードやGitへ書かずSitesの秘密設定として保存しています。
+
+### Cloudflareへ公開したAPI
+
+TypeScriptバックエンドの開発用公開URLは次です。
+
+```text
+https://musclepas-api.y0u2t1a8.chatgpt.site
+```
+
+公開後、`GET /api/health`がHTTP 200を返し、JSONの`environment`が`production`になることを確認しました。
+
+プロフィール、理想体型、トレーニング記録、身体分析、AIメニュー、AIチャットの取得APIは、ログイン情報を付けずにアクセスするとすべてHTTP 401を返しました。これは公開後も個人データAPIがClerk認証で守られていることを表します。
+
+### Expoから公開APIへ接続する設定
+
+担当ファイルは`mobile/.env.local`です。
+
+```env
+EXPO_PUBLIC_API_BASE_URL=https://musclepas-api.y0u2t1a8.chatgpt.site
+```
+
+`mobile/src/lib/api.ts`は、この値と`/api/users/bootstrap`などのパスをつないで通信先を作ります。
+
+```text
+公開APIの基本URL
++ APIごとのパス
+= 実際の通信先
+```
+
+`.env.local`はExpoの起動時に読み込まれるため、値を変更した後はExpoを再起動する必要があります。
+
+### CORSは何のためにあるか
+
+Expo Webは`http://127.0.0.1:8081`、公開APIは`https://musclepas-api...`で、ドメインが異なります。ブラウザは別ドメインへ勝手に個人情報を送らないように通信を止めるため、バックエンド側で許可するアクセス元を明示します。この仕組みがCORSです。
+
+担当ファイルは`worker/index.ts`です。
+
+```text
+Expo Web
+↓ OPTIONSで「この通信を送ってよいか」確認
+Cloudflare Worker
+↓ 許可リストとOriginを比較
+許可済みならCORSヘッダーを返す
+↓
+Expo Webが認証付きAPI本体を送信
+```
+
+`DEFAULT_CORS_ALLOWED_ORIGINS`には、開発で使用する`localhost`と`127.0.0.1`の8081・8082番ポートだけを登録しています。`*`ですべてのサイトを許可しないのは、Authorizationヘッダーを使う個人データAPIを不要なWebサイトから呼ばせないためです。
+
+`isAllowedCorsOrigin()`は、アクセス元が固定の開発URLまたは`CORS_ALLOWED_ORIGINS`環境変数に含まれるか確認します。本番フロントのWeb URLが決まったら、コードを変更せず環境変数へカンマ区切りで追加できます。
+
+`addCorsHeaders()`は許可された応答にだけ、次の情報を追加します。
+
+- `Access-Control-Allow-Origin`：通信を許可する画面のURL
+- `Access-Control-Allow-Methods`：使用を許可するHTTPメソッド
+- `Access-Control-Allow-Headers`：AuthorizationとContent-Typeを送ってよい指定
+- `Access-Control-Max-Age`：事前確認の結果を24時間再利用する指定
+- `Vary: Origin`：アクセス元ごとに応答が違うことをキャッシュへ伝える指定
+
+`OPTIONS`は実データの保存や取得を行う通信ではありません。ブラウザが本通信の前に送る安全確認なので、`/api/`へのOPTIONSにはHTTP 204で本文なしの応答を返します。
+
+ネイティブのiPhoneアプリにはブラウザと同じCORS制限はありません。ただし、開発中にExpo WebでもAPIを確認できるように今回の設定が必要です。
+
+### 公開後のExpo接続テスト結果
+
+CORS修正版はCloudflare Sitesのバージョン2として公開しました。事前確認の`OPTIONS`ではHTTP 204と次のCORSヘッダーが返ることを確認済みです。
+
+```text
+Access-Control-Allow-Origin: http://127.0.0.1:8081
+Access-Control-Allow-Headers: Authorization, Content-Type
+Access-Control-Allow-Methods: GET, POST, PATCH, DELETE, OPTIONS
+```
+
+Expo Webから`POST /api/users/bootstrap`を送ると、Cloudflareへ到達してClerkのAuthorizationトークンも認識され、Neon検索まで処理が進みました。
+
+その後のNeon検索は、プロジェクトのデータ転送量上限超過によりHTTP 402で停止しています。ローカルから同じ接続先へ`SELECT 1`だけを送っても同じHTTP 402になったため、Cloudflareのコードや環境変数の欠落ではなくNeon側の利用上限が原因です。
+
+```text
+Expo → 成功
+Cloudflare公開API → 成功
+CORS → 成功
+Clerk本人確認 → 成功
+Neon接続 → データ転送量上限のHTTP 402で停止
+```
+
+Neonの上限が回復するかプランを変更した後に、bootstrap、プロフィール、理想体型、記録、身体分析、AIメニュー、AIチャットの認証付き実通信を再確認します。
+
+## 体重履歴API
+
+### `weight_records`テーブルの役割
+
+担当ファイルは`db/schema.ts`です。
+
+`weight_records`は、利用者が日ごとに入力した体重を履歴として残すテーブルです。プロフィールの`weightKg`は現在の体重を1つだけ持ち、`weight_records`は過去から現在までの変化を複数件持つという違いがあります。
+
+```text
+user_profiles.weightKg
+→ 現在のプロフィール体重
+
+weight_records
+→ 8月1日 65.0kg
+→ 8月2日 64.8kg
+→ 8月3日 64.6kg
+```
+
+`date`はPostgreSQLの「日付だけ」を保存する型です。時刻を含めないため、タイムゾーンによって前日や翌日にずれる問題を避けられます。
+
+```typescript
+recordedDate: date("recorded_date", {
+  mode: "string",
+}).notNull()
+```
+
+`mode: "string"`は、TypeScript側で日付を`YYYY-MM-DD`形式の文字列として扱う指定です。
+
+`userId`はこの記録が誰のものかを`users.id`と結び付けます。利用者が削除された場合は`onDelete: "cascade"`により、その人の体重履歴も一緒に削除されます。
+
+`weightKg`は小数を含むkgを保存します。`.notNull()`により、体重の入っていない履歴は作れません。
+
+`uniqueIndex("weight_records_user_date_unique")`は、同じ利用者が同じ日付へ2件の体重を登録することをDB側で防ぎます。
+
+```text
+ユーザーA・2026-08-28 → 1件だけ
+ユーザーB・2026-08-28 → 別ユーザーなので登録可能
+```
+
+フロントの二重タップや同じ日付の再送信があっても、最後の安全装置としてPostgreSQLが重複を拒否します。
+
+### 体重記録を保存する`POST()`
+
+担当ファイルは`app/api/weight-records/route.ts`です。
+
+`POST()`は、フロントから受け取った日付と体重をログイン中の本人の履歴として保存します。
+
+```text
+Clerkで本人確認
+↓
+JSONからrecordedDateとweightKgを取得
+↓
+日付形式と20〜500kgの範囲を検査
+↓
+Clerk IDに一致するNeonのusers.idを取得
+↓
+weight_recordsへINSERT
+↓
+保存結果をHTTP 201で返す
+```
+
+`isValidWeight(value): value is number`の`value is number`は、この関数が`true`を返した後は値をnumberとして扱ってよいとTypeScriptへ伝える型ガードです。
+
+`isValidDate()`は正規表現で`YYYY-MM-DD`の形を確認した後、`Date`へ変換して実在する日付か確認します。文字の形だけでなく、2月30日などの存在しない日付も拒否するためです。
+
+`.onConflictDoNothing()`は、`userId + recordedDate`の組み合わせが登録済みの場合に、新しい行を追加せず終了します。
+
+```typescript
+.onConflictDoNothing({
+  target: [
+    weightRecords.userId,
+    weightRecords.recordedDate,
+  ],
+})
+```
+
+`target`は、どの重複ルールにぶつかったとき追加を中止するかを指定します。今回は同じ人・同じ日の組み合わせです。
+
+`.returning()`は、PostgreSQLへ保存できた行を配列で返します。重複で保存されなかった場合は空配列になるため、`createdRecords[0] ?? null`で先頭がなければnullへ統一します。
+
+保存成功はHTTP 201、入力不正は400、未ログインは401、ユーザー未登録は404、同じ日の重複は409を返します。
+
+### 体重履歴を取得する`GET()`
+
+`GET()`はログイン中の本人の体重記録だけを最大365件取得し、一覧・グラフ・概要表示用のJSONを返します。
+
+`orderBy(desc(weightRecords.recordedDate))`は新しい記録から並べ、`.limit(365)`はNeonから必要以上のデータを受け取らないための上限です。
+
+DBから新しい順で取得した後、`[...newestRecords].reverse()`で配列をコピーして古い順へ変えます。グラフは左から右へ日付が進むため、古い順の方がそのまま表示に使えます。
+
+`records.at(-1)`の`-1`は配列の最後を表します。今回は古い順へ並べ直した後なので、最後の要素が最新の体重です。
+
+`firstRecord?.weightKg`の`?.`は、記録が存在する場合だけ`weightKg`を読みます。記録が0件でもエラーになりません。
+
+`firstRecord?.weightKg ?? null`の`??`は、左側が`null`または`undefined`なら右側のnullを使用する演算子です。フロントへ「データなし」を一定の形で返せます。
+
+`toFixed(1)`は最新体重と最初の体重の差を小数第1位へ揃えます。`toFixed()`の返り値は文字列なので、外側の`Number()`で数値へ戻しています。
+
+返却する`summary`には最初の体重、最新体重、変化量、記録件数を含めます。フロントは全履歴を再計算せず、カード表示へ使用できます。
+
+### 体重記録を修正する`PATCH()`
+
+`PATCH()`は、フロントから`recordId`と新しい`weightKg`を受け取り、指定した1件の体重を更新します。
+
+`isValidRecordId()`は、記録IDがPostgreSQLで使うUUID形式か正規表現で確認します。不正な文字列をDB検索へ渡さずHTTP 400で終了するための検査です。
+
+```typescript
+and(
+  eq(weightRecords.id, recordId),
+  eq(weightRecords.userId, currentUser.id),
+)
+```
+
+`and()`は中に書いた条件を両方満たすデータだけを対象にします。記録IDだけで更新すると他人のIDを指定された場合に危険なので、必ずログイン中の本人の`userId`も条件へ含めます。
+
+`.update(weightRecords)`は更新対象テーブル、`.set({ weightKg, updatedAt: new Date() })`は変更する列、`.where(...)`は変更してよい行の条件です。
+
+`.returning()`で更新後の行を受け取り、0件なら対象が存在しないか本人の記録ではないためHTTP 404を返します。他人の記録が存在するかどうかも利用者へ教えません。
+
+### 体重記録を削除する`DELETE()`
+
+`DELETE()`はURLの`?recordId=UUID`から削除対象を受け取り、ログイン中の本人が持つ記録だけを削除します。
+
+`new URL(request.url)`はリクエストURLを、パスや検索パラメータへ分けて扱える`URL`オブジェクトへ変換します。
+
+`requestUrl.searchParams.get("recordId")`は、URLの`?`以降から`recordId`の値を取得します。指定がない場合はnullになるため、`isValidRecordId()`で拒否できます。
+
+`.delete(weightRecords)`は削除するテーブルを指定します。更新処理と同じく、`and()`で記録IDと本人のユーザーIDを両方確認します。
+
+```text
+記録IDが一致 + 本人のuserIdが一致
+→ 削除する
+
+記録IDだけ一致 + 他人のuserId
+→ 削除しない
+```
+
+`.returning({ id: weightRecords.id })`は削除できた行のIDだけを返します。削除結果が空ならHTTP 404、成功したら`deletedRecordId`をフロントへ返します。
+
+POST・GET・PATCH・DELETEは`npx tsc --noEmit`に成功しています。Neonへ`weight_records`を反映した後に実通信テストを行います。
+
+### AIチャットの体重履歴Tool
+
+体重履歴Toolは`chatTools.ts`と`runChatTool.ts`の2ファイルをセットで使用します。
+
+```text
+chatTools.ts
+→ AIへToolの名前・目的・入力形式を教える説明書
+→ Neonは検索しない
+
+runChatTool.ts
+→ AIが選んだTool名を受け取る実行係
+→ Clerkで確認済みの本人IDを使ってNeonを検索する
+```
+
+`chatTools.ts`の`get_weight_history`定義により、AIは体重の増減・減量・増量・停滞について答えるときに体重履歴を取得できると判断します。
+
+`runChatTool.ts`の`if (toolName === "get_weight_history")`は、選ばれたTool名を`getWeightHistory()`の実処理へつなぎます。
+
+`getWeightHistory()`は`weight_records`と`users`を`innerJoin()`し、ClerkユーザーIDが一致する本人の最近90件だけを取得します。件数を制限する理由は、Neonの通信量とOpenAIへ渡す文字数を増やしすぎないためです。
+
+取得結果は古い順へ並べ、最初の体重、最新体重、合計変化、経過日数、1週間あたりの平均変化を計算します。
+
+```text
+totalChangeKg
+＝ 最新体重 − 最初の体重
+
+weeklyChangeKg
+＝ 合計変化 ÷ 経過日数 × 7日
+```
+
+`JSON.stringify()`を使う理由は、Neonから取得したJavaScriptオブジェクトをOpenAIがTool結果として読めるJSON文字列へ変換するためです。
+
+AIからユーザーIDは受け取りません。`route.ts`でClerk認証できた本人のIDだけを`runChatTool()`へ渡すため、AIが別ユーザーのIDを指定できない構造です。
+
+`systemPrompt.js`には、体重の増減・減量・増量・停滞について質問された場合に`get_weight_history`を使用するルールを追加しました。
+
+```text
+systemPrompt.js：どんな質問で使うかを指示
+chatTools.ts：Toolの名前と説明を定義
+runChatTool.ts：Neonから本人の履歴を取得
+```
+
+### 体重テーブルのマイグレーション
+
+`npm run db:generate`は、`db/schema.ts`の変更と前回のスナップショットを比較し、PostgreSQLへ必要な変更をSQLファイルとして生成します。
+
+今回生成されたファイルは`drizzle-postgres/0006_many_namora.sql`です。
+
+```text
+CREATE TABLE weight_records
+→ 体重履歴テーブルを作る
+
+ALTER TABLE ... FOREIGN KEY
+→ weight_records.user_idとusers.idを結ぶ
+
+CREATE UNIQUE INDEX
+→ 同じ人・同じ日付の重複を防ぐ
+```
+
+`drizzle-postgres/meta/0006_snapshot.json`は、今回のスキーマ状態をDrizzleが次回の差分比較に使う記録です。手作業で編集しません。
+
+マイグレーションの「生成」と「適用」は別です。
+
+```text
+npm run db:generate
+→ SQLファイルをMac内へ作るだけ
+→ 今回完了
+
+npx drizzle-kit migrate
+→ SQLをNeonへ実行して実テーブルを作る
+→ Neonの上限回復後に実行
+```
+
+現時点ではNeonの実データベースは変更されていません。
+
+## ホーム画面用API（GET /api/home）
+
+対象ファイルは`app/api/home/route.ts`です。このAPIは、スマホのホーム画面が必要とする本人の目標体型と最新AIメニューを、1回の通信でまとめて返します。
+
+### 大きな処理の流れ
+
+```text
+スマホがGET /api/homeを呼ぶ
+↓
+Clerkトークンからログイン中の本人を確認
+↓
+ClerkユーザーIDに一致するユーザーをNeonから取得
+↓
+本人が最後に生成したAIメニューを1件取得
+↓
+そのメニューに含まれる種目一覧を取得
+↓
+ホーム画面用のJSONとしてスマホへ返す
+```
+
+### 本人のユーザー情報を取得する部分
+
+`getClerkUserId(request)`は、スマホから送られたClerkトークンを確認し、ログイン中の本人のClerkユーザーIDを取得します。取得できなければHTTP 401を返し、Neonを検索しません。
+
+`.where(eq(users.clerkUserId, clerkUserId))`は、Neonの`users`テーブルからClerkユーザーIDが一致する本人だけを検索します。
+
+`.limit(1)`は検索結果を最大1件に制限します。ユーザーは1人につき1行なので、不要なデータを受け取らずNeonの通信量も抑えられます。
+
+```typescript
+const currentUser = matchedUsers[0] ?? null;
+```
+
+`matchedUsers`は検索結果の配列です。`[0]`で先頭のユーザーを取り出し、結果がないときは`?? null`によって明確に`null`へ統一します。
+
+### 最新AIメニューを取得する部分
+
+`.where(eq(aiGeneratedMenus.userId, currentUser.id))`は、ログイン中の本人が持つAIメニューだけに絞ります。
+
+`desc(aiGeneratedMenus.createdAt)`は生成日時を新しい順へ並べます。その後の`.limit(1)`と組み合わせることで、最新メニューだけを取得します。
+
+```text
+orderBy(desc(createdAt))
+→ 新しい順に並べる
+
+limit(1)
+→ 先頭の最新1件だけ取る
+```
+
+メニューが存在しない場合は、次のように`menu`と`aiMessage`を`null`で返します。フロントはこれを使い、「AIメニューはまだありません」と生成ボタンを表示できます。
+
+```json
+{
+  "goalBodyType": "細マッチョ",
+  "menu": null,
+  "aiMessage": null
+}
+```
+
+### 最新メニューの種目を取得する部分
+
+`aiGeneratedMenuExercises.menuId`と`latestMenu.id`を比較し、最新メニューに所属する種目だけを取得します。
+
+`.orderBy(aiGeneratedMenuExercises.displayOrder)`は、AIメニューで決めた実施順に種目を並べます。ここでは`.limit(1)`を付けません。メニューには複数種目があるため、該当する全種目が必要だからです。
+
+### ホームへ返すJSON
+
+メニューが存在する場合は、目標体型、最新メニュー、種目配列をまとめて返します。
+
+```text
+goalBodyType
+→ 本人が設定した理想体型
+
+menu
+→ 最新AIメニューの部位・理由・時間・調子・アドバイス
+
+menu.exercises
+→ 最新メニューに含まれる全種目
+
+aiMessage
+→ ホームに表示する短いAIメッセージ
+```
+
+```typescript
+latestMenu.advice[0] ?? latestMenu.reason
+```
+
+`advice[0]`はアドバイス配列の先頭です。アドバイスが空で先頭が`undefined`の場合は、`??`によってメニューを選んだ理由である`reason`を代わりに使用します。
+
+この`route.ts`はデータを画面へ直接表示するファイルではありません。本人のデータをNeonから集め、フロントが表示しやすいJSONへまとめるバックエンドの受け渡し役です。

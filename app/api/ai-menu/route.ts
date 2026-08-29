@@ -1,8 +1,18 @@
 // 本人情報を使って今日のAIトレーニングメニューを生成するAPI
-// OpenAI APIと通信するための公式ライブラリを読み込む
-import OpenAI from "openai";
+// OpenAI APIのタイムアウトエラー型を読み込む
+import {
+  APIConnectionTimeoutError,
+} from "openai";
 import { zodTextFormat } from "openai/helpers/zod";
-import { desc, eq } from "drizzle-orm";
+import {
+  and,
+  count,
+  desc,
+  eq,
+  gte,
+  lt,
+  max,
+} from "drizzle-orm";
 // ログイン中の本人を確認する機能を読み込む
 import { getClerkUserId } from "@/app/lib/auth/clerk-auth";
 
@@ -10,6 +20,7 @@ import { getClerkUserId } from "@/app/lib/auth/clerk-auth";
 import { getUserAiContext } from "@/app/lib/ai/getUserAiContext";
 // 今日のメニューを作るためのAI専用指示書を読み込む
 import { menuPrompt } from "@/app/lib/ai/menuPrompt";
+import { openai } from "@/app/lib/ai/openAiClient";
 // フロント入力とOpenAI出力のデータ形式を検証する設計図を読み込む
 import {
   aiMenuRequestSchema,
@@ -19,13 +30,77 @@ import { getDb } from "@/db";
 import {
   aiGeneratedMenuExercises,
   aiGeneratedMenus,
+  aiRequestGuards,
   users,
 } from "@/db/schema";
 
-// 環境変数の秘密鍵を使ってOpenAIとの接続を準備する
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+// 1日と日本時間の時差をミリ秒で表す
+const millisecondsPerDay =
+  24 * 60 * 60 * 1000;
+
+const japanTimeOffsetMilliseconds =
+  9 * 60 * 60 * 1000;
+
+// 環境変数からAIメニューの1日上限を読み取る
+const parsedDailyMenuLimit =
+  Number.parseInt(
+    process.env.AI_MENU_DAILY_LIMIT ??
+      "3",
+    10,
+  );
+
+// 設定が不正な場合は1日3回を使用する
+const dailyMenuLimit =
+  Number.isInteger(
+    parsedDailyMenuLimit,
+  ) &&
+  parsedDailyMenuLimit > 0
+    ? parsedDailyMenuLimit
+    : 3;
+
+// AIへの連続送信を止める秒数を環境変数から読み取る
+const parsedRequestCooldownSeconds =
+  Number.parseInt(
+    process.env.AI_REQUEST_COOLDOWN_SECONDS ??
+      "5",
+    10,
+  );
+
+const requestCooldownMilliseconds =
+  (Number.isInteger(
+    parsedRequestCooldownSeconds,
+  ) && parsedRequestCooldownSeconds > 0
+    ? parsedRequestCooldownSeconds
+    : 5) * 1000;
+
+// 日本時間の今日0時と明日0時を作る
+function getJapanDayRange(now: Date) {
+  const japanNow = new Date(
+    now.getTime() +
+      japanTimeOffsetMilliseconds,
+  );
+
+  const japanDayStartAsUtc = Date.UTC(
+    japanNow.getUTCFullYear(),
+    japanNow.getUTCMonth(),
+    japanNow.getUTCDate(),
+  );
+
+  const start = new Date(
+    japanDayStartAsUtc -
+      japanTimeOffsetMilliseconds,
+  );
+
+  const end = new Date(
+    start.getTime() +
+      millisecondsPerDay,
+  );
+
+  return {
+    start,
+    end,
+  };
+}
 
 // ログイン中の本人が最後に生成したAIメニューをNeonから取得する
 export async function GET(request: Request) {
@@ -122,6 +197,8 @@ export async function GET(request: Request) {
 export async function POST(
   request: Request,
 ) {
+  let requestGuardId: string | null = null;
+
   // 本人確認中に発生したエラーを捕まえる
   try {
     // リクエストに含まれるClerk認証情報から本人のIDを取得する
@@ -164,6 +241,113 @@ export async function POST(
       );
     }
 
+    const {
+      requestId,
+      ...todayCondition
+    } = parsedRequest.data;
+
+    const db = getDb();
+    const { start, end } =
+      getJapanDayRange(new Date());
+
+    // 本人が今日生成したAIメニュー数をNeonから数える
+    const dailyUsageResults = await db
+      .select({
+        usageCount: count(aiGeneratedMenus.id),
+        latestCreatedAt: max(
+          aiGeneratedMenus.createdAt,
+        ),
+      })
+      .from(aiGeneratedMenus)
+      .innerJoin(
+        users,
+        eq(aiGeneratedMenus.userId, users.id),
+      )
+      .where(
+        and(
+          eq(users.clerkUserId, clerkUserId),
+          gte(aiGeneratedMenus.createdAt, start),
+          lt(aiGeneratedMenus.createdAt, end),
+        ),
+      );
+
+    const usedMenuCount = Number(
+      dailyUsageResults[0]?.usageCount ?? 0,
+    );
+
+    const latestMenuCreatedAt =
+      dailyUsageResults[0]?.latestCreatedAt ??
+      null;
+
+    // 最新の生成から5秒以内ならOpenAIを呼ばずに終了する
+    if (latestMenuCreatedAt) {
+      const nextRequestAt = new Date(
+        latestMenuCreatedAt.getTime() +
+          requestCooldownMilliseconds,
+      );
+
+      if (nextRequestAt.getTime() > Date.now()) {
+        const cooldownRetryAfterSeconds =
+          Math.max(
+            1,
+            Math.ceil(
+              (nextRequestAt.getTime() -
+                Date.now()) /
+                1000,
+            ),
+          );
+
+        return Response.json(
+          {
+            error:
+              "連続生成を防ぐため、少し待ってから再実行してください。",
+            retryAfterSeconds:
+              cooldownRetryAfterSeconds,
+            nextAvailableAt:
+              nextRequestAt.toISOString(),
+          },
+          {
+            status: 429,
+            headers: {
+              "Retry-After": String(
+                cooldownRetryAfterSeconds,
+              ),
+            },
+          },
+        );
+      }
+    }
+
+    // 明日の日本時間0時までの待ち時間を秒で計算する
+    const retryAfterSeconds = Math.max(
+      1,
+      Math.ceil(
+        (end.getTime() - Date.now()) / 1000,
+      ),
+    );
+
+    // 上限に達していたらOpenAIを呼ばずに終了する
+    if (usedMenuCount >= dailyMenuLimit) {
+      return Response.json(
+        {
+          error:
+            "本日のAIメニュー生成上限に達しました。",
+          limit: dailyMenuLimit,
+          used: usedMenuCount,
+          remaining: 0,
+          nextAvailableAt: end.toISOString(),
+        },
+        {
+          status: 429,
+          headers: {
+            "Retry-After": String(
+              retryAfterSeconds,
+            ),
+          },
+        },
+      );
+    }
+
     // ClerkユーザーIDを使ってNeonから本人のAI用データを取得する
     const aiContext =
       await getUserAiContext(
@@ -183,6 +367,41 @@ export async function POST(
       );
     }
 
+    // 同じリクエストIDは1件目だけ登録し、二重生成を止める
+    const insertedGuards = await db
+      .insert(aiRequestGuards)
+      .values({
+        userId: aiContext.userId,
+        requestType: "menu",
+        requestId,
+      })
+      .onConflictDoNothing({
+        target: [
+          aiRequestGuards.userId,
+          aiRequestGuards.requestType,
+          aiRequestGuards.requestId,
+        ],
+      })
+      .returning({
+        id: aiRequestGuards.id,
+      });
+
+    requestGuardId =
+      insertedGuards[0]?.id ?? null;
+
+    if (!requestGuardId) {
+      return Response.json(
+        {
+          error:
+            "同じAIメニューを処理中または処理済みです。",
+          requestId,
+        },
+        {
+          status: 409,
+        },
+      );
+    }
+
     // AIの判断に必要な情報だけを送信用データへまとめる
     const aiInput = {
       goalBodyType:
@@ -194,7 +413,7 @@ export async function POST(
       recentTrainingSessions:
         aiContext.recentTrainingSessions,
       todayCondition:
-        parsedRequest.data,
+        todayCondition,
     };
 
     // 共通指示・本人情報・出力形式をOpenAIへ送り今日のメニューを生成する
@@ -219,6 +438,16 @@ ${JSON.stringify(aiInput, null, 2)}`,
 
     // OpenAIから有効なメニューを取得できなければ不完全な結果を返さない
     if (!generatedMenu) {
+      await db
+        .delete(aiRequestGuards)
+        .where(
+          eq(
+            aiRequestGuards.id,
+            requestGuardId,
+          ),
+        );
+      requestGuardId = null;
+
       return Response.json(
         {
           error:
@@ -230,7 +459,6 @@ ${JSON.stringify(aiInput, null, 2)}`,
       );
     }
 
-    const db = getDb();
     const menuId = crypto.randomUUID();
     const createdAt = new Date();
     const conditionScore =
@@ -274,8 +502,17 @@ ${JSON.stringify(aiInput, null, 2)}`,
       ),
     ]);
 
+    const updatedUsedMenuCount =
+      usedMenuCount + 1;
+
+    const remainingMenuCount = Math.max(
+      0,
+      dailyMenuLimit - updatedUsedMenuCount,
+    );
+
     // 保存済みIDと日時も含め、検証済みAIメニューをフロントへ返す
     return Response.json({
+      requestId,
       menu: {
         id: menuId,
         ...generatedMenu,
@@ -283,8 +520,53 @@ ${JSON.stringify(aiInput, null, 2)}`,
         requestNote,
         createdAt,
       },
+      usage: {
+        limit: dailyMenuLimit,
+        used: updatedUsedMenuCount,
+        remaining: remainingMenuCount,
+        resetsAt: end.toISOString(),
+      },
     });
   } catch (error) {
+    // 処理失敗時は受付記録を削除し、同じ操作を再試行できるようにする
+    if (requestGuardId) {
+      try {
+        await getDb()
+          .delete(aiRequestGuards)
+          .where(
+            eq(
+              aiRequestGuards.id,
+              requestGuardId,
+            ),
+          );
+      } catch (cleanupError) {
+        console.error(
+          "AIメニュー受付記録の削除エラー:",
+          cleanupError,
+        );
+      }
+    }
+
+    if (
+      error instanceof
+      APIConnectionTimeoutError
+    ) {
+      console.error(
+        "AIメニューOpenAIタイムアウト:",
+        error,
+      );
+
+      return Response.json(
+        {
+          error:
+            "AIメニュー生成に時間がかかっています。少し待ってからもう一度お試しください。",
+        },
+        {
+          status: 504,
+        },
+      );
+    }
+
     // 予想外のエラーをサーバー側へ記録する
     console.error(
       "AIメニューAPIエラー:",

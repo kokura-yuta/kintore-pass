@@ -1,4 +1,5 @@
 import { useAuth } from '@clerk/expo';
+import * as Crypto from 'expo-crypto';
 import { Redirect } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import Markdown from 'react-native-markdown-display';
@@ -39,6 +40,7 @@ export default function ChatScreen() {
   const getTokenRef = useRef(getToken);
   const loadedMessageConversationIds = useRef(new Set<string>());
   const messageRequestId = useRef(0);
+  const pendingSendRequestId = useRef<string | null>(null);
   const resolvedActiveId = activeId ?? conversations[0]?.id ?? null;
   const activeConversation = conversations.find((chat) => chat.id === resolvedActiveId) ?? null;
   const isTooLong = input.length > MAX_MESSAGE_LENGTH;
@@ -136,7 +138,16 @@ export default function ChatScreen() {
 
   async function submitMessage(content: string, appendUserMessage: boolean) {
     const cleanContent = content.trim();
-    if (!cleanContent || cleanContent.length > MAX_MESSAGE_LENGTH || isSending) return;
+    if (
+      !cleanContent ||
+      cleanContent.length > MAX_MESSAGE_LENGTH ||
+      isSending ||
+      pendingSendRequestId.current
+    ) return;
+
+    // 1回の送信を識別するUUIDを作り、二重実行を同期的に止める
+    const requestId = Crypto.randomUUID();
+    pendingSendRequestId.current = requestId;
 
     let localConversationId = resolvedActiveId;
     let serverConversationId = activeConversation?.serverConversationId ?? null;
@@ -158,7 +169,12 @@ export default function ChatScreen() {
     try {
       const token = await getTokenRef.current();
       if (!token) throw new Error('ログインを確認できませんでした。');
-      const response = await sendChatMessage(token, cleanContent, serverConversationId);
+      const response = await sendChatMessage(
+        token,
+        cleanContent,
+        requestId,
+        serverConversationId,
+      );
       setServerConversationId(localConversationId, response.conversationId);
       addMessage(localConversationId, {
         id: `assistant-${Date.now()}`, role: 'assistant', content: response.reply, createdAt: Date.now(),
@@ -167,6 +183,7 @@ export default function ChatScreen() {
       setError(sendError instanceof Error ? sendError.message : 'AIからの返信を取得できませんでした。');
       setFailedMessage(cleanContent);
     } finally {
+      pendingSendRequestId.current = null;
       setIsSending(false);
     }
   }

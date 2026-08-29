@@ -1,12 +1,14 @@
 // PostgreSQLへユーザー情報と身体プロフィールを保存するテーブルの型を読み込む場所
 import {
   boolean,
+  date,
   index,
   integer,
   pgTable,
   real,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 
@@ -112,6 +114,54 @@ export const userProfiles = pgTable(
       .notNull()
       .defaultNow(),
   },
+);
+// ユーザーが日ごとに入力した体重を保存するテーブル
+export const weightRecords = pgTable(
+  "weight_records",
+  {
+    // 体重記録を重複なく識別するID
+    id: uuid("id")
+      .defaultRandom()
+      .primaryKey(),
+
+    // この体重記録が誰のものかをusersテーブルと結び付ける
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, {
+        onDelete: "cascade",
+      }),
+
+    // 記録した日をYYYY-MM-DD形式で保存する
+    recordedDate: date("recorded_date", {
+      mode: "string",
+    }).notNull(),
+
+    // その日に入力した体重をkgで保存する
+    weightKg: real("weight_kg")
+      .notNull(),
+
+    // 記録を作成・更新した日時
+    createdAt: timestamp("created_at", {
+      withTimezone: true,
+    })
+      .notNull()
+      .defaultNow(),
+
+    updatedAt: timestamp("updated_at", {
+      withTimezone: true,
+    })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    // 同じユーザーが同じ日に2件登録することを防ぐ
+    uniqueIndex(
+      "weight_records_user_date_unique",
+    ).on(
+      table.userId,
+      table.recordedDate,
+    ),
+  ],
 );
 
 // 1回分のトレーニング日時・時間・調子・メモをユーザーごとに保存するテーブル
@@ -409,6 +459,55 @@ export const chatMessages = pgTable(
   (table) => [
     index("chat_messages_conversation_created_idx").on(
       table.conversationId,
+      table.createdAt,
+    ),
+  ],
+);
+
+// AIチャット・AIメニューの二重送信を防ぐため、処理開始済みのリクエストを保存する
+export const aiRequestGuards = pgTable(
+  "ai_request_guards",
+  {
+    id: uuid("id")
+      .defaultRandom()
+      .primaryKey(),
+
+    // どの利用者のリクエストかを保存する
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, {
+        onDelete: "cascade",
+      }),
+
+    // chatまたはmenuのどちらの処理かを保存する
+    requestType: text("request_type")
+      .notNull(),
+
+    // フロントが送るリクエスト固有のUUIDを保存する
+    requestId: uuid("request_id")
+      .notNull(),
+
+    createdAt: timestamp("created_at", {
+      withTimezone: true,
+    })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    // 同じ利用者・処理・リクエストIDを2回登録できなくする
+    uniqueIndex(
+      "ai_request_guards_user_type_request_uidx",
+    ).on(
+      table.userId,
+      table.requestType,
+      table.requestId,
+    ),
+
+    // 本人の古い管理記録を探しやすくする
+    index(
+      "ai_request_guards_user_created_idx",
+    ).on(
+      table.userId,
       table.createdAt,
     ),
   ],
