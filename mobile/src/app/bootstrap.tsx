@@ -1,7 +1,7 @@
 import { useAuth, useClerk } from '@clerk/expo';
 import { Redirect, useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ApiError, isApiBypassEnabled } from '@/lib/api';
@@ -131,6 +131,7 @@ export default function BootstrapScreen() {
   return (
     <View style={styles.screen}>
       <SafeAreaView style={styles.safeArea}>
+        <ScrollView style={styles.safeArea} contentContainerStyle={styles.scrollContent}>
         {status === 'loading' ? (
           <View style={styles.centerContent}>
             <ActivityIndicator size="large" color="#F6D365" />
@@ -143,18 +144,20 @@ export default function BootstrapScreen() {
             <Text style={styles.eyebrow}>CONNECTION ERROR</Text>
             <Text style={styles.title}>読み込めませんでした</Text>
             <Text style={styles.description}>{errorMessage}</Text>
-            <Pressable onPress={retryBootstrap} style={styles.primaryButton}>
+            <Pressable accessibilityRole="button" onPress={retryBootstrap} style={styles.primaryButton}>
               <Text style={styles.primaryButtonText}>もう一度試す</Text>
             </Pressable>
             {canUseDevelopmentBypass ? (
               <>
                 <Pressable
+                  accessibilityRole="button"
                   onPress={() => router.replace('/ideal-body')}
                   style={styles.developmentButton}
                 >
                   <Text style={styles.developmentButtonText}>開発用に初回設定へ進む</Text>
                 </Pressable>
                 <Pressable
+                  accessibilityRole="button"
                   onPress={() => router.replace('/home')}
                   style={styles.developmentHomeButton}
                 >
@@ -176,11 +179,12 @@ export default function BootstrapScreen() {
             <Text style={styles.description}>
               理想体型と身体情報を入力して、あなた専用の設定を作ります。
             </Text>
-            <Pressable onPress={() => router.replace('/ideal-body')} style={styles.primaryButton}>
+            <Pressable accessibilityRole="button" onPress={() => router.replace('/ideal-body')} style={styles.primaryButton}>
               <Text style={styles.primaryButtonText}>初回設定を始める</Text>
             </Pressable>
           </View>
         ) : null}
+        </ScrollView>
       </SafeAreaView>
     </View>
   );
@@ -189,11 +193,14 @@ export default function BootstrapScreen() {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#0A0A0A' },
   safeArea: { flex: 1 },
-  centerContent: { flex: 1, justifyContent: 'center', paddingHorizontal: 24 },
+  scrollContent: { flexGrow: 1 },
+  centerContent: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: 24, paddingVertical: 24 },
   eyebrow: { color: '#FFF1B8', fontSize: 11, fontWeight: '600', letterSpacing: 1.6 },
   title: { marginTop: 10, color: '#F4F6F3', fontSize: 32, fontWeight: '700' },
   description: { marginTop: 14, color: '#9DA69F', fontSize: 14, lineHeight: 22 },
   primaryButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 14,
     minHeight: 52,
     alignItems: 'center',
     justifyContent: 'center',
@@ -201,8 +208,10 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     backgroundColor: '#F6D365',
   },
-  primaryButtonText: { color: '#0A0A0A', fontSize: 15, fontWeight: '700' },
+  primaryButtonText: { textAlign: 'center', color: '#0A0A0A', fontSize: 15, fontWeight: '700' },
   developmentButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 14,
     minHeight: 52,
     alignItems: 'center',
     justifyContent: 'center',
@@ -211,8 +220,10 @@ const styles = StyleSheet.create({
     borderColor: '#F6D365',
     borderRadius: 14,
   },
-  developmentButtonText: { color: '#FFF1B8', fontSize: 14, fontWeight: '700' },
+  developmentButtonText: { textAlign: 'center', color: '#FFF1B8', fontSize: 14, fontWeight: '700' },
   developmentHomeButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 14,
     minHeight: 52,
     alignItems: 'center',
     justifyContent: 'center',
@@ -220,7 +231,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     backgroundColor: '#242424',
   },
-  developmentHomeButtonText: { color: '#F4F6F3', fontSize: 14, fontWeight: '700' },
+  developmentHomeButtonText: { textAlign: 'center', color: '#F4F6F3', fontSize: 14, fontWeight: '700' },
   developmentNote: {
     marginTop: 12,
     color: '#697169',
