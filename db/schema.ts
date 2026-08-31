@@ -317,6 +317,26 @@ export const aiGeneratedMenus = pgTable(
         onDelete: "cascade",
       }),
 
+    // このAIメニューから保存されたトレーニング記録を結び付ける
+    trainingSessionId: uuid(
+      "training_session_id",
+    )
+      .unique()
+      .references(
+        () => trainingSessions.id,
+        {
+          onDelete: "set null",
+        },
+      ),
+
+    // このAIメニューを実際に行った日時を保存する
+    performedAt: timestamp(
+      "performed_at",
+      {
+        withTimezone: true,
+      },
+    ),
+
     recommendedBodyPart: text(
       "recommended_body_part",
     ).notNull(),
