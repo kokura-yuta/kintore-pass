@@ -23,11 +23,10 @@ const clerkClient = createClerkClient({
   secretKey,
 });
 
-// HTTPリクエストのClerkトークンを検証し、本人のClerkユーザーIDまたはnullを返す
-export async function getClerkUserId(
+// Clerkトークンを検証し、本人確認の詳しい認証情報を返す
+export async function getClerkSessionAuth(
   request: Request,
-): Promise<string | null> {
-  // リクエスト内のユーザー用セッショントークンをClerkで検証する
+) {
   const requestState =
     await clerkClient.authenticateRequest(
       request,
@@ -36,13 +35,23 @@ export async function getClerkUserId(
       },
     );
 
-  // 未ログイン・期限切れ・不正なトークンならユーザーIDを返さない
   if (!requestState.isAuthenticated) {
     return null;
   }
 
-  // 検証済みの認証情報から固定のClerkユーザーIDを返す
-  return requestState.toAuth().userId;
+  return requestState.toAuth();
+}
+
+// HTTPリクエストのClerkトークンを検証し、本人のClerkユーザーIDまたはnullを返す
+export async function getClerkUserId(
+  request: Request,
+): Promise<string | null> {
+  // 共通認証処理からログイン中の本人情報を取得する
+  const auth =
+    await getClerkSessionAuth(request);
+
+  // 未認証ならnull、認証済みならClerkユーザーIDを返す
+  return auth?.userId ?? null;
 }
 
 // 初回ユーザー登録に必要なメールアドレスや名前をClerkから取得する
@@ -50,6 +59,15 @@ export async function getClerkUserDetails(
   clerkUserId: string,
 ) {
   return clerkClient.users.getUser(
+    clerkUserId,
+  );
+}
+
+// 認証済みのClerkユーザーアカウントを削除する
+export async function deleteClerkUser(
+  clerkUserId: string,
+) {
+  return clerkClient.users.deleteUser(
     clerkUserId,
   );
 }

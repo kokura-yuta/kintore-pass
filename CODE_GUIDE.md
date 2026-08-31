@@ -5035,130 +5035,177 @@ ALTER TABLE "user_profiles" ALTER COLUMN "weight_kg" SET NOT NULL;
 
 これにより、フロントエンド、プロフィールAPI、TypeScriptのスキーマ、Neon PostgreSQLのすべてで「身長・体重のみ必須」という仕様が一致しています。
 
-## 12-14. 一般公開用の認証にClerkを採用する
+## 12-14. Clerk認証：ログインした本人とデータを結び付ける
 
-大勢のユーザーが利用する場合、身体情報・写真・トレーニング記録・AIチャット・長期記憶をユーザーごとに安全に分ける必要があります。
+### この章で理解すること
 
-そのため、プロフィールAPIとフロントエンドを本接続する前にClerk認証を導入します。
+この章では、Clerkでログインした人を確認し、その人専用のデータをNeonから取得するまでの流れを説明します。
 
-最初に用意するログイン方法は、Googleログインとメール認証コードです。
+最初に大切なのは、ClerkとNeonは同じ仕事をしていないという点です。
 
-Clerkはログイン、セッション、本人確認を担当します。
+| 名前 | 主な役割 | 保存するもの |
+| --- | --- | --- |
+| Clerk | ログインと本人確認 | メール、ログイン方法、セッション |
+| Neon PostgreSQL | アプリデータの保存 | 理想体型、身体情報、記録、分析、AIデータ |
 
-Neon PostgreSQLは理想体型、身体情報、記録、分析、AIチャットなどのアプリデータを保存します。
+Clerkは「この通信を送ったのは誰か」を確認します。
 
-`users.id`は、プロフィールや記録との外部キーに使うアプリ内部のUUIDとして残します。
+Neonは「確認できた本人のアプリデータ」を保存・検索します。
 
-`users.clerkUserId`を新しく追加し、Clerkが発行する固定のユーザーIDを保存します。
+したがって、認証の処理は次の2段階に分かれます。
+
+```text
+① Clerkのトークンを検証して本人を確認する
+                 ↓
+② ClerkユーザーIDを使ってNeonから本人の行を探す
+```
+
+これはClerkのIDとNeonのIDが同じか比較しているわけではありません。
+
+ClerkのIDを検索条件として使い、対応するNeon内部のユーザーIDを取得しています。
+
+### 関係する主なファイル
+
+| ファイル | 何をする場所か |
+| --- | --- |
+| `app/lib/auth/clerk-auth.ts` | Clerkのトークン検証を共通化する |
+| `app/api/users/bootstrap/route.ts` | 初回登録と初回設定状況の取得を行う |
+| `db/schema.ts` | Clerk IDを含む`users`テーブルを定義する |
+| `mobile/src/app/_layout.tsx` | Expoアプリ全体でClerkを使えるようにする |
+| `mobile/src/app/sign-in.tsx` | メール、Google、Appleのログイン画面を動かす |
+| `mobile/src/app/bootstrap.tsx` | ログイン後に次の画面を判断する |
+| `mobile/src/lib/api.ts` | ClerkトークンをAPI通信へ付ける |
+
+### ログインから画面移動までの全体像
+
+```text
+利用者がメール・Google・Appleでログインする
+                    ↓
+Clerkがログイン状態とセッションを作る
+                    ↓
+ExpoがClerkのセッショントークンを取得する
+                    ↓
+Authorizationヘッダーにトークンを付けてAPIへ送る
+                    ↓
+バックエンドがトークンをClerkで検証する
+                    ↓
+検証済みのClerkユーザーIDを取得する
+                    ↓
+Neonのusers.clerk_user_idから本人を検索する
+                    ↓
+未登録ならusersへ登録する
+登録済みなら初回設定の進行状況を取得する
+                    ↓
+初回設定またはホームへ移動する
+```
+
+ログインに一度成功しても、API通信ごとにトークンを検証します。
+
+これは毎回ログイン画面を表示するという意味ではありません。
+
+利用者の操作なしで、保存済みセッションが有効かをバックエンドが安全に確認しています。
+
+もし最初の1回しか確認しなければ、別の人がAPIのURLを直接呼んで他人のデータを操作できる可能性があります。
+
+## 12-14-1. ClerkユーザーIDをNeonへ保存する
+
+対象ファイルは`db/schema.ts`です。
+
+使用言語はTypeScriptで、Drizzleを使ってPostgreSQLのテーブル構造を定義しています。
 
 ```ts
 clerkUserId: text("clerk_user_id")
   .unique(),
 ```
 
-`clerkUserId`はTypeScript内で使う項目名です。
+`clerkUserId`は、TypeScript内で使う項目名です。
 
-`text("clerk_user_id")`は、Neon PostgreSQLへClerkユーザーIDを文字列として保存します。
+`text("clerk_user_id")`は、Neonの`clerk_user_id`列へ文字列を保存する指定です。
 
-`.unique()`は、同じClerkユーザーIDを複数の`users`データへ保存できないようにします。
+`.unique()`は、同じClerkユーザーIDを2人分の行へ保存できないようにします。
 
-既存のテストユーザーにはClerk IDがないため、最初の移行では`.notNull()`を付けず`null`を許可します。
+ClerkユーザーIDは、`user_...`のようなClerkが発行する固定の文字列です。
 
-Clerkへの移行が完了し、すべての実ユーザーへ`clerkUserId`が入った後で必須化を検討します。
+Neonの`users.id`は、プロフィールや記録をつなぐためにアプリ内部で発行するUUIDです。
 
-今後のAPIは変更される可能性があるメールアドレスではなく、`clerkUserId`でログイン中のユーザーを検索します。
+2種類のIDは次のように使い分けます。
 
 ```text
-Clerkが本人確認
-        ↓
-Clerk userIdを取得
-        ↓
-users.clerk_user_idを検索
-        ↓
-アプリ内部のusers.idを取得
-        ↓
-本人のプロフィール・記録・AIデータだけを操作
+Clerk userId
+  → ログインした本人をNeonで検索するためのID
+
+Neon users.id
+  → プロフィール、記録、分析などを関連付けるためのID
 ```
 
-現在の`getChatGPTUser()`を使う認証は、Clerkの最小動作確認が成功した後に共通のClerk認証関数へ置き換えます。
+たとえば、トレーニング記録へClerkのIDを毎回直接保存するのではありません。
 
-フロントエンド担当はログイン・新規登録画面、ログアウト、認証中表示、画面遷移を担当します。
+最初にClerkのIDから`users.id`を取得し、その`users.id`を記録の外部キーとして使います。
 
-バックエンド担当はClerkセッション検証、`clerkUserId`とNeonの紐づけ、APIごとの本人確認とアクセス制御を担当します。
+## 12-14-2. Clerkの環境変数
 
-このプロジェクトはVinextとCloudflare Workersを使っているため、全APIを書き換える前にClerk SDKの最小ログイン・API認証テストを行います。
-
-### clerk_user_idをNeonへ追加するマイグレーション
-
-対象ファイル：`drizzle-postgres/0003_workable_giant_girl.sql`
-
-```sql
-ALTER TABLE "users" ADD COLUMN "clerk_user_id" text;
-ALTER TABLE "users" ADD CONSTRAINT "users_clerk_user_id_unique" UNIQUE("clerk_user_id");
-```
-
-1行目は`users`テーブルへClerkユーザーIDを保存する文字列列を追加します。
-
-2行目は同じClerkユーザーIDを複数のユーザーへ保存できないようにします。
-
-2026年8月9日にNeonの`musclepas`プロジェクトへ適用しました。
-
-確認結果は`data_type: text`、`is_nullable: YES`、`has_unique_constraint: true`です。
-
-`is_nullable: YES`なのは、Clerk IDをまだ持たない既存テストユーザーを残したまま安全に移行するためです。
-
-### Clerkのバックエンド用環境変数
-
-`.env.local`へ次の2種類のキーを設定します。
+バックエンド側の対象ファイルは`.env.local`です。
 
 ```env
 NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=ClerkのPublishable Key
 CLERK_SECRET_KEY=ClerkのSecret Key
 ```
 
-`NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`は、このアプリがどのClerk環境を利用するか識別する公開可能キーです。
+`NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`は、どのClerkアプリを使うかを示す公開可能なキーです。
 
-`CLERK_SECRET_KEY`は、バックエンドがClerkへ接続し、認証情報を安全に確認するための秘密鍵です。
+`CLERK_SECRET_KEY`は、バックエンドがClerkの管理機能を使うための秘密鍵です。
 
-`CLERK_SECRET_KEY`はReactコード、Expoアプリ、localStorage、GitHub、チャットへ載せません。
+秘密鍵はReact画面、Expoアプリ、GitHub、チャットへ載せません。
 
-2026年8月9日に、両方の環境変数が設定済みであることを値を表示せず確認しました。
+スマホ側では`mobile/.env.local`へ公開可能キーだけを設定します。
 
-### モバイルアプリの認証を確認するバックエンドSDK
+```env
+EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY=ClerkのPublishable Key
+```
 
-`@clerk/backend`を直接インストールしています。
+`EXPO_PUBLIC_`が付く値は、Expoアプリの中から読み取れる公開設定です。
 
-`@clerk/nextjs`はWeb版のClerk連携に利用でき、`@clerk/backend`はExpoなど別のクライアントから届く認証トークンをバックエンドで検証するために使います。
+そのため、`CLERK_SECRET_KEY`へ`EXPO_PUBLIC_`を付けてはいけません。
 
-共通認証ファイルは`app/lib/auth/clerk-auth.ts`です。
+## 12-14-3. バックエンドの共通認証ファイル
 
-このファイルへ認証処理を一度だけ書き、プロフィール・トレーニング記録・身体分析・AIメニュー・AIチャットの各APIから呼び出します。
+対象ファイルは`app/lib/auth/clerk-auth.ts`です。
+
+このファイルの目的は、難しいClerk認証処理を1か所へまとめることです。
+
+プロフィール、記録、身体分析、AIメニュー、AIチャットの各APIは、この共通関数を呼びます。
+
+同じ認証コードを各`route.ts`へ丸ごと書き直す必要はありません。
+
+### Clerk機能を読み込む
 
 ```ts
 import { createClerkClient } from "@clerk/backend";
 ```
 
-`import`は別のパッケージやファイルが公開している機能を現在のファイルへ読み込む文法です。
+`import`は、別のパッケージが持つ機能を現在のファイルで使えるようにします。
 
-`{ createClerkClient }`は`@clerk/backend`が公開する複数の機能から、Clerk接続を作る機能だけを選びます。
+`createClerkClient`は、バックエンドからClerkへ接続するための機能です。
+
+`@clerk/backend`は画面を作るライブラリではなく、サーバー側で認証を検証するライブラリです。
+
+### 環境変数を読み取る
 
 ```ts
 const publishableKey =
   process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
-```
 
-`const publishableKey`は公開可能キーを保存する変数を定義します。
-
-`process.env`はサーバーの環境変数を読み取るための仕組みです。
-
-```ts
 const secretKey =
   process.env.CLERK_SECRET_KEY;
 ```
 
-`secretKey`はトークン検証に使う秘密鍵を保存します。
+`const`は、あとから別の値を代入し直さない名前を定義します。
 
-秘密鍵の実際の値をTypeScriptへ直接書かないため、GitHubへ誤って公開することを防ぎます。
+`process.env`は、サーバーの環境変数を読み取る仕組みです。
+
+実際のキーをTypeScriptへ直接書かないため、GitHubへの秘密漏えいを防げます。
+
+### 必須設定があるか確認する
 
 ```ts
 if (!publishableKey || !secretKey) {
@@ -5168,13 +5215,15 @@ if (!publishableKey || !secretKey) {
 }
 ```
 
-`!publishableKey`は公開可能キーが空または未設定か確認します。
+`if`は、条件が成立した場合だけ中の処理を実行します。
 
-`||`は左右のどちらか一方でも問題があれば条件を成立させる「または」です。
+`!publishableKey`は、公開可能キーが空または未設定かを確認します。
 
-`!secretKey`は秘密鍵が空または未設定か確認します。
+`||`は、左右のどちらか一方でも成立すればよい「または」です。
 
-`throw new Error()`は、必要な設定がない状態で不明な認証エラーを起こす前に、開発者向けの分かりやすいエラーで停止します。
+`throw new Error()`は、必要な設定がない状態で処理を続けず、原因の分かるエラーで停止します。
+
+### Clerkクライアントを作る
 
 ```ts
 const clerkClient = createClerkClient({
@@ -5183,82 +5232,94 @@ const clerkClient = createClerkClient({
 });
 ```
 
-`createClerkClient()`は、設定した2つのキーを使ってClerkのバックエンド機能を利用できる状態にします。
+`createClerkClient()`は、2つのキーを使ってClerkを操作できる接続役を作ります。
 
-`publishableKey`は利用するClerkアプリを識別します。
+`{ publishableKey, secretKey }`は、関数へ設定値をオブジェクトとして渡しています。
 
-`secretKey`はバックエンドだけが使い、認証トークンの検証に必要です。
+これは次の省略記法です。
 
-`clerk-auth.ts`はTypeScriptファイルです。
+```ts
+{
+  publishableKey: publishableKey,
+  secretKey: secretKey,
+}
+```
 
-認証結果やClerkユーザーIDの型を確認できるため、存在しない項目の利用や文字列以外の値を誤って扱う問題を実行前に見つけやすくなります。
+左側は設定項目名で、右側は変数に入っている値です。
 
-フロントエンドの既存画面にはJavaScript・JSXがありますが、新しく作る認証・DB・APIなどのバックエンドは安全性を優先してTypeScriptを使います。
+## 12-14-4. リクエストのトークンを検証する
 
-### リクエストからClerkユーザーIDを取得する共通関数
+対象ファイルは引き続き`app/lib/auth/clerk-auth.ts`です。
+
+### 詳しい認証結果を返す関数
+
+```ts
+export async function getClerkSessionAuth(
+  request: Request,
+) {
+  const requestState =
+    await clerkClient.authenticateRequest(
+      request,
+      {
+        acceptsToken: "session_token",
+      },
+    );
+
+  if (!requestState.isAuthenticated) {
+    return null;
+  }
+
+  return requestState.toAuth();
+}
+```
+
+`export`は、この関数を別のファイルから読み込めるようにします。
+
+`async`は、関数の中で時間のかかる非同期処理を待てるようにします。
+
+`request: Request`は、フロントから届いたHTTP通信全体を受け取るというTypeScriptの型指定です。
+
+`authenticateRequest()`は、通信に付いているClerkトークンが本物で、期限内であるかを検証します。
+
+`await`は、Clerkの検証結果が返るまで次の処理へ進まないように待ちます。
+
+`acceptsToken: "session_token"`は、人がログインしたセッション用トークンを受け付ける指定です。
+
+`isAuthenticated`は、Clerkが認証済みと判断したかを表します。
+
+未ログイン、期限切れ、不正なトークンなら`null`を返します。
+
+`toAuth()`は、検証結果をユーザーIDなどが読みやすい認証情報へ変換します。
+
+### ユーザーIDだけを返す関数
 
 ```ts
 export async function getClerkUserId(
   request: Request,
 ): Promise<string | null> {
-```
+  const auth =
+    await getClerkSessionAuth(request);
 
-`export`は、この関数をプロフィールなど別のAPIファイルから読み込めるようにします。
-
-`async`は、Clerkの確認完了を`await`で待てる非同期関数を表します。
-
-`request: Request`は、引数`request`へHTTPリクエストを受け取るというTypeScriptの型指定です。
-
-`Promise<string | null>`は、確認完了後にユーザーIDの文字列、または未認証を表す`null`を返すという型です。
-
-```ts
-const requestState =
-  await clerkClient.authenticateRequest(
-    request,
-    {
-      acceptsToken: "session_token",
-    },
-  );
-```
-
-`authenticateRequest()`は、リクエスト内のClerkトークンが本物で有効か検証します。
-
-`acceptsToken: "session_token"`は、人間のログインセッション用トークンだけを受け付けます。
-
-```ts
-if (!requestState.isAuthenticated) {
-  return null;
+  return auth?.userId ?? null;
 }
 ```
 
-`isAuthenticated`は、Clerkがログイン済みと確認できたかを表します。
+`Promise<string | null>`は、処理完了後に文字列または`null`を返すという型です。
 
-未ログイン・期限切れ・不正なトークンの場合は`null`を返します。
+`getClerkSessionAuth(request)`は、先ほどの共通関数へ同じHTTP通信を渡します。
 
-```ts
-return requestState.toAuth().userId;
-```
+`auth?.userId`は、`auth`が存在するときだけ`userId`を読み取ります。
 
-`toAuth()`は検証結果をAPIで使いやすい認証情報へ変換します。
+`?.`があるため、`auth`が`null`でもエラーになりません。
 
-`.userId`はClerkがユーザーごとに発行した固定IDです。
+`?? null`は、左側が`null`または`undefined`なら右側の`null`を使います。
 
-この難しい認証処理を共通関数へまとめることで、各APIは`getClerkUserId(request)`を呼ぶだけで本人確認できます。
-
-### bootstrap APIでClerk認証を使う
-
-`bootstrap`のPOST関数で`request: Request`を受け取り、iPhoneアプリから届いた認証トークンを共通関数へ渡します。
+この関数により、各APIは次の短い基本形で本人を確認できます。
 
 ```ts
 const clerkUserId =
   await getClerkUserId(request);
-```
 
-`await getClerkUserId(request)`は、リクエスト内のClerkトークンの検証完了を待ちます。
-
-成功時は固定のClerkユーザーID、未認証時は`null`が`clerkUserId`へ入ります。
-
-```ts
 if (!clerkUserId) {
   return Response.json(
     { error: "ログインが必要です。" },
@@ -5267,95 +5328,151 @@ if (!clerkUserId) {
 }
 ```
 
-`if (!clerkUserId)`はユーザーIDを取得できなかった場合だけ中の処理を実行します。
+1行目では、リクエストのClerkトークンを検証してユーザーIDを取得します。
 
-HTTP 401を返して処理を終了するため、未認証のリクエストはNeonのユーザーデータへ進めません。
+`if (!clerkUserId)`は、ユーザーIDを取得できなかった場合を確認します。
 
-### bootstrap APIでClerkユーザーとNeonを紐づける
+`return`は、その場でレスポンスを返して後ろのDB処理へ進ませません。
 
-```ts
-.where(
-  eq(
-    users.clerkUserId,
-    clerkUserId,
-  ),
-)
+`Response.json()`は、フロントへJSON形式のレスポンスを返します。
+
+`status: 401`は、ログイン情報がないか無効であることを表します。
+
+## 12-14-5. bootstrap APIでClerkとNeonを結び付ける
+
+対象ファイルは`app/api/users/bootstrap/route.ts`です。
+
+`bootstrap`には「起動時にアプリを使える状態へ初期化する」という意味があります。
+
+このAPIは、ログイン後のユーザーをNeonへ登録または検索し、次に表示する画面の判断材料を返します。
+
+### bootstrap APIの順番
+
+```text
+1. Clerkで本人を確認する
+2. ClerkユーザーIDでNeonを検索する
+3. 登録済みなら初回設定状況を返す
+4. 未登録ならClerkからメールと名前を取得する
+5. Neonのusersへ新規登録する
+6. 初回設定状況をフロントへ返す
 ```
 
-`.where()`はNeonから取得するユーザーの条件を指定します。
-
-`eq()`は左右の値が等しいデータだけに絞ります。
-
-`users.clerkUserId`はNeonの`users.clerk_user_id`列です。
-
-`clerkUserId`は検証済みのClerkトークンから取得した本人の固定IDです。
-
-メールアドレスではなくClerkユーザーIDで検索するため、メール変更後も同じアプリユーザーとして認識できます。
-
-### 初回登録に必要なClerkユーザー詳細を取得する
+### APIの入口
 
 ```ts
-export async function getClerkUserDetails(
-  clerkUserId: string,
+export async function POST(
+  request: Request,
 ) {
-  return clerkClient.users.getUser(
-    clerkUserId,
-  );
+  try {
+    // 認証・検索・登録を行う
+  } catch (error) {
+    // 予想外のエラーを処理する
+  }
 }
 ```
 
-`getClerkUserDetails`は、ClerkユーザーIDからメールアドレスや名前などのアカウント情報を取得する共通関数です。
+`POST`は、このURLへPOST通信が届いたときに実行される関数です。
 
-`clerkUserId: string`は取得対象のClerkユーザーIDを文字列として受け取ります。
+`request`には、Clerkトークンを含むHTTP通信が入ります。
 
-`clerkClient.users.getUser()`はClerkのユーザー管理機能から該当ユーザーを取得します。
+`try`は、エラーが起きる可能性のある処理をまとめる場所です。
 
-この関数はNeonにユーザーがまだ存在しない初回登録時だけ呼び、登録済みユーザーでは不要なClerk API通信を行いません。
+`catch`は、`try`内で予想外のエラーが起きた場合に受け止める場所です。
 
-### bootstrapで初回ユーザーのメールアドレスを取得する
+### Neonから登録済みユーザーを探す
 
-`existingUser`が見つかった場合はその前でレスポンスを返すため、次の処理はNeonに未登録の場合だけ実行されます。
+```ts
+const existingUsers = await db
+  .select()
+  .from(users)
+  .where(
+    eq(
+      users.clerkUserId,
+      clerkUserId,
+    ),
+  )
+  .limit(1);
+
+const existingUser =
+  existingUsers[0] ?? null;
+```
+
+`db`は、Neon PostgreSQLを操作する接続です。
+
+`.select()`は、テーブルからデータを取得します。
+
+`.from(users)`は、検索対象を`users`テーブルにします。
+
+`.where()`は、取得する行の条件を指定します。
+
+`eq(A, B)`は、AとBが等しい行だけに絞ります。
+
+ここではNeonの`users.clerkUserId`と、検証済み本人の`clerkUserId`が一致する行を探しています。
+
+`.limit(1)`は、最大1件だけ取得します。
+
+検索結果は配列で返るため、`[0]`で最初の1件を取り出します。
+
+`?? null`により、0件なら`undefined`ではなく`null`へ統一します。
+
+この部分は本人確認そのものではありません。
+
+本人確認は直前の`getClerkUserId(request)`で完了しており、ここではNeonから本人用データを探しています。
+
+### 登録済みユーザーの進行状況を返す
+
+```ts
+if (existingUser) {
+  return Response.json({
+    userId: clerkUserId,
+    onboardingCompleted:
+      existingUser.onboardingCompleted,
+    goalBodyType:
+      existingUser.goalBodyType,
+    profileCompleted:
+      existingUser.profileCompleted,
+    initialAnalysisCompleted:
+      existingUser.initialAnalysisCompleted,
+  });
+}
+```
+
+`if (existingUser)`は、Neonに登録済みのユーザーが見つかった場合です。
+
+`onboardingCompleted`は、初回設定全体が完了しているかを表します。
+
+`goalBodyType`は、保存済みの理想体型です。
+
+`profileCompleted`は、身長・体重などの身体情報を保存済みかを表します。
+
+`initialAnalysisCompleted`は、初回分析が完了しているかを表します。
+
+ここで`return`するため、登録済みユーザーは下の新規登録処理へ進みません。
+
+### 未登録ユーザーのClerk情報を取得する
 
 ```ts
 const clerkUserDetails =
   await getClerkUserDetails(
     clerkUserId,
   );
-```
 
-`clerkUserDetails`にはClerkが管理するメールアドレス、名前、画像などのユーザー情報が入ります。
-
-```ts
 const email =
   clerkUserDetails.primaryEmailAddress
     ?.emailAddress ?? null;
 ```
 
-`primaryEmailAddress`はClerkで主要メールとして設定された情報です。
+`getClerkUserDetails()`は、Clerkから本人のメールや名前を取得します。
 
-`?.emailAddress`は主要メール情報が存在する場合だけ、その中のメール文字列を読みます。
+この処理はNeonに未登録のときだけ実行されます。
 
-`?.`は途中の値が`null`や`undefined`でもエラーにせず`undefined`を返すオプショナルチェーンです。
+`primaryEmailAddress`は、Clerkで主要メールに設定された情報です。
 
-`?? null`は取得結果が`null`または`undefined`なら、扱いやすい`null`へ統一するNull合体演算子です。
+`?.emailAddress`は、主要メール情報が存在する場合だけメール文字列を読み取ります。
 
-```ts
-if (!email) {
-  return Response.json(
-    {
-      error:
-        "メールアドレスを取得できません。",
-    },
-    { status: 400 },
-  );
-}
-```
+`?? null`は、取得できなければ`null`へ統一します。
 
-`if (!email)`はメールアドレスが`null`または空の場合だけ中の処理を実行します。
-
-Neonの`users.email`は必須なので、不完全なユーザーを登録せずHTTP 400で終了します。
-
-### Clerkの姓名から表示名を作る
+### 表示名を作る
 
 ```ts
 const displayName =
@@ -5367,29 +5484,15 @@ const displayName =
     .join(" ") || email;
 ```
 
-`[]`は複数の値を順番にまとめる配列です。
+`[]`は、姓名を順番にまとめる配列です。
 
-`.filter(Boolean)`は`null`、`undefined`、空文字などの空の値を配列から取り除きます。
+`.filter(Boolean)`は、`null`や空文字などの空の値を除きます。
 
-`.join(" ")`は配列の文字列を半角スペースでつなぎ、1つの表示名にします。
+`.join(" ")`は、残った文字列を半角スペースでつなぎます。
 
-`|| email`は姓名から表示名を作れなかった場合に、メールアドレスを代わりに使います。
+`|| email`は、姓名が両方なければメールを表示名として使います。
 
-#### 単語帳への追加
-
-- `.filter()`：条件に合う配列の要素だけを残して新しい配列を作る
-- `Boolean`：値を`true`または`false`として判定する
-- `.filter(Boolean)`：空の値を配列から取り除く定番の書き方
-- `.join(" ")`：配列の文字列を指定した区切り文字でつなぐ
-- `||`：左側が空や`false`なら右側を使う
-
-### ClerkユーザーをNeonへ新規保存する
-
-担当ファイルは`app/api/users/bootstrap/route.ts`です。
-
-ここまでの処理で、Clerkによる本人確認、Neonの既存ユーザー検索、メールアドレスの確認、表示名の作成まで終わっています。
-
-既存ユーザーが見つからなかった場合だけ、次の処理でNeonの`users`テーブルへ新しい1行を追加します。
+### Neonへ新規ユーザーを保存する
 
 ```ts
 const createdUsers = await db
@@ -5400,218 +5503,244 @@ const createdUsers = await db
     displayName,
   })
   .returning();
-```
 
-#### 1行ずつの説明
-
-`const createdUsers = await db`は、Neonの処理が完了するまで待ち、返された作成結果を`createdUsers`という定数へ保存します。
-
-`const`は、あとから別の値を代入し直さない名前を定義します。
-
-`await`は、データベースから結果が返る前に次の処理へ進まないように待ちます。
-
-`db`は、`getDb()`で用意したNeon PostgreSQLへの接続です。
-
-`.insert(users)`は、`users`テーブルへ新しいデータを1行追加する命令です。
-
-`.values({`は、新しい行の各列へ保存する内容の指定を開始します。
-
-`clerkUserId,`は、Clerkで本人確認できた固定ユーザーIDを`clerk_user_id`列へ保存します。
-
-このIDがあることで、今後プロフィールや記録を「どの利用者のデータか」で正しく分けられます。
-
-`email,`は、Clerkから取得して必須確認まで終わったメールアドレスを`email`列へ保存します。
-
-`displayName,`は、Clerkの姓名から作成した表示名を`display_name`列へ保存します。
-
-`})`は、保存内容の指定を終了します。
-
-`.returning()`は、新しくNeonへ保存された行を結果として返してもらいます。
-
-最後の`;`は、TypeScriptの文が終了したことを表します。
-
-#### 省略記法の意味
-
-次のように、オブジェクトの項目名と変数名が同じ場合は1回だけ書けます。
-
-```ts
-clerkUserId,
-email,
-displayName,
-```
-
-これは内部的には次と同じ意味です。
-
-```ts
-clerkUserId: clerkUserId,
-email: email,
-displayName: displayName,
-```
-
-左側は保存先の項目名、右側は現在の変数に入っている値です。
-
-#### なぜこの3項目を保存するのか
-
-| 保存する値 | 目的 |
-| --- | --- |
-| `clerkUserId` | ログインした本人とNeonのデータを安全に結び付ける |
-| `email` | アカウントの連絡先・必須ユーザー情報として保持する |
-| `displayName` | 画面上で利用者を表示する名前として利用する |
-
-最も重要なのは`clerkUserId`です。
-
-メールアドレスは利用者が変更する可能性がありますが、ClerkユーザーIDは同じアカウントで固定されるため、本人検索の基準に使います。
-
-#### 保存結果が配列になる理由
-
-Drizzleの`.returning()`は複数行を作成できる形に合わせ、結果を配列で返します。
-
-今回は1人だけ作るため、次のコードで配列の先頭を取り出します。
-
-```ts
 const createdUser = createdUsers[0];
 ```
 
-`createdUsers`は作成結果の配列です。
+`.insert(users)`は、`users`テーブルへ新しい行を追加します。
 
-`[0]`は配列の最初の要素を取り出します。配列の番号は`0`から始まります。
+`.values()`は、保存する列と値を指定します。
 
-#### 保存後にフロントエンドへ返す
+`clerkUserId`を保存することで、次回から同じログイン利用者を検索できます。
 
-```ts
-return Response.json(
-  {
-    user: createdUser,
-    isNewUser: true,
-  },
-  { status: 201 },
-);
+`.returning()`は、保存後の新しい行を結果として返します。
+
+結果は配列なので、`createdUsers[0]`で作成した1人を取り出します。
+
+## 12-14-6. Expoアプリ全体でClerkを使う
+
+対象ファイルは`mobile/src/app/_layout.tsx`です。
+
+このファイルでは、アプリ全体を`ClerkProvider`で囲みます。
+
+```tsx
+<ClerkProvider
+  publishableKey={publishableKey}
+  tokenCache={tokenCache}
+>
+  <UserScopedApp />
+</ClerkProvider>
 ```
 
-`return`はレスポンスを返し、このAPIの処理を終了します。
+`ClerkProvider`は、内側の全画面からClerkのログイン状態を使えるようにします。
 
-`Response.json()`は、フロントエンドへJSON形式で結果を返します。
+`publishableKey`は、利用するClerkアプリを指定します。
 
-`user: createdUser`は、新しく作成されたユーザー情報を`user`という名前で返します。
+`tokenCache`は、セッショントークンを端末へ安全に保持し、アプリ再起動後もログイン状態を復元するために使います。
 
-`isNewUser: true`は、今回が初回登録だったことをフロントエンドへ伝えます。
+```tsx
+const { userId } = useAuth({
+  treatPendingAsSignedOut: false,
+});
+```
 
-`status: 201`は、新しいデータの作成に成功したことを表します。
+`useAuth()`は、Reactコンポーネント内でClerkの認証状態を取得するHookです。
 
-フロントエンドは`isNewUser`などの結果を使い、初回設定画面へ進めるかホーム画面へ進めるかを判断できます。
+`userId`にはログイン済みならClerkユーザーID、未ログインなら`null`相当の値が入ります。
 
-#### 今回の処理全体を日本語にすると
+`treatPendingAsSignedOut: false`は、認証確認中を未ログインと決めつけず、確認完了まで待つ設定です。
+
+## 12-14-7. ログイン画面の基本的な流れ
+
+対象ファイルは`mobile/src/app/sign-in.tsx`です。
+
+この画面では、メール認証コード、Google、Appleのログインを扱います。
+
+メール認証は次の順番です。
 
 ```text
-ログイン中のClerkユーザーIDを確認する
+メールアドレスを入力する
         ↓
-同じClerkユーザーIDがNeonにあるか探す
+登録済みかClerkへ確認する
         ↓
-あれば既存ユーザーとして返す
-        ↓ なければ
-Clerkからメールと名前を取得する
+登録済み → signInでコードを送る
+未登録   → signUpでコードを送る
         ↓
-clerkUserId・email・displayNameをNeonへ保存する
+6桁コードを確認する
         ↓
-作成したユーザーと「初回登録」をフロントエンドへ返す
+Clerkセッションを確定する
+        ↓
+bootstrap画面へ移動する
 ```
 
-### プロフィールAPIをClerk認証へ変更する
-
-担当ファイルは`app/api/users/profile/route.ts`です。
-
-このAPIには、保存済みプロフィールを取得する`GET`と、プロフィールを保存・更新する`PATCH`があります。
-
-両方とも本人の身体情報を扱うため、同じClerk認証の基本形を使います。
+### 画面用state
 
 ```ts
-export async function GET(
-  request: Request,
-) {
-  const clerkUserId =
-    await getClerkUserId(request);
+const [email, setEmail] = useState("");
+const [code, setCode] = useState("");
+const [isSubmitting, setIsSubmitting] =
+  useState(false);
+```
 
-  if (!clerkUserId) {
-    return Response.json(
-      { error: "ログインが必要です。" },
-      { status: 401 },
-    );
-  }
+`email`は現在入力されているメールアドレスです。
+
+`setEmail`は`email`を更新するための関数です。
+
+`useState("")`は、最初の値を空文字にしてReact stateを作ります。
+
+`code`は利用者が入力した6桁の認証コードです。
+
+`isSubmitting`は、現在認証通信中かを`true`または`false`で保存します。
+
+### 二重送信を防ぐ
+
+```ts
+const submissionLock = useRef(false);
+
+if (submissionLock.current) return;
+submissionLock.current = true;
+```
+
+`useRef(false)`は、画面の再描画を起こさずに送信中の状態を保持します。
+
+`.current`は、`useRef`の中に保存された現在値です。
+
+すでに`true`なら`return`して、Enterとボタンによる二重送信を止めます。
+
+React stateが画面へ反映されるより早くロックできるため、使用済みコードを2回送る問題を防げます。
+
+処理の最後では`finally`を使って必ずロックを解除します。
+
+```ts
+finally {
+  submissionLock.current = false;
+  setIsSubmitting(false);
 }
 ```
 
-`request: Request`は、フロントエンドから届いたHTTP通信全体を受け取ります。
+`finally`は、通信が成功しても失敗しても最後に必ず実行されます。
 
-`getClerkUserId(request)`は、その通信に付いたClerkセッショントークンを検証します。
+### 登録済みと未登録を分ける理由
 
-認証成功時は本人の固定ClerkユーザーID、失敗時は`null`が返ります。
+登録済みユーザーは`signIn`を使います。
 
-`if (!clerkUserId)`は、IDを取得できなかった場合にNeonを操作せずHTTP 401で終了します。
+初めて利用するユーザーは`signUp`を使います。
 
-`PATCH`はもともとJSON入力を読むために`request: Request`を受け取っていました。同じ`request`をJSONの読み取りとClerk認証の両方に使えます。
+新規登録ではユーザー作成とセッション作成の両方が必要です。
 
-本人のNeonユーザーを探す条件も、メールアドレスからClerkユーザーIDへ変更しました。
+この2つを途中で混ぜると、`Cannot finalize sign-up without a created session.`のようなエラーにつながります。
+
+`authMode`へ`sign-in`または`sign-up`を保存し、コード確認時にも同じ処理を続けます。
+
+## 12-14-8. トークンをバックエンドへ渡す
+
+対象ファイルは`mobile/src/lib/api.ts`です。
 
 ```ts
-const matchedUsers = await db
-  .select({
-    id: users.id,
-  })
-  .from(users)
-  .where(
-    eq(
-      users.clerkUserId,
-      clerkUserId,
-    ),
-  )
-  .limit(1);
+Authorization: `Bearer ${options.token}`
 ```
 
-`.select({ id: users.id })`は、後のプロフィール検索・保存に必要なアプリ内ユーザーIDだけを取得します。
+`Authorization`は、HTTP通信で認証情報を渡すためのヘッダー名です。
 
-`.from(users)`は、検索対象をNeonの`users`テーブルに指定します。
+`Bearer`は、後ろに続く文字列が認証トークンであることを表します。
 
-`.where()`は、取得するデータの条件を指定します。
+`${options.token}`は、テンプレートリテラルの中へトークン文字列を埋め込みます。
 
-`eq(users.clerkUserId, clerkUserId)`は、Neonに保存済みのClerk IDと今回認証できた本人のClerk IDが等しい行だけを探します。
-
-`.limit(1)`は、取得件数を最大1件にします。`clerk_user_id`には一意制約があるため、同じClerk IDのユーザーが複数作られることも防いでいます。
+実際の通信は次の形になります。
 
 ```text
-GET
-→ 本人確認 → Neonユーザー検索 → 本人のプロフィール取得 → JSONで返す
-
-PATCH
-→ 本人確認 → JSON入力チェック → Neonユーザー検索 → 本人のプロフィール保存・更新
+Authorization: Bearer Clerkのセッショントークン
 ```
 
-認証コードは`GET`と`PATCH`の両方に書きますが、難しいトークン検証本体は`app/lib/auth/clerk-auth.ts`へ共通化されています。
+バックエンドの`authenticateRequest()`は、このヘッダーに入ったトークンを検証します。
 
-各APIに残るのは、「今回の通信を確認する関数を呼ぶ」「認証できなければ停止する」という部分です。
+トークンから取得したユーザーIDを使うため、フロントが送った任意のユーザーIDを信用する必要がありません。
 
-2026年8月9日に古い`getChatGPTUser`とメール検索をプロフィールAPIから削除し、ESLintで構文・静的検査が成功したことを確認しました。
+## 12-14-9. bootstrap画面で次の画面を決める
 
-### 理想体型保存APIをClerk認証へ変更する
+対象ファイルは`mobile/src/app/bootstrap.tsx`です。
 
-担当ファイルは`app/api/users/goal/route.ts`です。
+この画面は、ログイン後にNeonの保存状況を読み、どの画面へ進むかを決めます。
 
-このAPIは、フロントエンドで選択された理想体型を、ログイン中の本人の`users`データへ保存します。
+### トークンを取得してAPIを呼ぶ
 
-処理の流れは次のとおりです。
+```ts
+const token = await getToken();
+
+const data =
+  await fetchBootstrap(token);
+```
+
+`getToken()`は、現在のClerkセッションから認証トークンを取得します。
+
+`await`は、トークンやAPIレスポンスが返るまで待ちます。
+
+`fetchBootstrap(token)`は、トークンを付けてbootstrap APIを呼びます。
+
+### 保存状態による画面分岐
 
 ```text
-PATCHリクエストを受け取る
-        ↓
-Clerkトークンを検証する
-        ↓
-理想体型が許可された4種類か確認する
-        ↓
-Clerk IDが一致する本人だけをNeonで更新する
-        ↓
-更新結果をJSONで返す
+onboardingCompletedがtrue
+  → ホーム
+
+goalBodyTypeがnull
+  → 理想体型の設定
+
+profileCompletedがfalse
+  → 身体情報の入力
+
+それ以外
+  → 初回分析
 ```
 
-認証部分では、プロフィールAPIと同じ共通関数を使います。
+順番が重要です。
+
+先に初回設定全体の完了を確認することで、完了済みユーザーをすぐホームへ移動できます。
+
+理想体型、身体情報、初回分析の順に不足している場所へ案内します。
+
+保存済みの理想体型やプロフィールはReact Contextへ戻すため、画面を切り替えても入力内容を再表示できます。
+
+## 12-14-10. 認証とユーザー検索を混同しない
+
+次の2つは目的が違います。
+
+```ts
+await getClerkUserId(request);
+```
+
+この処理は、Clerkを使って「通信した本人は誰か」を確認します。
+
+```ts
+.where(
+  eq(
+    users.clerkUserId,
+    clerkUserId,
+  ),
+)
+```
+
+この処理は、確認できたClerk IDを使って「Neonのどのユーザー行か」を探します。
+
+つまり、次の認識が正解です。
+
+```text
+Clerk認証
+  = 本人であることを確認する
+
+Neon検索
+  = 本人に対応する保存データを持ってくる
+```
+
+## 12-14-11. APIごとに認証する理由
+
+ログイン状態はClerkが端末へ保持するため、利用者が毎回コードを入力する必要はありません。
+
+一方、バックエンドはAPI通信ごとにトークンを検証します。
+
+理由は、トークンの期限切れ、ログアウト、改ざん、別ユーザーからの通信を毎回判定するためです。
+
+各APIには同じ長い認証処理を書くのではなく、共通関数を呼ぶ短い基本形だけを書きます。
 
 ```ts
 const clerkUserId =
@@ -5625,383 +5754,81 @@ if (!clerkUserId) {
 }
 ```
 
-`getClerkUserId(request)`は、今回の通信に付いたClerkトークンを検証します。
+この基本形の後で、プロフィールAPIならプロフィールを、記録APIなら記録をNeonから取得します。
 
-認証できなければ`null`が返るため、HTTP 401を返してNeonの更新前に終了します。
+## 12-14-12. この章の文法・単語帳
 
-更新処理は次の形です。
+| 文法・単語 | 意味 |
+| --- | --- |
+| `async` | 関数内で非同期処理を待てるようにする |
+| `await` | 通信やDB処理の完了を待つ |
+| `Promise<T>` | 後から`T`型の結果を返す処理 |
+| `Request` | フロントから届いたHTTP通信全体 |
+| `Response.json()` | JSON形式でフロントへ結果を返す |
+| `?.` | 左側が存在するときだけ右側を読む |
+| `??` | 左側が`null`か`undefined`なら右側を使う |
+| `||` | 左側が空や`false`なら右側を使う場合にも使える |
+| `[0]` | 配列の最初の要素を取り出す |
+| `.filter(Boolean)` | 配列から空の値を除く |
+| `.join(" ")` | 配列の文字列を空白でつなぐ |
+| `.where()` | DB検索の条件を指定する |
+| `eq(A, B)` | AとBが等しい行へ絞る |
+| `.limit(1)` | 検索結果を最大1件にする |
+| `return` | 値を返し、その関数の処理を終了する |
+| `try` | エラーが起きる可能性のある処理を書く |
+| `catch` | `try`で起きたエラーを受け止める |
+| `finally` | 成功・失敗に関係なく最後に実行する |
 
-```ts
-const updatedUsers = await db
-  .update(users)
-  .set({
-    goalBodyType,
-    updatedAt: new Date(),
-  })
-  .where(
-    eq(
-      users.clerkUserId,
-      clerkUserId,
-    ),
-  )
-  .returning();
-```
+### HTTPステータス
 
-`.update(users)`は、Neonの`users`テーブルを更新対象にします。
+| 数値 | この認証処理での意味 |
+| --- | --- |
+| `200` | 取得や処理に成功した |
+| `201` | Neonへ新しいユーザーを作成した |
+| `400` | 必要なメールなど入力・情報が不足している |
+| `401` | 未ログイン、期限切れ、不正なトークン |
+| `404` | 本人に対応するデータが見つからない |
+| `500` | サーバー内部で予想外のエラーが起きた |
 
-`.set()`は、更新する列と新しい値を指定します。
+## 12-14-13. フロントエンドとバックエンドの担当範囲
 
-`goalBodyType`は、入力チェックを通過した「細マッチョ」「逆三角形」「フィジーク」「バルクアップ」のいずれかです。
+### フロントエンドが行うこと
 
-`updatedAt: new Date()`は、理想体型を変更した現在日時を保存します。
+- ログイン・新規登録画面を表示する
+- メール認証コード、Google、Appleログインを操作する
+- Clerkからセッショントークンを取得する
+- API通信へトークンを付ける
+- 認証確認中、通信中、エラーを画面へ表示する
+- bootstrap結果から初回設定またはホームへ移動する
+- ログアウト操作を用意する
 
-`.where()`は、更新してよいユーザーを絞る条件です。
+### バックエンドが行うこと
 
-`eq(users.clerkUserId, clerkUserId)`は、Neonに保存されたClerk IDと今回認証した本人のClerk IDが同じ行だけを更新します。
+- 届いたClerkトークンを検証する
+- 検証済みClerkユーザーIDからNeonの本人を検索する
+- 初回ユーザーをNeonへ登録する
+- 本人のデータだけを取得・保存・変更・削除する
+- 未認証ならDB処理の前にHTTP 401を返す
+- `CLERK_SECRET_KEY`をサーバーの環境変数で守る
 
-この`.where()`がないと`users`テーブルの全利用者を更新する危険があるため、本人だけに限定する重要な条件です。
+### 絶対にフロントへ置かないもの
 
-`.returning()`は、更新後のユーザー情報を配列で受け取ります。
+- `CLERK_SECRET_KEY`
+- `DATABASE_URL`
+- OpenAIの秘密APIキー
+- 他人のユーザーIDを信用して操作する処理
 
-古い処理ではメールアドレスで本人を検索していましたが、現在は変更されにくい固定のClerkユーザーIDで検索します。
-
-2026年8月9日に`bootstrap`・プロフィール・理想体型の3APIをまとめてESLintで検査し、古い認証関数の参照と構文エラーがないことを確認しました。
-
-### Expoスマホ版とbootstrap APIを接続する
-
-スマホ側の担当ファイルは`mobile/src/lib/bootstrap.ts`と`mobile/src/lib/api.ts`です。
-
-バックエンド側の担当ファイルは`app/api/users/bootstrap/route.ts`です。
-
-今回、スマホ版とバックエンドのAPI契約を次へ統一しました。
-
-```text
-通信方法：POST
-接続先：/api/users/bootstrap
-
-レスポンス：
-{
-  "userId": "ClerkユーザーID",
-  "onboardingCompleted": false
-}
-```
-
-初回ログインではNeonへユーザーを新規登録する可能性があるため、データ取得だけを表す`GET`ではなく、登録処理に使う`POST`を利用します。
-
-スマホ側の基本形は次のとおりです。
-
-```ts
-export function fetchBootstrap(token: string) {
-  return apiRequest<BootstrapResponse>(
-    "/api/users/bootstrap",
-    {
-      method: "POST",
-      token,
-    },
-  );
-}
-```
-
-`token: string`は、Clerkログイン後にスマホ版が取得したセッショントークンです。
-
-`apiRequest<BootstrapResponse>`は、APIの返却値が`BootstrapResponse`の形になる想定で共通通信関数を呼びます。
-
-`"/api/users/bootstrap"`は、バックエンドの`app/api/users/bootstrap/route.ts`へ対応するURLです。
-
-`method: "POST"`は、ユーザーの検索または初回登録処理を開始します。
-
-共通通信関数は、Clerkトークンを次のHTTPヘッダーへ付けます。
-
-```ts
-Authorization: `Bearer ${options.token}`
-```
-
-`Authorization`は、バックエンドへ認証情報を渡すためのHTTPヘッダーです。
-
-`Bearer`は、この後ろの文字列が認証トークンであることを表します。
-
-バックエンドの`getClerkUserId(request)`がこのトークンを検証し、本人のClerkユーザーIDを取得します。
-
-バックエンドはユーザーデータ全体ではなく、初回の画面分岐に必要な値だけを返す形へ変更しました。
-
-```ts
-return Response.json({
-  userId: clerkUserId,
-  onboardingCompleted:
-    existingUser.onboardingCompleted,
-});
-```
-
-`userId`は認証済みのClerkユーザーIDです。
-
-`onboardingCompleted`は初回設定が完了しているかを表す真偽値です。
-
-`false`なら理想体型などの初回設定へ進み、`true`ならホーム画面へ進みます。
-
-APIのエラー本文はバックエンドが`{ error: "..." }`で返すため、スマホ版は`error`と`message`の両方を読み取れるようにしました。
-
-```ts
-message =
-  body.error ??
-  body.message ??
-  fallbackMessage;
-```
-
-`body.error`を最初に使い、なければ`body.message`、それもなければHTTPステータスに対応した共通メッセージを使用します。
-
-開発中の実機接続先は`mobile/.env.local`の`EXPO_PUBLIC_API_BASE_URL`へ設定します。
-
-実機の`localhost`はMacではなくスマホ自身を指すため、同じWi-Fi内にあるMacのIPアドレスとバックエンドのポートを指定します。
-
-`mobile/.env.local`は端末ごとの開発設定なのでGitの管理対象外です。Wi-FiやMacのIPアドレスが変わった場合は更新が必要です。本番では公開済みHTTPS APIのURLへ変更します。
-
-2026年8月9日に次を確認しました。
-
-- バックエンドのESLint成功
-- Expoスマホ版のLint成功
-- Expoスマホ版のTypeScript型検査成功
-- トークンなしの`POST /api/users/bootstrap`がHTTP 401を返すことを確認
-
-実際のログイン済みトークンによるNeon登録と画面分岐は、スマホ版を再起動して実機から確認します。
-
-### 使用済み認証コードが繰り返し表示される問題の修正
-
-担当ファイルは`mobile/src/app/sign-in.tsx`です。
-
-画面に表示された`This verification has already been verified.`は、Clerkが「その確認コードはすでに認証処理で使用済み」と返したエラーです。
-
-赤いエラー表示自体が原因ではなく、同じコード確認処理が複数回実行されることと、前回途中で止まった認証状態が残ることが原因でした。
-
-今回、次の3点を修正しました。
+この章の一番重要な流れは次のとおりです。
 
 ```text
-1. 新しい認証を始める前に前回のClerk状態をresetする
-2. 登録済みはsignIn、未登録はsignUpへ分ける
-3. useRefのロックでEnterとボタンによる二重送信を防ぐ
+フロントがClerkトークンを送る
+          ↓
+バックエンドがClerkで本人確認する
+          ↓
+ClerkユーザーIDでNeonの本人データを探す
+          ↓
+本人のデータだけを操作する
 ```
-
-#### 前回の認証状態を消す
-
-```ts
-await signIn.reset();
-await signUp.reset();
-```
-
-`signIn.reset()`は、途中で止まったログイン確認の状態を最初へ戻します。
-
-`signUp.reset()`は、途中で止まった新規登録確認の状態を最初へ戻します。
-
-`await`を付けることで、リセットが完了する前に新しいコード送信を開始しません。
-
-#### 登録済みユーザーかを最初に確認する
-
-```ts
-const createResult = await signIn.create({ identifier: normalizedEmail });
-```
-
-`identifier`には、空白を除いて小文字へ統一したメールアドレスを渡します。
-
-Clerkに登録済みなら、`signIn.emailCode.sendCode()`でログイン用コードを送ります。
-
-未登録を表す`form_identifier_not_found`が返った場合は、`signUp.create()`で新規登録を始めます。
-
-```ts
-const signUpResult = await signUp.create({ emailAddress: normalizedEmail });
-```
-
-このように分ける理由は、新規登録ではメール確認後にユーザーとセッションの両方を作る必要があるためです。
-
-`signIn`から`signUp`へ途中で移動してすぐ`finalize()`すると、セッションが未作成のままになり、`Cannot finalize sign-up without a created session.`が発生する場合があります。
-
-`authMode`には、今回がログインなのか新規登録なのかを保存し、コード確認時に正しいClerk処理を選びます。
-
-#### 二重送信を即座に防ぐ
-
-```ts
-const submissionLock = useRef(false);
-```
-
-`useRef(false)`は、画面の再描画とは別に、現在送信中かを保持します。
-
-```ts
-if (submissionLock.current) return;
-submissionLock.current = true;
-```
-
-`.current`が`true`なら、すでに別の認証処理が動いているため次の処理を開始しません。
-
-Reactの`setIsSubmitting(true)`が画面へ反映されるより先にロックできるため、Enterとログインボタンがほぼ同時に押されても確認コードを2回送りません。
-
-処理が成功または失敗した後は、`finally`で必ずロックを解除します。
-
-```ts
-finally {
-  submissionLock.current = false;
-  setIsSubmitting(false);
-}
-```
-
-`finally`は、`try`が成功した場合も`catch`へ進んだ場合も最後に実行される場所です。
-
-#### コード確認後の流れ
-
-```text
-既存ユーザー
-→ signInでコード確認
-→ signIn.finalize()
-→ Clerkセッション確定
-
-新規ユーザー
-→ signUpでユーザー登録開始
-→ signUpでコード確認
-→ ユーザーとセッション作成を確認
-→ signUp.finalize()
-→ Clerkセッション確定
-```
-
-`finalize()`は、コード確認済みの処理を実際のログインセッションとして有効にします。
-
-2026年8月12日にExpo LintとTypeScript型検査が成功したことを確認しました。
-
-### スマホから開発中のバックエンドへ接続する設定
-
-ここでは、Expoアプリが動くスマホから、Macで起動しているbootstrap APIへ接続できるようにしています。
-
-#### `package.json` の起動命令
-
-```json
-"dev": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext dev --hostname 0.0.0.0"
-```
-
-`vinext dev`は、React／Next.js形式で作ったバックエンドを開発用に起動する命令です。
-
-`--hostname 0.0.0.0`は、Mac自身の`localhost`だけでなく、同じWi-Fi上のスマホからも3000番ポートへ接続できるようにする指定です。
-
-この指定がない場合、スマホが`EXPO_PUBLIC_API_BASE_URL=http://MacのIPアドレス:3000`へアクセスしてもバックエンドまで届きません。
-
-#### `vite.config.ts` のWorker設定
-
-```ts
-dev: {
-  inspector: {
-    hostname: "127.0.0.1",
-  },
-  server: {
-    hostname: "0.0.0.0",
-  },
-},
-```
-
-`server.hostname: "0.0.0.0"`は、Cloudflare Worker側の開発サーバーもLAN接続を受け取れるようにします。
-
-`inspector.hostname: "127.0.0.1"`は、デバッグ専用機能をMac内部だけで使えるように制限します。
-
-つまり、アプリが使うAPIはスマホから接続可能にし、開発者用のデバッグ機能は外へ公開しない構成です。
-
-#### `mobile/.env.local` のAPI接続先
-
-```env
-EXPO_PUBLIC_API_BASE_URL=http://MacのIPアドレス:3000
-```
-
-この値は、ExpoアプリがどのバックエンドへHTTPリクエストを送るかを表します。
-
-Macとスマホは同じWi-Fiへ接続し、MacのIPアドレスが変わった場合はこの値も変更してExpoを再起動します。
-
-#### 接続確認で401が返る理由
-
-認証トークンを付けずにbootstrap APIを確認すると、`401 ログインが必要です`が返ります。
-
-これは接続失敗ではなく、「APIには到達したが、認証情報がないのでDB処理を止めた」という正常な結果です。
-
-### Clerk認証でフロントエンド担当が行うこと
-
-フロントエンド担当は、ユーザーが実際に触るログイン画面と、ログイン状態に応じた画面遷移を作ります。
-
-#### 1. アプリ全体でClerkを利用できるようにする
-
-アプリの一番外側へ`ClerkProvider`を配置し、どの画面からでもログイン状態を参照できるようにします。
-
-ただし、このプロジェクトはVinextを使っているため、最初に小さな画面でClerk SDKが正常に動くか確認してから全体へ広げます。
-
-#### 2. ログイン・新規登録画面を作る
-
-Googleログインとメール認証コードを使えるログイン・新規登録画面を表示します。
-
-Clerkが用意する画面部品を最初に利用し、認証成功後にアプリのデザインへ合わせて見た目を調整します。
-
-パスワードはアプリ側やNeonへ保存しません。
-
-#### 3. 認証状態の読み込み表示を作る
-
-アプリ起動直後はClerkの認証確認が終わるまでローディングを表示します。
-
-確認前にホームや初回設定を一瞬表示しないようにします。
-
-#### 4. ログイン状態で画面を分ける
-
-未ログインの場合はログイン・新規登録画面へ移動します。
-
-ログイン済みの場合はバックエンドのユーザー初期化APIを呼び、`onboardingCompleted`を受け取ります。
-
-`onboardingCompleted`が`false`なら理想体型の設定へ移動します。
-
-`onboardingCompleted`が`true`ならホーム画面へ移動します。
-
-```text
-タイトル画面
-    ↓
-Clerkの認証確認中
-    ↓
-未ログイン → ログイン・新規登録
-    ↓
-ログイン済み → bootstrap API
-    ↓
-初回設定未完了 → 理想体型
-初回設定完了   → ホーム
-```
-
-#### 5. ログアウト操作を作る
-
-マイページなどにログアウトボタンを配置します。
-
-ログアウト後は身体情報や記録を画面上から消し、ログイン画面へ戻します。
-
-#### 6. 認証が必要な画面を保護する
-
-ホーム、理想体型、身体情報、初回分析、トレーニング記録、AIチャット、マイページはログイン済みユーザーだけが表示できるようにします。
-
-URLを直接入力しても、未ログインならログイン画面へ移動させます。
-
-#### 7. API通信時の状態を画面へ表示する
-
-API送信中はボタンの連打を防ぎ、読み込み中の表示を出します。
-
-HTTP 401が返った場合はログイン切れとしてログイン画面へ案内します。
-
-HTTP 400や500が返った場合は、バックエンドから受け取った安全なエラーメッセージを画面へ表示します。
-
-#### 8. フロントエンドが保存しないもの
-
-`CLERK_SECRET_KEY`はフロントエンド、Reactのコード、localStorageへ保存しません。
-
-パスワード、身体写真そのもの、他ユーザーのデータをlocalStorageへ保存しません。
-
-Clerkの秘密鍵とNeonの`DATABASE_URL`はバックエンドの環境変数だけで管理します。
-
-#### フロントエンド担当の作業一覧
-
-- Clerkのログイン・新規登録UI
-- Googleログインボタン
-- メール認証コード入力UI
-- 認証確認中のローディング
-- 未ログイン時のリダイレクト
-- ログイン後の`bootstrap` API呼び出し
-- 初回設定またはホームへの振り分け
-- ログアウトボタン
-- 認証が必要な画面の保護
-- API送信中・認証エラー・通信エラーの表示
-- スマートフォン向けのログイン画面デザイン
 
 ## トレーニング記録：1回分の親テーブル
 
@@ -10843,3 +10670,146 @@ latestMenu.advice[0] ?? latestMenu.reason
 `advice[0]`はアドバイス配列の先頭です。アドバイスが空で先頭が`undefined`の場合は、`??`によってメニューを選んだ理由である`reason`を代わりに使用します。
 
 この`route.ts`はデータを画面へ直接表示するファイルではありません。本人のデータをNeonから集め、フロントが表示しやすいJSONへまとめるバックエンドの受け渡し役です。
+
+## アカウントと全保存データの削除API
+
+対象ファイルは`app/api/users/account/route.ts`です。使用言語はTypeScriptです。
+
+このAPIは、ログイン中の本人が自分のClerkアカウントとNeon内の保存データを削除するための場所です。
+
+### 大きな処理の流れ
+
+```text
+スマホがDELETE /api/users/accountを呼ぶ
+↓
+Clerkトークンからログイン中の本人を確認
+↓
+Clerkのstrict再確認が直近に行われているか確認
+↓
+確認文字がDELETEと完全一致するか確認
+↓
+Neonの本人users行を削除
+↓
+cascadeで本人のプロフィール・記録・分析・AI・チャットを削除
+↓
+Clerkのログインアカウントを削除
+```
+
+`getClerkSessionAuth(request)`は、通常のユーザーIDだけでなく、Clerkの本人再確認状態を含む認証情報を取得します。
+
+```typescript
+auth.has({ reverification: "strict" })
+```
+
+これは、ログインしているだけではなく、重要操作の直前に本人確認が行われたかを確認します。アカウント削除は元に戻せないため、通常のAPIより強い確認を使います。
+
+`input?.confirmation !== "DELETE"`は、利用者が確認文字として`DELETE`を入力したかを確認します。`?.`は`input`が`null`でもエラーにせず、結果を`undefined`として扱う記法です。
+
+Neonでは、次の条件で本人の行だけを削除します。
+
+```typescript
+eq(users.clerkUserId, auth.userId)
+```
+
+フロントからユーザーIDを受け取らないことが重要です。検証済みClerkトークンから得た`auth.userId`だけを使うため、別ユーザーのIDを送って削除することはできません。
+
+Neonを先に削除し、その後Clerkを削除します。Neonの削除に失敗した場合はClerkを残すため、利用者はログインした状態で再試行できます。Neon削除後にClerkだけ失敗した場合は、HTTP 502と`retryable: true`を返します。
+
+ClerkとNeonは別サービスなので、1つのPostgreSQLトランザクションにはできません。そのため、失敗しても再実行できる順番と返却形式で安全性を確保します。
+
+現在、身体写真そのものは長期保存していません。Neonには分析結果だけを保存しているため、現時点では画像ストレージの削除処理は不要です。
+
+## トレーニング記録の編集・削除
+
+対象ファイルは`app/api/training-records/route.ts`です。使用言語はTypeScriptです。
+
+### DELETEの役割
+
+`DELETE()`は、指定された1回分のトレーニング記録を削除します。
+
+```typescript
+and(
+  eq(trainingSessions.id, input.trainingSessionId),
+  eq(trainingSessions.userId, currentUser.id),
+)
+```
+
+記録IDと本人のNeonユーザーIDが両方一致する場合だけ削除します。他人の記録IDを送っても条件が一致しないため削除されません。
+
+`training_sessions`を削除すると、`onDelete: "cascade"`によって、その記録に所属する`training_exercises`と`training_sets`も削除されます。
+
+### PATCHの役割
+
+`PATCH()`は、保存済みのトレーニング記録を新しい内容へ更新します。
+
+POSTとPATCHはどちらも`isValidTrainingRecordInput()`を使います。同じ入力検査を共通利用することで、新規保存では許可されるのに編集では拒否される、といった違いを防ぎます。
+
+種目とセットは部分的に書き換えず、古い種目を削除して編集後の内容を入れ直します。
+
+```text
+training_sessionsの日時・時間・調子・メモを更新
+↓
+古いtraining_exercisesを削除
+↓
+cascadeで古いtraining_setsも削除
+↓
+編集後の種目を保存
+↓
+編集後のセットを保存
+```
+
+`crypto.randomUUID()`は、新しい種目を保存する前に種目IDを作ります。セット側へ同じ`trainingExerciseId`を入れることで、どのセットがどの種目に所属するかを結び付けられます。
+
+`map()`は各種目をNeonへ保存できる行へ変換します。`flatMap()`は種目ごとに分かれたセット配列を、まとめて保存できる1つの配列へします。
+
+`db.batch()`は、親記録の更新・古い種目の削除・新しい種目とセットの保存をまとめてNeonへ送ります。途中で1つが失敗した場合に、一部だけが保存された状態を防ぎます。
+
+## トレーニング履歴の絞り込みとページ分け
+
+`GET /api/training-records`は、ログイン中の本人が過去に保存したトレーニング履歴を取得します。
+
+使用できるURL条件は次のとおりです。
+
+```text
+page     → 何ページ目を取得するか
+limit    → 1ページに何件返すか（最大50件）
+dateFrom → 検索開始日
+dateTo   → 検索終了日
+bodyPart → 胸・背中・肩などの部位
+```
+
+```text
+/api/training-records?page=2&limit=20&dateFrom=2026-08-01&dateTo=2026-08-30&bodyPart=胸
+```
+
+URLから届く値は最初は文字列です。`parsePositiveInteger()`は`page`と`limit`を1以上の整数へ変換し、`parseJapanDate()`は`YYYY-MM-DD`を日本時間0時の`Date`へ変換します。
+
+日付を日本時間へ変換する理由は、時差によって8月1日の記録が7月31日の記録として検索されることを防ぐためです。
+
+`exists()`は、1回分のトレーニングに指定された部位の種目が1件でも存在するかを調べます。種目自体を検索結果にするのではなく、その種目を含む親のトレーニング記録を取得します。
+
+`count(trainingSessions.id)`は、条件に合う1回分のトレーニング記録が全部で何件あるかを数えます。種目数やセット数を数えているわけではありません。
+
+```text
+total      → 条件に合う過去の記録数
+limit      → 1ページの表示件数
+totalPages → total ÷ limitを切り上げた全ページ数
+```
+
+`.limit(limit)`は現在ページで取得する最大件数を指定します。`.offset(offset)`は前ページまでの記録を飛ばします。
+
+返却形式は、以前から存在する`records`を残したまま`pagination`を追加しています。
+
+```json
+{
+  "records": [],
+  "pagination": {
+    "page": 1,
+    "limit": 20,
+    "total": 0,
+    "totalPages": 0
+  }
+}
+```
+
+現在のフロントは`response.records`を読み取るため、そのまま動きます。フロントがページ移動UIを追加したときは、新しい`pagination`を利用できます。
