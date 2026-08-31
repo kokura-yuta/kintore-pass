@@ -1,0 +1,7 @@
+{
+  "terminal.integrated.fontFamily": "Consolas, Menlo, monospace",
+  "terminal.integrated.fontSize": 14,
+  "terminal.integrated.lineHeight": 1,
+  "terminal.integrated.letterSpacing": 0,
+  "terminal.integrated.customGlyphs": true
+}
