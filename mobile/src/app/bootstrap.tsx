@@ -1,9 +1,10 @@
 import { useAuth, useClerk } from '@clerk/expo';
 import { Redirect, useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { ScreenStateCard } from '@/components/ScreenStateCard';
 import { ApiError, isApiBypassEnabled } from '@/lib/api';
 import { fetchBootstrap } from '@/lib/bootstrap';
 import { useOnboarding } from '@/contexts/OnboardingContext';
@@ -134,19 +135,23 @@ export default function BootstrapScreen() {
         <ScrollView style={styles.safeArea} contentContainerStyle={styles.scrollContent}>
         {status === 'loading' ? (
           <View style={styles.centerContent}>
-            <ActivityIndicator size="large" color="#F6D365" />
-            <Text style={styles.description}>ユーザー情報を読み込んでいます…</Text>
+            <ScreenStateCard
+              message="ログイン状態と初回設定の進み具合を確認しています。"
+              title="ユーザー情報を読み込んでいます…"
+              type="loading"
+            />
           </View>
         ) : null}
 
         {status === 'error' ? (
           <View style={styles.centerContent}>
-            <Text style={styles.eyebrow}>CONNECTION ERROR</Text>
-            <Text style={styles.title}>読み込めませんでした</Text>
-            <Text style={styles.description}>{errorMessage}</Text>
-            <Pressable accessibilityRole="button" onPress={retryBootstrap} style={styles.primaryButton}>
-              <Text style={styles.primaryButtonText}>もう一度試す</Text>
-            </Pressable>
+            <ScreenStateCard
+              actionLabel="もう一度試す"
+              message={errorMessage}
+              onAction={retryBootstrap}
+              title="読み込めませんでした"
+              type="error"
+            />
             {canUseDevelopmentBypass ? (
               <>
                 <Pressable
