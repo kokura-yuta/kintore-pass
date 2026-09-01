@@ -17,11 +17,7 @@ import {
 // Neon接続とusersテーブルを使う
 import { getDb } from "@/db";
 import { users } from "@/db/schema";
-
-// フロントから受け取る削除確認データの形
-type DeleteAccountInput = {
-  confirmation?: unknown;
-};
+import { deleteAccountSchema } from "@/app/lib/validation/apiSchemas";
 
 // DELETE通信を受け取り、本人確認と削除確認文字を検査する
 export async function DELETE(
@@ -55,16 +51,14 @@ export async function DELETE(
     }
 
     // JSONが壊れている場合もnullとして安全に扱う
-    const input =
-      (await request
-        .json()
-        .catch(() => null)) as
-        | DeleteAccountInput
-        | null;
+    const parsedInput =
+      deleteAccountSchema.safeParse(
+        await request.json().catch(() => null),
+      );
 
     // 確認文字がDELETEと完全一致しなければ削除しない
     if (
-      input?.confirmation !== "DELETE"
+      !parsedInput.success
     ) {
       return Response.json(
         {

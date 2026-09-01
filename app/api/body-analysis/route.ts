@@ -1,5 +1,8 @@
 // Clerk認証後にPython画像分析APIを呼び、分析結果JSONを受け取るTypeScript API
 import { getClerkUserId } from "@/app/lib/auth/clerk-auth";
+import { bodyAnalysisResultSchema } from "@/app/lib/ai/bodyAnalysisSchema";
+import { createSafetyIdentifier } from "@/app/lib/ai/createSafetyIdentifier";
+import { createRequestFingerprint } from "@/app/lib/idempotency/createRequestFingerprint";
 import {
   and,
   desc,
@@ -9,6 +12,7 @@ import {
 } from "drizzle-orm";
 import { getDb } from "@/db";
 import {
+  aiRequestGuards,
   bodyAnalyses,
   bodyAnalysisAreas,
   userProfiles,
@@ -104,54 +108,6 @@ function getJapanDayRange(now: Date) {
   );
 
   return { start, end };
-}
-
-type BodyAreaResult = {
-  body_part: string;
-  score: number;
-  priority: string;
-  observation: string;
-  recommendation: string;
-};
-
-type BodyAnalysisResult = {
-  summary: string;
-  goal_difference: string;
-  areas: BodyAreaResult[];
-};
-
-// Pythonから返った値が身体分析JSONの基本構造を持つか確認する
-function isBodyAnalysisResult(
-  value: unknown,
-): value is BodyAnalysisResult {
-  if (
-    typeof value !== "object" ||
-    value === null
-  ) {
-    return false;
-  }
-
-  const result =
-    value as Partial<BodyAnalysisResult>;
-
-  return (
-    typeof result.summary === "string" &&
-    typeof result.goal_difference ===
-      "string" &&
-    Array.isArray(result.areas) &&
-    result.areas.every(
-      (area) =>
-        typeof area.body_part === "string" &&
-        typeof area.score === "number" &&
-        Number.isInteger(area.score) &&
-        area.score >= 1 &&
-        area.score <= 10 &&
-        typeof area.priority === "string" &&
-        typeof area.observation === "string" &&
-        typeof area.recommendation ===
-          "string",
-    )
-  );
 }
 
 // GET通信を受け取り、ログイン中の本人の身体分析履歴を新しい順で返す
@@ -272,6 +228,9 @@ export async function GET(request: Request) {
 
 // POST通信を受け取り、認証後にPythonの仮分析APIを呼ぶ
 export async function POST(request: Request) {
+  // 失敗時に二重送信の受付記録を削除できるようIDを保持する
+  let requestGuardId: string | null = null;
+
   try {
     const clerkUserId =
       await getClerkUserId(request);
@@ -282,7 +241,11 @@ export async function POST(request: Request) {
         { status: 401 },
       );
     }
-
+        // Python経由でOpenAIへ渡す匿名IDを作る
+    const safetyIdentifier =
+      await createSafetyIdentifier(
+        clerkUserId,
+      );
     // ログイン中のClerkユーザーに対応するNeonのusers.idを取得する
     const db = getDb();
 
@@ -467,8 +430,57 @@ export async function POST(request: Request) {
       );
     }
 
+    // 本人と日本の日付から、1日につき1つだけの分析受付UUIDを作る
+    const requestId =
+      await createRequestFingerprint(
+        JSON.stringify({
+          userId: user.id,
+          japanDate:
+            start.toISOString(),
+          requestType: "body-analysis",
+        }),
+      );
+
+    // 同じ日の同じ分析要求は最初の1件だけ受け付ける
+    const insertedGuards = await db
+      .insert(aiRequestGuards)
+      .values({
+        userId: user.id,
+        requestType: "body-analysis",
+        requestId,
+      })
+      .onConflictDoNothing({
+        target: [
+          aiRequestGuards.userId,
+          aiRequestGuards.requestType,
+          aiRequestGuards.requestId,
+        ],
+      })
+      .returning({
+        id: aiRequestGuards.id,
+      });
+
+    requestGuardId =
+      insertedGuards[0]?.id ?? null;
+
+    if (!requestGuardId) {
+      return Response.json(
+        {
+          error:
+            "同じ身体分析を処理中または分析済みです。",
+          requestId,
+        },
+        { status: 409 },
+      );
+    }
+
     // Pythonへ渡す画像データを作る
     const pythonFormData = new FormData();
+
+    pythonFormData.append(
+      "safety_identifier",
+      safetyIdentifier,
+    );
 
     pythonFormData.append(
       "front_image",
@@ -570,68 +582,91 @@ export async function POST(request: Request) {
       );
     }
 
-    const analysisResult = pythonResponseBody;
+    // Pythonの返却JSONをZodで再検査し、壊れた結果を保存しない
+    const parsedAnalysisResult =
+      bodyAnalysisResultSchema.safeParse(
+        pythonResponseBody,
+      );
 
-    // PythonのJSON形式が不正ならNeon保存やフロント返却を行わない
-    if (!isBodyAnalysisResult(analysisResult)) {
+    if (!parsedAnalysisResult.success) {
       throw new Error(
         "Python画像分析APIの返却形式が不正です。",
       );
     }
 
-    // Pythonの分析全体を本人のbody_analysesへ保存する
-    const createdAnalyses = await db
+    const analysisResult =
+      parsedAnalysisResult.data;
+
+    // 分析本体と全部位を保存前に結び付けるUUIDを作る
+    const bodyAnalysisId =
+      crypto.randomUUID();
+    const analyzedAt = new Date();
+
+    const areaRows =
+      analysisResult.areas.map((area) => ({
+        id: crypto.randomUUID(),
+        analysisId: bodyAnalysisId,
+        bodyPart: area.body_part.trim(),
+        score: area.score,
+        priority: area.priority.trim(),
+        observation:
+          area.observation.trim(),
+        recommendation:
+          area.recommendation.trim(),
+      }));
+
+    const insertAnalysis = db
       .insert(bodyAnalyses)
       .values({
+        id: bodyAnalysisId,
         userId: user.id,
         status: "completed",
         summary: analysisResult.summary.trim(),
         goalDifference:
           analysisResult.goal_difference.trim(),
-        analyzedAt: new Date(),
-      })
-      .returning({
-        id: bodyAnalyses.id,
+        analyzedAt,
       });
 
-    const analysis =
-      createdAnalyses[0] ?? null;
-
-    if (!analysis) {
-      throw new Error(
-        "身体分析全体を保存できませんでした。",
-      );
-    }
-
-    // 肩・胸などの部位別結果を親の身体分析へ結び付けてまとめて保存する
-    if (analysisResult.areas.length > 0) {
-      await db
-        .insert(bodyAnalysisAreas)
-        .values(
-          analysisResult.areas.map(
-            (area) => ({
-              analysisId: analysis.id,
-              bodyPart: area.body_part.trim(),
-              score: area.score,
-              priority: area.priority.trim(),
-              observation:
-                area.observation.trim(),
-              recommendation:
-                area.recommendation.trim(),
-            }),
-          ),
-        );
+    // 本体と部位別結果を1つのトランザクションで保存する
+    if (areaRows.length > 0) {
+      await db.batch([
+        insertAnalysis,
+        db.insert(bodyAnalysisAreas).values(
+          areaRows,
+        ),
+      ]);
+    } else {
+      await db.batch([insertAnalysis]);
     }
 
     // 保存した分析IDと検品済みの結果をフロントエンドへ返す
     return Response.json(
       {
-        bodyAnalysisId: analysis.id,
+        bodyAnalysisId,
         analysis: analysisResult,
       },
       { status: 201 },
     );
   } catch (error) {
+    // Python処理やNeon保存が失敗した場合は、同じ分析を再試行できるようにする
+    if (requestGuardId) {
+      try {
+        await getDb()
+          .delete(aiRequestGuards)
+          .where(
+            eq(
+              aiRequestGuards.id,
+              requestGuardId,
+            ),
+          );
+      } catch (cleanupError) {
+        console.error(
+          "身体分析の二重送信管理を解除できませんでした。",
+          cleanupError,
+        );
+      }
+    }
+
     if (
       error instanceof
       PythonAnalysisTimeoutError

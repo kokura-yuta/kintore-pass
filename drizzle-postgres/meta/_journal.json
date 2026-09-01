@@ -50,6 +50,20 @@
       "when": 1787886240379,
       "tag": "0006_many_namora",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1788142588280,
+      "tag": "0007_repair_missing_ai_body_chat_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1788154345032,
+      "tag": "0008_add_data_consistency_constraints",
+      "breakpoints": true
     }
   ]
 }

@@ -8646,6 +8646,502 @@ Neon
 
 AIメニューはNeonへ保存するため、画面を切り替えたりアプリを再起動したりしても、ログイン中の本人の最新メニューを再取得できます。
 
+## AIメニュー履歴：一覧・詳細・削除・実施済み保存
+
+### 何をする機能か
+
+この機能は、本人が過去に生成したAIメニューを後から確認・削除し、実際に行ったメニューをトレーニング記録と結び付けます。
+
+最新の1件だけを返す`GET /api/ai-menu`とは役割が違います。
+
+```text
+GET /api/ai-menu
+→ ホームやAIメニュー画面で最新の1件を表示する
+
+GET /api/ai-menu/history
+→ 過去のメニューを複数件、ページ単位で表示する
+```
+
+### 使用言語と担当ファイル
+
+使用言語はTypeScriptです。
+
+| ファイル | 役割 |
+| --- | --- |
+| `db/schema.ts` | 実施日時とトレーニング記録IDを保存する列を定義する |
+| `app/api/ai-menu/history/route.ts` | 一覧・詳細・削除・実施状態更新を行う |
+
+Pythonは身体画像の分析に使いますが、この機能はNeonの文字・数値データを扱うためTypeScriptで実装します。
+
+### 処理の全体像
+
+```text
+フロントがClerkトークンを付けて通信する
+                  ↓
+バックエンドがClerkで本人確認する
+                  ↓
+Clerk IDからNeonの本人を探す
+                  ↓
+GET    → 本人の一覧または詳細を返す
+DELETE → 本人のメニューだけを削除する
+PATCH  → 本人の記録と結び付けて実施済みにする
+```
+
+## AIメニューの実施状態を保存する列
+
+対象ファイルは`db/schema.ts`です。
+
+```ts
+trainingSessionId: uuid(
+  "training_session_id",
+)
+  .unique()
+  .references(
+    () => trainingSessions.id,
+    {
+      onDelete: "set null",
+    },
+  ),
+```
+
+`trainingSessionId`は、このAIメニューを使って保存したトレーニング記録のIDです。
+
+`uuid("training_session_id")`は、NeonへUUID形式の記録IDを保存します。
+
+`.unique()`は、同じトレーニング記録を複数のAIメニューへ結び付けられないようにします。
+
+`.references(() => trainingSessions.id)`は、実在するトレーニング記録IDだけを許可します。
+
+`onDelete: "set null"`は、トレーニング記録が削除された場合にAIメニューまで削除せず、結び付きだけを`null`へ戻します。
+
+```ts
+performedAt: timestamp(
+  "performed_at",
+  {
+    withTimezone: true,
+  },
+),
+```
+
+`performedAt`は、そのAIメニューを実際に行った日時です。
+
+`.notNull()`がないため、まだ実施していないメニューでは`null`にできます。
+
+`performedAt !== null`なら実施済み、`performedAt === null`なら未実施と判断できます。
+
+## AIメニュー履歴のGET
+
+対象ファイルは`app/api/ai-menu/history/route.ts`です。
+
+同じ`GET()`で一覧と詳細の2種類を扱います。
+
+```text
+/api/ai-menu/history?page=1&limit=20
+→ 一覧取得
+
+/api/ai-menu/history?menuId=UUID
+→ 1件の詳細取得
+```
+
+### URLの値を取得する
+
+```ts
+const requestUrl = new URL(
+  request.url,
+);
+
+const menuId =
+  requestUrl.searchParams.get(
+    "menuId",
+  );
+```
+
+`new URL(request.url)`は、届いたURLを検索しやすいURLオブジェクトへ変えます。
+
+`searchParams.get("menuId")`は、URLの`?menuId=...`から値を取得します。
+
+指定がなければ`menuId`は`null`になります。
+
+### 一覧をページ単位で取得する
+
+`page`は現在のページ番号、`limit`は1ページに表示する最大件数です。
+
+```ts
+const offset =
+  (page - 1) * limit;
+```
+
+`offset`は、先頭から何件飛ばすかを表します。
+
+1ページ目なら0件、2ページ目で1ページ20件なら20件飛ばします。
+
+```ts
+.orderBy(
+  desc(aiGeneratedMenus.createdAt),
+  desc(aiGeneratedMenus.id),
+)
+.limit(limit)
+.offset(offset)
+```
+
+`desc(createdAt)`は、新しい作成日時から古い順へ並べます。
+
+同じ日時のデータは`desc(id)`を第2条件にして、ページ間の並びを安定させます。
+
+`.limit(limit)`は現在ページで取得する最大件数です。
+
+`.offset(offset)`は前ページまでの件数を飛ばします。
+
+```ts
+const totalPages =
+  total === 0
+    ? 0
+    : Math.ceil(total / limit);
+```
+
+`total`は本人が保存しているAIメニューの総件数です。
+
+`Math.ceil()`は小数点以下を切り上げ、必要な全ページ数を計算します。
+
+`条件 ? A : B`は三項演算子で、条件が成立すればA、成立しなければBを使います。
+
+### 詳細では種目も取得する
+
+詳細取得では、先に本人のAIメニュー本体を検索します。
+
+```ts
+.where(
+  and(
+    eq(aiGeneratedMenus.id, menuId),
+    eq(users.clerkUserId, clerkUserId),
+  ),
+)
+```
+
+`and()`は、メニューIDと本人のClerk IDの両方を必須条件にします。
+
+本人のメニューだと確認できた後、そのメニューIDに所属する種目を取得します。
+
+他人のメニューと存在しないメニューには同じHTTP 404を返します。
+
+これにより、他人のメニューが存在することを外部から推測されにくくします。
+
+## AIメニュー履歴のDELETE
+
+`DELETE()`は、指定された本人のAIメニューを削除します。
+
+```ts
+const deletedMenus = await db
+  .delete(aiGeneratedMenus)
+  .where(
+    eq(
+      aiGeneratedMenus.id,
+      matchedMenu.id,
+    ),
+  )
+  .returning({
+    id: aiGeneratedMenus.id,
+  });
+```
+
+`.delete(aiGeneratedMenus)`は、AIメニュー本体を削除する命令です。
+
+`matchedMenu.id`は、直前の検索で本人の所有物だと確認できたIDです。
+
+`.returning()`は、実際に削除されたメニューIDを返します。
+
+メニュー本体を削除すると、種目テーブルの`onDelete: "cascade"`により所属種目も一緒に削除されます。
+
+AIメニューを削除しても、実際に行ったトレーニング記録は削除しません。
+
+## AIメニューを実施済みにするPATCH
+
+フロントから次のJSONを受け取ります。
+
+```json
+{
+  "menuId": "AIメニューのUUID",
+  "trainingSessionId": "トレーニング記録のUUID"
+}
+```
+
+`menuId`は実施したAIメニューを表します。
+
+`trainingSessionId`は、そのメニューを使って保存した実際のトレーニング記録を表します。
+
+### `unknown`で受け取る理由
+
+```ts
+type MarkAiMenuPerformedInput = {
+  menuId?: unknown;
+  trainingSessionId?: unknown;
+};
+```
+
+フロントから届く値は、文字列とは限らないため最初は`unknown`として扱います。
+
+`isValidUuid()`でUUID形式を確認した後だけDB検索へ使います。
+
+### 両方が本人のデータか確認する
+
+AIメニューだけでなく、結び付けるトレーニング記録も本人の所有物か確認します。
+
+```text
+AIメニューID + 本人のusers.id
+→ 両方一致するメニューを検索
+
+トレーニング記録ID + 本人のusers.id
+→ 両方一致する記録を検索
+```
+
+片方でも他人のデータならHTTP 404で処理を終了します。
+
+### 二重送信を安全に扱う
+
+同じメニューと同じ記録がすでに結び付いている場合は、エラーにせず成功済みの結果を返します。
+
+同じメニューを別の記録へ上書きする操作はHTTP 409で拒否します。
+
+同じ記録を別のAIメニューへ結び付ける操作もHTTP 409で拒否します。
+
+`409`は、現在のデータ状態と更新内容が競合していることを表します。
+
+### 実施日時と記録IDを更新する
+
+```ts
+const updatedMenus = await db
+  .update(aiGeneratedMenus)
+  .set({
+    trainingSessionId:
+      trainingSession.id,
+    performedAt: new Date(),
+  })
+  .where(
+    and(
+      eq(aiGeneratedMenus.id, menu.id),
+      eq(aiGeneratedMenus.userId, user.id),
+      isNull(
+        aiGeneratedMenus.trainingSessionId,
+      ),
+    ),
+  )
+  .returning();
+```
+
+`.update(aiGeneratedMenus)`は、保存済みAIメニューを更新します。
+
+`.set()`は、更新後に保存する値を指定します。
+
+`new Date()`は、実施済みにした現在日時を作ります。
+
+`isNull(trainingSessionId)`は、まだトレーニング記録と結び付いていないメニューだけを更新します。
+
+本人IDも更新条件へ入れるため、別ユーザーのメニューは更新できません。
+
+### AIメニュー履歴で覚える単語
+
+| 単語・文法 | 意味 |
+| --- | --- |
+| ページネーション | 大量の履歴を複数ページへ分ける仕組み |
+| `offset` | 検索結果の先頭から飛ばす件数 |
+| `Math.ceil()` | 小数点以下を切り上げる |
+| `.returning()` | 保存・更新・削除後の行を返してもらう |
+| `isNull()` | DB列が`null`の行へ絞る |
+| `db.batch()` | 複数のDB命令を1回のまとまりで送る |
+| idempotent | 同じ通信を複数回送っても結果が壊れない性質 |
+| HTTP 409 | すでに別状態になっているデータとの競合 |
+| `cascade` | 親を削除したとき所属する子も削除する |
+| `set null` | 参照先削除時に結び付きだけを`null`へ戻す |
+
+この機能で重要なのは、URLやJSONで送られたIDだけを信用しないことです。
+
+必ずClerkで本人確認し、AIメニューとトレーニング記録の両方へ本人の`users.id`条件を付けてから操作します。
+
+## 同じAIメニューが続きすぎない調整
+
+### 何をする機能か
+
+AIが毎回ほぼ同じ部位・種目・順番を返すことを減らすため、本人が直近に生成した3件のAIメニューを比較材料としてOpenAIへ渡します。
+
+ただし、変化を作ることだけが目的ではありません。
+
+ベンチプレスなど成長の確認に必要な基本種目は残し、補助種目・順番・回数帯などを必要に応じて調整します。
+
+```text
+Neonから本人の直近3メニューを取得する
+                 ↓
+各メニューに含まれる種目を取得する
+                 ↓
+recentAiMenusとしてAI用データへ追加する
+                 ↓
+OpenAIが今日の状態と過去メニューを比較する
+                 ↓
+継続性を残しながら完全な繰り返しを減らす
+```
+
+### 関係するファイル
+
+| ファイル | 役割 |
+| --- | --- |
+| `app/lib/ai/getUserAiContext.ts` | Neonから直近3メニューと種目を取得する |
+| `app/api/ai-menu/route.ts` | 取得結果をOpenAIへ送るデータへ入れる |
+| `app/lib/ai/menuPrompt.ts` | どのように重複を避けるかAIへ指示する |
+
+### AI用データの型
+
+```ts
+recentAiMenus: {
+  id: string;
+  recommendedBodyPart: string;
+  reason: string;
+  createdAt: Date;
+
+  exercises: {
+    exerciseName: string;
+    bodyPart: string;
+    bodyArea: string | null;
+  }[];
+}[];
+```
+
+`recentAiMenus`は、最近生成したメニューを複数持つ配列です。
+
+`recommendedBodyPart`は、そのメニューでおすすめされた大きな部位です。
+
+`reason`は、その部位と構成をAIが選んだ理由です。
+
+`createdAt`は、メニューを生成した日時です。
+
+`exercises`は、各メニューに含まれる種目一覧です。
+
+外側の`[]`はメニューが複数あることを表し、内側の`exercises`の`[]`は1メニューに種目が複数あることを表します。
+
+### Neonから直近3件を取得する
+
+```ts
+const recentMenus = await db
+  .select({
+    id: aiGeneratedMenus.id,
+    recommendedBodyPart:
+      aiGeneratedMenus.recommendedBodyPart,
+    reason: aiGeneratedMenus.reason,
+    createdAt: aiGeneratedMenus.createdAt,
+  })
+  .from(aiGeneratedMenus)
+  .where(
+    eq(
+      aiGeneratedMenus.userId,
+      user.userId,
+    ),
+  )
+  .orderBy(
+    desc(aiGeneratedMenus.createdAt),
+    desc(aiGeneratedMenus.id),
+  )
+  .limit(3);
+```
+
+`.select({...})`は、比較に必要な項目だけをNeonから取得します。
+
+`.where(eq(...))`は、ログイン中の本人に対応する`users.id`のメニューだけへ絞ります。
+
+`desc(createdAt)`は、新しい生成日時から古い順へ並べます。
+
+`desc(id)`は、生成日時が同じ場合でも並び順を安定させます。
+
+`.limit(3)`は、取得件数を直近3件へ制限します。
+
+3件に制限する理由は、比較に必要な情報を確保しながらOpenAIへ送る文字数と料金を増やしすぎないためです。
+
+### 各メニューへ種目を追加する
+
+```ts
+const recentAiMenus =
+  await Promise.all(
+    recentMenus.map(
+      async (menu) => {
+        const exercises = await db
+          .select({
+            exerciseName:
+              aiGeneratedMenuExercises.exerciseName,
+            bodyPart:
+              aiGeneratedMenuExercises.bodyPart,
+            bodyArea:
+              aiGeneratedMenuExercises.bodyArea,
+          })
+          .from(aiGeneratedMenuExercises)
+          .where(
+            eq(
+              aiGeneratedMenuExercises.menuId,
+              menu.id,
+            ),
+          );
+
+        return {
+          ...menu,
+          exercises,
+        };
+      },
+    ),
+  );
+```
+
+`.map()`は、取得した3件のメニューを1件ずつ処理します。
+
+各メニューの`id`と同じ`menuId`を持つ種目だけを取得します。
+
+`return { ...menu, exercises }`は、元のメニュー情報へ種目一覧を追加した新しいオブジェクトを返します。
+
+`Promise.all()`は、複数メニューの種目取得がすべて完了するまで待ちます。
+
+### OpenAIへ渡す場所
+
+対象ファイルは`app/api/ai-menu/route.ts`です。
+
+```ts
+const aiInput = {
+  goalBodyType:
+    aiContext.goalBodyType,
+  profile:
+    aiContext.profile,
+  latestBodyAnalysis:
+    aiContext.latestBodyAnalysis,
+  recentTrainingSessions:
+    aiContext.recentTrainingSessions,
+  recentAiMenus:
+    aiContext.recentAiMenus,
+  todayCondition,
+};
+```
+
+`getUserAiContext()`で集めた`recentAiMenus`を、他の本人情報と同じ`aiInput`へ入れます。
+
+この`aiInput`がJSON文字列へ変換され、OpenAIへ送られます。
+
+直近メニューがまだない新規ユーザーでは、`recentAiMenus`は空配列`[]`になります。
+
+### プロンプトでの判断ルール
+
+`menuPrompt.ts`では、完全に同じ部位・種目・順番が続きすぎないよう指示します。
+
+同時に、基本種目を変化だけのために毎回外さないよう指示します。
+
+同じ部位を続ける合理的な理由がある場合は、補助種目・順番・回数帯の一部を調整するか、同じ構成が必要な理由を回答へ含めます。
+
+つまり「必ず違うメニューにする」のではなく、「過去を見たうえで継続か変化かを判断する」仕組みです。
+
+### この機能で覚える単語
+
+| 文法・単語 | 意味 |
+| --- | --- |
+| `recent` | 最近の、直近の |
+| `context` | AIの判断材料としてまとめた周辺情報 |
+| `.limit(3)` | DB取得を最大3件へ制限する |
+| `.map()` | 配列の各要素を処理して新しい配列を作る |
+| `Promise.all()` | 複数の非同期処理がすべて終わるまで待つ |
+| `...menu` | メニューの既存項目を新しいオブジェクトへ展開する |
+| 空配列`[]` | 対象データが0件であることを表す配列 |
+
 ## このアプリでNeonを使う理由
 
 ### Neon・PostgreSQL・Drizzleの関係
@@ -10025,7 +10521,7 @@ ai_request_guardsへ追加を試す
 
 マイグレーション`0005_add_ai_request_guards.sql`は、既存テーブルを再作成せず、新しいテーブル・外部キー・2つの索引だけを作る内容に確認・修正済みです。`drizzle-kit check`、バックエンドESLint、スマホTypeScript検査は成功しています。
 
-Neonへの反映確認時に、Neonプロジェクトのデータ転送量上限超過による`HTTP 402`が返りました。そのため、コードとマイグレーションは完成していますが、実際のNeonへの適用と二重送信の実通信テストは上限回復後に行います。
+元のNeonプロジェクトはデータ転送量上限超過による`HTTP 402`が返るため、本番とは分離した`musclepas-development`を作成しました。空の開発用DBへ`0000`〜`0008`を適用し、`ai_request_guards`の同じ受付IDが二重保存されないことを実際に確認済みです。
 
 ### OpenAI通信のタイムアウトと再試行
 
@@ -10576,10 +11072,10 @@ npm run db:generate
 
 npx drizzle-kit migrate
 → SQLをNeonへ実行して実テーブルを作る
-→ Neonの上限回復後に実行
+→ 本番とは分離したNeon開発用DBへ実行
 ```
 
-現時点ではNeonの実データベースは変更されていません。
+元の本番DBは変更していません。新しく作成したNeon開発用DBには、`weight_records`を含むマイグレーション`0000`〜`0008`が反映されています。
 
 ## ホーム画面用API（GET /api/home）
 
@@ -10813,3 +11309,730 @@ totalPages → total ÷ limitを切り上げた全ページ数
 ```
 
 現在のフロントは`response.records`を読み取るため、そのまま動きます。フロントがページ移動UIを追加したときは、新しい`pagination`を利用できます。
+
+## トレーニング新規保存を安全な一括処理へ変更
+
+対象ファイルは`app/api/training-records/route.ts`です。使用言語はTypeScriptです。
+
+### 何を変更したのか
+
+フロントから受け取るJSON、フロントへ返すJSON、3つのテーブル構成は変更していません。
+
+変更したのは、`training_sessions`・`training_exercises`・`training_sets`をNeonへ送る方法です。
+
+以前は親記録を保存してから種目を1件ずつ保存していたため、途中で失敗すると親記録だけが残る可能性がありました。
+
+現在は3テーブル分の保存命令を`db.batch()`へ入れ、1つのトランザクションとして実行します。
+
+```text
+フロントから記録JSONを受け取る
+↓
+入力内容を検査する
+↓
+記録・種目・セットのIDと保存データを準備する
+↓
+3テーブルへのINSERTをdb.batch()でまとめて実行する
+↓
+成功した記録IDをフロントへ返す
+```
+
+### コードを一文ずつ理解する
+
+```typescript
+const trainingSessionId =
+  crypto.randomUUID();
+```
+
+`const`は、後から別の値へ入れ替えない変数を定義します。
+
+`crypto.randomUUID()`は、1回分のトレーニング記録を識別する重複しにくいUUIDを作ります。
+
+```typescript
+const exercisesWithIds =
+  input.exercises.map((exercise) => ({
+    id: crypto.randomUUID(),
+    exercise,
+  }));
+```
+
+`input.exercises`は、フロントから受け取った種目の配列です。
+
+`.map()`は、配列の各要素を別の形へ変換して新しい配列を作ります。
+
+`exercise`は、現在処理している1種目を受け取る仮の変数名です。
+
+`id: crypto.randomUUID()`は、現在の種目に保存前からUUIDを付けます。
+
+`exercise,`は`exercise: exercise`の省略形で、元の種目情報も同じオブジェクトへ入れます。
+
+先に種目IDを作る理由は、セット側の`trainingExerciseId`へ同じIDを入れ、種目とセットの親子関係を保存前に準備するためです。
+
+```typescript
+const exerciseRows = exercisesWithIds.map(
+  ({ id, exercise }) => ({
+    id,
+    sessionId: trainingSessionId,
+    exerciseId: exercise.exerciseId.trim(),
+    exerciseName: exercise.exerciseName.trim(),
+    bodyPart: exercise.bodyPart.trim(),
+    bodyArea: exercise.bodyArea?.trim() || null,
+    displayOrder: exercise.displayOrder,
+  }),
+);
+```
+
+`exerciseRows`は、全種目を`training_exercises`へINSERTできる形にした配列です。
+
+`({ id, exercise })`は、オブジェクトから`id`と`exercise`を取り出す分割代入です。
+
+`sessionId: trainingSessionId`は、全種目を今回の親トレーニング記録へ結び付けます。
+
+`.trim()`は、文字列の前後にある不要な空白を取り除きます。
+
+`exercise.bodyArea?.trim()`の`?.`は、`bodyArea`が存在するときだけ`trim()`を実行します。
+
+`|| null`は、結果が空文字などの場合にDBへ`null`を保存します。
+
+```typescript
+const setRows = exercisesWithIds.flatMap(
+  ({ id, exercise }) =>
+    exercise.sets.map((set) => ({
+      id: crypto.randomUUID(),
+      trainingExerciseId: id,
+      setNumber: set.setNumber,
+      weightKg: set.weightKg ?? null,
+      reps: set.reps ?? null,
+    })),
+);
+```
+
+`setRows`は、全種目に含まれる全セットを`training_sets`へINSERTできる形にした配列です。
+
+`.flatMap()`は、種目ごとに分かれているセット配列を1つの平らな配列へまとめます。
+
+内側の`.map()`は、現在の種目に含まれる各セットをDB保存用の形へ変換します。
+
+`trainingExerciseId: id`は、そのセットを現在の親種目へ結び付けます。
+
+`set.weightKg ?? null`の`??`は、重量が`undefined`または`null`のときだけ`null`を使います。
+
+重量が`0`なら`??`は`0`をそのまま残すため、`||`より数値入力に向いています。
+
+```typescript
+await db.batch([
+  db.insert(trainingSessions).values({ ... }),
+  db.insert(trainingExercises).values(exerciseRows),
+  db.insert(trainingSets).values(setRows),
+]);
+```
+
+`db.insert(テーブル)`は、どのテーブルへ新しい行を追加するか指定します。
+
+`.values(...)`は、そのテーブルへ保存する値を指定します。
+
+`db.batch([ ... ])`は、3つのINSERTを1つのまとまりとしてNeonへ送ります。
+
+このプロジェクトの`neon-http`では、`db.batch()`が内部でPostgreSQLのトランザクションとして実行されます。
+
+トランザクションは、3つすべて成功した場合だけ確定し、途中の1つが失敗した場合は全体を取り消す仕組みです。
+
+`await`は、Neonの保存結果が決まるまで次の処理へ進まずに待ちます。
+
+```typescript
+trainingSessionId,
+```
+
+保存成功後は、最初に作った親記録のUUIDをフロントへ返します。
+
+### 今回変わっていないもの
+
+- フロントから送るトレーニング記録JSON
+- 成功時に返す`message`と`trainingSessionId`
+- `training_sessions`・`training_exercises`・`training_sets`の役割
+- 本人認証と入力チェック
+
+コード上の一括保存は完了しています。Neonの利用上限が回復した後に、意図的に途中失敗させて3テーブルすべてがロールバックされる実通信テストを行います。
+
+## 身体分析保存・二重送信・DBルールの強化
+
+今回の主な対象は次のファイルです。
+
+- `app/api/body-analysis/route.ts`：身体分析の受付・Python通信・Neon保存
+- `app/api/training-records/route.ts`：トレーニング記録の受付・Neon保存
+- `app/lib/idempotency/createRequestFingerprint.ts`：重複判定用UUIDの作成
+- `db/schema.ts`：PostgreSQLのテーブル・インデックス・制約
+- `drizzle-postgres/0007_repair_missing_ai_body_chat_tables.sql`：不足テーブルを補うSQL
+- `drizzle-postgres/0008_add_data_consistency_constraints.sql`：検索と入力ルールを追加するSQL
+
+使用言語は、APIとスキーマがTypeScript、マイグレーションがSQLです。
+
+### 身体分析をまとめて保存する理由
+
+以前は`body_analyses`へ分析本体を保存した後、`body_analysis_areas`へ部位別結果を保存していました。
+
+この順番では2回目だけが失敗すると、部位別結果のない分析本体が残る可能性がありました。
+
+現在は保存前に親IDを作り、全データを次の順番で準備します。
+
+```text
+Pythonから検品済みの分析JSONを受け取る
+↓
+bodyAnalysisIdを作る
+↓
+肩・胸・背中などへ同じbodyAnalysisIdを付ける
+↓
+db.batch()へ分析本体と全部位のINSERTを入れる
+↓
+全部成功した場合だけNeonへ確定する
+```
+
+```typescript
+const bodyAnalysisId =
+  crypto.randomUUID();
+```
+
+`crypto.randomUUID()`は、まだNeonへ保存していない分析本体のIDを先に作ります。
+
+```typescript
+const areaRows =
+  analysisResult.areas.map((area) => ({
+    id: crypto.randomUUID(),
+    analysisId: bodyAnalysisId,
+    bodyPart: area.body_part.trim(),
+  }));
+```
+
+`.map()`は、Pythonが返した各部位をNeonへ保存できる行へ変換します。
+
+`analysisId: bodyAnalysisId`は、全部位を今回の分析本体へ結び付けます。
+
+```typescript
+await db.batch([
+  insertAnalysis,
+  db.insert(bodyAnalysisAreas).values(areaRows),
+]);
+```
+
+`db.batch()`は、分析本体と全部位の保存命令を1つのトランザクションとして実行します。
+
+片方が失敗した場合は全体が取り消されるため、親データだけが残る状態を防ぎます。
+
+### 二重送信対策の基本
+
+二重送信とは、ボタンの連打や通信の再送によって同じ処理がほぼ同時に2回届くことです。
+
+対象ファイル`createRequestFingerprint.ts`の役割は、同じ内容から毎回同じUUIDを作ることです。
+
+```typescript
+await crypto.subtle.digest(
+  "SHA-256",
+  new TextEncoder().encode(value),
+);
+```
+
+`TextEncoder()`は、JavaScriptの文字列をコンピューターが計算できるバイト列へ変換します。
+
+`crypto.subtle.digest("SHA-256", ...)`は、入力内容から固定長のハッシュを作ります。
+
+ハッシュは元の身体情報や記録内容をそのままDBへ保存せず、同じ内容かどうかを比較するために使います。
+
+作ったハッシュの先頭16バイトをPostgreSQLの`uuid`形式へ直し、`ai_request_guards.request_id`へ保存します。
+
+同じユーザー・同じ処理・同じUUIDには一意制約があるため、1件目だけが登録され、2件目はHTTP 409になります。
+
+### トレーニング記録の重複判定
+
+トレーニング記録では、本人ID・実施日時・時間・調子・メモ・全種目・全セットからUUIDを作ります。
+
+内容が同じでも実施日時が違えば別の記録として保存できます。
+
+保存途中で失敗した場合は受付記録を削除するため、同じ内容をもう一度送れます。
+
+### 身体分析の重複判定と1日1回
+
+身体分析では、本人IDと日本時間の日付からUUIDを作ります。
+
+同じ日の2回の通信は画像が違っても同じUUIDになるため、同時送信された場合も最初の1件だけが分析を開始します。
+
+翌日は日付が変わるため、新しいUUIDになり再び分析できます。
+
+### インデックスとは
+
+インデックスは、テーブル全体を先頭から調べなくても目的の行を探しやすくするDBの索引です。
+
+今回追加した主な索引は次のとおりです。
+
+```text
+training_sessions(user_id, performed_at)
+→ 本人の履歴を日付順で探す
+
+training_exercises(session_id, display_order)
+→ 1回分の種目を表示順で探す
+
+body_analyses(user_id, status, analyzed_at)
+→ 本人の完了済み分析や今日の分析を探す
+
+body_analysis_areas(analysis_id)
+→ 1回の分析に所属する全部位を探す
+```
+
+### DB制約とは
+
+DB制約は、APIの入力チェックとは別にPostgreSQL自身がデータを検査する最後の安全網です。
+
+今回追加した主なルールは次のとおりです。
+
+```text
+トレーニング時間：1〜600分または未入力
+調子：1〜10または未入力
+種目表示順：0〜29
+セット番号：1〜20
+重量：0〜1000kgまたは未入力
+回数：0〜1000回または未入力
+身体分析点数：1〜10または未入力
+```
+
+`training_sets`では、同じ種目に同じセット番号を2件保存できない一意インデックスも追加しました。
+
+### 0007と0008の違い
+
+`0007`は、過去のスナップショットには記録されていたものの、作成SQLが不足していた身体分析・AIメニュー・チャットの6テーブルを補います。
+
+`CREATE TABLE IF NOT EXISTS`は、テーブルがなければ作り、すでにあれば重複作成しません。
+
+`ADD COLUMN IF NOT EXISTS`も、列が存在しない場合だけ追加します。
+
+`0008`は、今回追加したインデックス・一意制約・数値範囲のチェック制約を追加します。
+
+順番を分けることで、最初に必要なテーブルをそろえ、その後に検索と安全ルールを追加できます。
+
+全13テーブルに作成SQLがあることと、`npx drizzle-kit check`が成功することまでは確認済みです。
+
+Neonコネクタには引数名の不整合があったため、公式Neon CLIを使って検証を続けました。元の本番DBとは別に`musclepas-development`を作成し、空のDBへ`0000`〜`0008`を最初から適用できることを確認済みです。元の本番DBへの差分適用だけは、転送量上限が回復してから確認します。
+
+## Neon開発用プロジェクトでのマイグレーション実証
+
+### 何をしたのか
+
+元の`musclepas`は転送量上限で接続できないため、同じシンガポールリージョン・PostgreSQL 18で`musclepas-development`を作成しました。
+
+これは本番データを直す作業ではありません。空の別DBを使い、現在のマイグレーションだけでアプリに必要なDBを最初から再現できるか確認する作業です。
+
+### 接続先を一時的に変えた理由
+
+マイグレーション実行中だけ、環境変数`DATABASE_URL`へ開発用DBの接続先を渡しました。
+
+```text
+開発用DBの接続先をコマンド実行中だけ取得
+↓
+DATABASE_URLとしてDrizzle Kitへ渡す
+↓
+drizzle.config.tsがその接続先を読む
+↓
+0000〜0008を開発用DBへ適用
+```
+
+`.env.local`を書き換えていないため、元の本番用接続設定を誤って上書きしていません。また、接続文字列とパスワードはターミナル出力やGitへ保存していません。
+
+### なぜ適用数が9本なのか
+
+ファイル名が`0000`から`0008`まであるためです。
+
+```text
+0000, 0001, 0002, 0003, 0004, 0005, 0006, 0007, 0008
+```
+
+番号は8までですが、0から数えるので合計は9本です。
+
+### 確認できた内容
+
+- アプリ用の13テーブルが作成された
+- Drizzleの適用履歴テーブル`drizzle.__drizzle_migrations`が作成された
+- 入力範囲を守る9個の`CHECK`制約が作成された
+- 検索と重複防止に使う主要7インデックスが作成された
+- 同じAIリクエストIDの二重保存が拒否された
+- 同じ種目へ同じセット番号を二重保存すると拒否された
+
+二重保存テストは`BEGIN`から`ROLLBACK`までの中で行いました。
+
+```text
+BEGIN
+↓
+テストデータを保存
+↓
+同じデータをもう一度保存して、DBが拒否することを確認
+↓
+ROLLBACK
+```
+
+`ROLLBACK`は、そのテスト中の変更を確定せず全部取り消す命令です。最後にテスト用ユーザーが0件であることも確認したため、検証用データはDBに残っていません。
+
+## JSON入力検査とAI安全対策
+
+### 今回の大枠
+
+フロントから届くJSONやAIから返るJSONを、そのまま信用せず、決めた形式・数値範囲・文字数に合うか確認してから使うようにしました。
+
+```text
+フロントのJSON
+↓
+Zodで形式と上限を検査
+↓ 成功したデータだけ
+route.tsがNeonやOpenAIを操作
+```
+
+不正な入力はNeonへ保存せず、HTTP 400を返します。
+
+### `apiSchemas.ts`は何をするファイルか
+
+対象ファイルは`app/lib/validation/apiSchemas.ts`です。
+
+このファイルは、各JSON APIで共通利用する「入力データの設計図」です。
+
+```typescript
+export const chatRequestSchema = z.object({
+  conversationId: uuidSchema.nullable().optional(),
+  message: z.string().trim().min(1).max(2000),
+  requestId: uuidSchema,
+});
+```
+
+一文ずつ見ると次の意味です。
+
+- `z.object({...})`：JSON全体がオブジェクトであることを確認する
+- `conversationId`：既存チャットを続ける場合のIDで、未入力または`null`も許可する
+- `uuidSchema`：PostgreSQLで使うUUID形式か確認する
+- `message`：前後の空白を除き、1〜2000文字だけ許可する
+- `requestId`：二重送信を区別する必須UUIDとして確認する
+
+`safeParse()`は、検査に失敗してもプログラム全体を止めず、成功・失敗を結果として返します。
+
+```typescript
+const parsedBody = chatRequestSchema.safeParse(body);
+```
+
+`parsedBody.success`が`true`なら、`parsedBody.data`には検査済みデータが入っています。
+
+### トレーニング記録の上限
+
+現在は次の共通ルールです。
+
+```text
+1回の種目数：1〜30件
+1種目のセット数：1〜20件
+メモ：1000文字まで
+種目名・種目ID：100文字まで
+部位・細分部位：50文字まで
+時間：1〜600分
+調子：1〜10
+重量：0〜1000kg
+回数：0〜1000回
+```
+
+新規保存の`POST`と編集の`PATCH`が同じ`trainingRecordSchema`を使うため、保存時と編集時で判定がずれません。
+
+トレーニング日時と体重記録日は未来を許可しません。トレーニング日時だけは端末時計の小さなずれを考え、5分以内の差を許可しています。
+
+### ZodとPydanticの違い
+
+ZodはTypeScript側の検査、PydanticはPython側の検査を担当します。
+
+```text
+PythonのOpenAI回答
+↓ Pydanticで検査
+PythonからTypeScriptへJSONを返す
+↓ Zodでもう一度検査
+正しい分析結果だけNeonへ保存
+```
+
+Python側で正しくても通信途中や将来の変更で形が変わる可能性があるため、受け取るTypeScript側でも再確認します。
+
+身体分析では、部位点数1〜10、優先度`high`・`medium`・`low`、文章の最大文字数、部位数1〜20件を検査します。
+
+### `config.ts`は何をするファイルか
+
+対象ファイルは`app/lib/ai/config.ts`です。
+
+OpenAIのモデル名や利用上限を、AI処理へ直接書かず環境変数から読み込む場所です。
+
+```text
+OPENAI_CHAT_MODEL：AIチャットのモデル
+OPENAI_MENU_MODEL：AIメニューのモデル
+OPENAI_CHAT_MAX_TOOL_CALLS：1回答で使えるToolの最大回数
+OPENAI_CHAT_MAX_OUTPUT_TOKENS：OpenAIが生成できる最大トークン数
+OPENAI_MENU_MAX_OUTPUT_TOKENS：メニュー生成の最大トークン数
+AI_CHAT_MAX_ANSWER_CHARACTERS：保存・表示する回答の最大文字数
+```
+
+モデル名を環境変数へ移す理由は、コードを書き換えず開発環境と公開環境のモデルを変更できるようにするためです。
+
+`max_output_tokens`はOpenAIが生成に使える上限です。さらに`limitChatAnswer()`で完成した回答文字数も制限し、長すぎる文章をNeonへ保存しません。
+
+チャットのToolは`parallel_tool_calls: false`により1回ずつ実行し、`for`文の回数を`OPENAI_CHAT_MAX_TOOL_CALLS`で制限します。初期値は3回、設定可能な最大値は5回です。
+
+### 医療・痛みに関する安全ルール
+
+AIチャット、AIメニュー、Python身体分析へ同じ考え方を追加しました。
+
+- 病名を断定しない
+- 治療や薬を指示しない
+- 一般的なトレーニング情報として回答する
+- 鋭い痛み、胸の痛み、強いしびれ、息苦しさ、めまいがあれば運動を中止する
+- 緊急性が疑われる場合は救急相談・救急要請を案内する
+- 痛みを確かめるために運動を続けさせない
+
+これはAIの文章を医療診断として使わせず、危険な状態で運動を続ける提案を防ぐためです。
+
+### テストファイル
+
+対象ファイルは`tests/api-safety.test.mjs`です。
+
+次の内容を自動確認します。
+
+- 正しいトレーニング記録を受け付ける
+- 種目30件・セット20件の上限を超えた入力を拒否する
+- 不正入力用レスポンスがHTTP 400になる
+- 不正な日付・長すぎる質問・苦手部位の過剰入力を拒否する
+- Python分析結果の点数と優先度を検査する
+- AIプロンプトに診断禁止・しびれ・運動中止・薬のルールが存在する
+
+単体テストだけを実行するコマンドは次です。
+
+```bash
+npm run test:unit
+```
+
+## OpenAIへ渡す匿名ID（safety_identifier）
+
+### 何のために使うのか
+
+ClerkのユーザーIDをそのままOpenAIへ送らず、SHA-256で作った匿名IDを`safety_identifier`として送ります。
+
+同じ利用者からは毎回同じ匿名IDが作られますが、匿名IDから元のClerk IDを簡単に読み取ることはできません。
+
+```text
+ClerkユーザーID
+↓ createSafetyIdentifier.tsでハッシュ化
+匿名UUID
+↓
+AIチャット・AIメニュー・身体分析
+↓ safety_identifierとして送信
+OpenAI
+```
+
+### `createSafetyIdentifier.ts`の役割
+
+対象ファイルは`app/lib/ai/createSafetyIdentifier.ts`です。
+
+```typescript
+import { createRequestFingerprint } from "@/app/lib/idempotency/createRequestFingerprint";
+```
+
+すでに作成済みのSHA-256ハッシュ化機能を読み込みます。
+
+```typescript
+export async function createSafetyIdentifier(
+  clerkUserId: string,
+) {
+```
+
+他のファイルから呼べる非同期関数を定義し、Clerk IDを文字列として受け取ります。
+
+`async`が必要な理由は、内部の`crypto.subtle.digest()`が計算完了を待つ非同期処理だからです。
+
+```typescript
+return createRequestFingerprint(
+  `openai-safety:${clerkUserId}`,
+);
+```
+
+`openai-safety:`をClerk IDの前へ付けてからハッシュ化し、別の目的で使うハッシュと区別します。
+
+`return`は完成した匿名UUIDを呼び出し元へ返します。
+
+### TypeScriptで匿名IDを作る部分
+
+チャット・AIメニュー・身体分析の各APIで、本人確認後に次のコードを実行します。
+
+```typescript
+const safetyIdentifier =
+  await createSafetyIdentifier(
+    clerkUserId,
+  );
+```
+
+- `const safetyIdentifier`：作った匿名IDを後から使える変数へ保存する
+- `await`：匿名IDの計算が終わるまで待つ
+- `clerkUserId`：Clerkで確認済みの本人IDを関数へ渡す
+
+AIチャットとAIメニューは、OpenAI通信へ直接追加します。
+
+```typescript
+safety_identifier:
+  safetyIdentifier,
+```
+
+左側の`safety_identifier`はOpenAI APIが決めた項目名です。
+
+右側の`safetyIdentifier`はTypeScriptで作った匿名IDが入っている変数名です。
+
+### 身体分析でPythonへ渡す部分
+
+身体分析はTypeScriptからPythonを経由するため、最初に`FormData`へ追加します。
+
+```typescript
+pythonFormData.append(
+  "safety_identifier",
+  safetyIdentifier,
+);
+```
+
+- `pythonFormData`：画像や身体情報をPythonへ送る箱
+- `.append()`：その箱へ新しい項目を追加する
+- `"safety_identifier"`：Python側が受け取る項目名
+- `safetyIdentifier`：TypeScriptで作った匿名ID
+
+### Pythonで匿名IDを受け取る部分
+
+対象ファイルは`python-analysis/app/main.py`です。
+
+```python
+safety_identifier: str = Form(
+    ...,
+    min_length=1,
+    max_length=64,
+),
+```
+
+一行ずつの意味は次のとおりです。
+
+- `safety_identifier`：TypeScriptから届いた匿名IDを保存するPython変数
+- `: str`：この値を文字列として扱う型指定
+- `Form(...)`：通常のJSONではなく、画像と一緒に送られたフォームデータから受け取る
+- `...`：必須入力であり、届かなければFastAPIが拒否する
+- `min_length=1`：空文字を拒否する
+- `max_length=64`：OpenAIへ渡す識別子が長くなりすぎないよう制限する
+
+### PythonからOpenAIへ渡す部分
+
+```python
+safety_identifier=safety_identifier,
+```
+
+同じ名前が左右にあるため、役割を分けて考えます。
+
+```text
+左側：OpenAI APIが決めた入力項目名
+右側：PythonがTypeScriptから受け取った変数
+```
+
+つまり「OpenAIの`safety_identifier`欄へ、Python変数の`safety_identifier`を入れる」という意味です。
+
+これでAIチャット・AIメニュー・Python身体分析の3機能が、Clerk IDそのものをOpenAIへ送らない同じ方式になりました。
+
+## AIチャットのModeration検査
+
+### 何のために使うのか
+
+利用者の質問をAIチャットへ送る前に、重大な危険内容が含まれていないかOpenAI Moderation APIで検査します。
+
+```text
+利用者の質問
+↓ Zodで文字数・形式を検査
+Moderation APIで危険カテゴリを検査
+↓ safe
+Neonへ保存してAIチャットへ送る
+↓ self_harm_support
+緊急時の相談案内を返す
+↓ blocked
+OpenAIチャットへ送らずHTTP 400を返す
+```
+
+先にModerationを実行するため、遮断した質問はチャット履歴へ保存されません。
+
+### `checkModeration.ts`の役割
+
+対象ファイルは`app/lib/ai/checkModeration.ts`です。
+
+```typescript
+const response =
+  await openai.moderations.create({
+    model: moderationModel,
+    input,
+  });
+```
+
+一文ずつの意味は次のとおりです。
+
+- `await`：Moderation APIの判定が返るまで待つ
+- `openai.moderations.create()`：文章の危険カテゴリを検査するOpenAI APIを呼ぶ
+- `model`：Moderation専用モデルを指定する
+- `input`：利用者が入力した質問文を渡す
+
+```typescript
+const result = response.results[0];
+```
+
+OpenAIから配列で返った判定結果の1件目を取得します。
+
+結果が存在しない場合は、安全か危険か判断できないためエラーにして通常のAIチャットへ進ませません。
+
+### なぜ`flagged`だけを使わないのか
+
+筋トレでは「胸を追い込む」「限界まで上げる」など、通常のトレーニング表現にも暴力に似た単語が含まれます。
+
+そのため`flagged`が`true`という理由だけで全部を遮断せず、カテゴリ別に処理を決めます。
+
+現在の重大な遮断対象は次です。
+
+- 未成年者を含む性的内容
+- 暴力を伴う違法行為の手順
+- 暴力を伴う差別的脅迫
+- 深刻な脅迫
+- 生々しい暴力表現
+
+自傷の意思・手順が疑われる場合は、通常の拒否文ではなく、身近な人・地域の緊急窓口・差し迫った危険時の119を案内します。
+
+### `moderationDecision.ts`と`decideModeration()`の役割
+
+通信を担当する`checkModeration.ts`から、判定だけを`moderationDecision.ts`へ分けています。
+
+分ける理由は、OpenAI APIキーや通信を使わずに判定ルールだけを単体テストできるようにするためです。
+
+```typescript
+export function decideModeration(
+  categories: ModerationCategories,
+): ModerationDecision {
+```
+
+- `export`：テストや他のファイルから使用できるようにする
+- `function`：カテゴリからアプリの処理を決める関数を定義する
+- `categories`：OpenAIが返したカテゴリ別の真偽値
+- `: ModerationDecision`：戻り値を`safe`・`self_harm_support`・`blocked`の3種類へ限定する
+
+`findFlaggedCategories()`は、検査対象として決めたカテゴリの中から`true`になった項目だけを取り出します。
+
+### `chat/route.ts`での使用場所
+
+Zodで質問の形式を確認した直後、Neonから利用回数を取得したり質問を保存したりする前に実行します。
+
+```typescript
+const moderationDecision =
+  await checkModeration(message);
+```
+
+- `message`：Zod検査を通過した利用者の質問
+- `await checkModeration(message)`：質問の安全判定が完了するまで待つ
+- `moderationDecision`：3種類のどの処理へ進むかを保存する変数
+
+`safe`ならこれまでどおりAIチャットへ進みます。
+
+`self_harm_support`または`blocked`ならHTTP 400を返し、それより下のNeon保存とOpenAI回答生成は実行しません。
+
+### Moderationのテスト
+
+`tests/api-safety.test.mjs`では、同じ判定関数へテスト用カテゴリを渡し、次を確認します。
+
+- 全カテゴリが`false`なら`safe`
+- `self-harm/intent`が`true`なら`self_harm_support`
+- `illicit/violent`が`true`なら`blocked`

@@ -3,6 +3,7 @@
 import {
   APIConnectionTimeoutError,
 } from "openai";
+import { createSafetyIdentifier } from "@/app/lib/ai/createSafetyIdentifier";
 import { zodTextFormat } from "openai/helpers/zod";
 import {
   and,
@@ -21,6 +22,10 @@ import { getUserAiContext } from "@/app/lib/ai/getUserAiContext";
 // 今日のメニューを作るためのAI専用指示書を読み込む
 import { menuPrompt } from "@/app/lib/ai/menuPrompt";
 import { openai } from "@/app/lib/ai/openAiClient";
+import {
+  maxMenuOutputTokens,
+  openAiMenuModel,
+} from "@/app/lib/ai/config";
 // フロント入力とOpenAI出力のデータ形式を検証する設計図を読み込む
 import {
   aiMenuRequestSchema,
@@ -216,7 +221,11 @@ export async function POST(
         },
       );
     }
-
+        // Clerk IDからOpenAIへ渡す匿名IDを作る
+    const safetyIdentifier =
+      await createSafetyIdentifier(
+        clerkUserId,
+      );
     // フロントから届いた今日の調子と補足メモをJSONとして受け取る
     const requestBody = await request
       .json()
@@ -412,6 +421,8 @@ export async function POST(
         aiContext.latestBodyAnalysis,
       recentTrainingSessions:
         aiContext.recentTrainingSessions,
+      recentAiMenus:
+        aiContext.recentAiMenus,
       todayCondition:
         todayCondition,
     };
@@ -419,7 +430,7 @@ export async function POST(
     // 共通指示・本人情報・出力形式をOpenAIへ送り今日のメニューを生成する
     const aiResponse =
       await openai.responses.parse({
-        model: "gpt-5.6-luna",
+        model: openAiMenuModel,
         instructions: menuPrompt,
         input: `# 利用者データ
 
@@ -430,6 +441,10 @@ ${JSON.stringify(aiInput, null, 2)}`,
             "training_menu",
           ),
         },
+        max_output_tokens:
+          maxMenuOutputTokens,
+        safety_identifier:
+          safetyIdentifier,
       });
 
     // 決めた形式として検証済みのOpenAI生成結果を取り出す

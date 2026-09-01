@@ -6,14 +6,7 @@ import { eq } from "drizzle-orm";
 import { getClerkUserId } from "@/app/lib/auth/clerk-auth";
 import { getDb } from "@/db";
 import { users } from "@/db/schema";
-
-// DBへの保存を許可する理想体型だけをまとめた一覧
-const allowedGoalBodyTypes = [
-  "細マッチョ",
-  "逆三角形",
-  "フィジーク",
-  "バルクアップ",
-];
+import { goalInputSchema } from "@/app/lib/validation/apiSchemas";
 
 // GET通信を受け取り、ログイン中の本人が設定した理想体型を取得する
 export async function GET(
@@ -115,17 +108,11 @@ export async function PATCH(request: Request) {
     }
 
     // フロントエンドから送られたJSONを読み、壊れていればnullにする
-    const body = await request
-      .json()
-      .catch(() => null);
+    const parsedBody = goalInputSchema.safeParse(
+      await request.json().catch(() => null),
+    );
 
-    const goalBodyType = body?.goalBodyType;
-
-    // 文字列かつ許可された4種類でなければHTTP 400を返す
-    if (
-      typeof goalBodyType !== "string" ||
-      !allowedGoalBodyTypes.includes(goalBodyType)
-    ) {
+    if (!parsedBody.success) {
       return Response.json(
         {
           error:
@@ -134,6 +121,8 @@ export async function PATCH(request: Request) {
         { status: 400 },
       );
     }
+
+    const { goalBodyType } = parsedBody.data;
 
     // Neon PostgreSQLを操作する共通のDB接続を取得する
     const db = getDb();
