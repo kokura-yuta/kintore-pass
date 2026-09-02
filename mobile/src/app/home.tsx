@@ -1,6 +1,6 @@
 import { useAuth } from '@clerk/expo';
 import { type Href, Redirect, useRouter } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -68,12 +68,24 @@ export default function HomeScreen() {
   const { getToken, isLoaded, isSignedIn } = useAuth({ treatPendingAsSignedOut: false });
   const { goalBody, profile } = useOnboarding();
   const { setDraft, setLatestGeneratedMenu, setTodayBodyPart, todayBodyPart } = useTrainingDraft();
+  // Clerkの最新のトークン取得関数を、再描画しない入れ物へ保存する
+  const getTokenRef = useRef(getToken);
+  // 同じホーム表示中の自動取得を1回に制限する
+  const hasAutomaticallyLoadedRef = useRef(false);
+  // ホームAPIの通信中に二重呼び出しされるのを防ぐ
+  const isLoadingHomeRef = useRef(false);
   const [homeData, setHomeData] = useState<HomeResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
 
+  // Clerk側でgetTokenが更新されたらrefの中身だけを最新にする
+  useEffect(() => {
+    getTokenRef.current = getToken;
+  }, [getToken]);
+
   const loadHome = useCallback(async () => {
-    if (!isLoaded || !isSignedIn) return;
+    if (!isLoaded || !isSignedIn || isLoadingHomeRef.current) return;
+    isLoadingHomeRef.current = true;
     setIsLoading(true);
     setError('');
 
@@ -82,7 +94,7 @@ export default function HomeScreen() {
       if (isApiBypassEnabled) {
         response = createDevelopmentHomeResponse();
       } else {
-        const token = await getToken();
+        const token = await getTokenRef.current();
         if (!token) throw new ApiError('ログインを確認できませんでした。', 401);
         response = await fetchHome(token);
       }
@@ -98,17 +110,23 @@ export default function HomeScreen() {
       setHomeData(null);
       setError(loadError instanceof Error ? loadError.message : 'ホーム情報を読み込めませんでした。');
     } finally {
+      isLoadingHomeRef.current = false;
       setIsLoading(false);
     }
-  }, [getToken, isLoaded, isSignedIn, setLatestGeneratedMenu]);
+  }, [isLoaded, isSignedIn, setLatestGeneratedMenu]);
 
   useEffect(() => {
-    const timeoutId = setTimeout(() => {
-      void loadHome();
-    }, 0);
+    if (!isLoaded) return;
 
-    return () => clearTimeout(timeoutId);
-  }, [loadHome]);
+    if (!isSignedIn) {
+      hasAutomaticallyLoadedRef.current = false;
+      return;
+    }
+
+    if (hasAutomaticallyLoadedRef.current) return;
+    hasAutomaticallyLoadedRef.current = true;
+    void loadHome();
+  }, [isLoaded, isSignedIn, loadHome]);
 
   const displayedMenu: GeneratedMenuPreview | null = homeData?.menu ? toGeneratedMenuPreview(homeData.menu) : null;
   const conditionScore = homeData?.condition?.score ?? homeData?.menu?.conditionScore ?? null;

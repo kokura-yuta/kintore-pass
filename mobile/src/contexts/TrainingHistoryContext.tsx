@@ -1,5 +1,5 @@
 import { useAuth } from '@clerk/expo';
-import { createContext, type PropsWithChildren, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, type PropsWithChildren, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 
 import { exerciseCatalog } from '@/lib/exerciseCatalog';
 import { getTrainingRecords } from '@/lib/trainingRecords';
@@ -37,17 +37,29 @@ const TrainingHistoryContext = createContext<TrainingHistoryContextValue | null>
 
 export function TrainingHistoryProvider({ children }: PropsWithChildren) {
   const { getToken, isLoaded, isSignedIn } = useAuth();
+  // ClerkのgetTokenが更新されても履歴取得関数を作り直さず、APIの無限呼び出しを防ぐ
+  const getTokenRef = useRef(getToken);
+  // 同じログイン中に自動取得を1回だけ実行するための印
+  const hasAutomaticallyLoadedRef = useRef(false);
+  // 通信中に同じAPIが重ねて呼ばれるのを防ぐための印
+  const isReloadingRef = useRef(false);
   const [records, setRecords] = useState<SavedTrainingRecord[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
-  const reloadRecords = useCallback(async () => {
-    if (!isLoaded || !isSignedIn) return;
+  // 常に最新のClerkトークン取得関数をrefへ保存する
+  useEffect(() => {
+    getTokenRef.current = getToken;
+  }, [getToken]);
 
+  const reloadRecords = useCallback(async () => {
+    if (!isLoaded || !isSignedIn || isReloadingRef.current) return;
+
+    isReloadingRef.current = true;
     setIsLoading(true);
     setErrorMessage('');
     try {
-      const token = await getToken();
+      const token = await getTokenRef.current();
       if (!token) throw new Error('ログインを確認できませんでした。');
       const response = await getTrainingRecords(token);
       const mappedRecords = response.records
@@ -74,17 +86,23 @@ export function TrainingHistoryProvider({ children }: PropsWithChildren) {
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : '履歴の取得に失敗しました。');
     } finally {
+      isReloadingRef.current = false;
       setIsLoading(false);
     }
-  }, [getToken, isLoaded, isSignedIn]);
+  }, [isLoaded, isSignedIn]);
 
   useEffect(() => {
     if (!isLoaded) return;
-    const timeoutId = setTimeout(() => {
-      if (isSignedIn) void reloadRecords();
-      else setRecords([]);
-    }, 0);
-    return () => clearTimeout(timeoutId);
+
+    if (!isSignedIn) {
+      hasAutomaticallyLoadedRef.current = false;
+      setRecords([]);
+      return;
+    }
+
+    if (hasAutomaticallyLoadedRef.current) return;
+    hasAutomaticallyLoadedRef.current = true;
+    void reloadRecords();
   }, [isLoaded, isSignedIn, reloadRecords]);
 
   const value = useMemo(() => ({

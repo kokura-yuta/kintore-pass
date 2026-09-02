@@ -11667,6 +11667,133 @@ ROLLBACK
 
 `ROLLBACK`は、そのテスト中の変更を確定せず全部取り消す命令です。最後にテスト用ユーザーが0件であることも確認したため、検証用データはDBに残っていません。
 
+## トレーニング履歴APIの無限再取得を防ぐ
+
+対象ファイルは`mobile/src/contexts/TrainingHistoryContext.tsx`です。使用言語はTypeScriptとReactです。
+
+### 発生していた流れ
+
+```text
+useEffectがreloadRecordsを実行
+↓
+GET /api/training-recordsを呼ぶ
+↓
+取得結果をStateへ保存して再描画
+↓
+認証状態や取得関数の再評価でuseEffectが再実行される
+↓
+取得済みの判定がないため、またAPIを呼ぶ
+```
+
+この循環により、画面を操作していなくてもNeon検索が繰り返されていました。通信量・サーバー負荷・Neon利用上限を増やす原因になるため修正しました。
+
+```typescript
+const getTokenRef = useRef(getToken);
+```
+
+- `useRef()`：再描画されても同じ入れ物を維持するReactの機能
+- `getTokenRef`：Clerkの最新`getToken`関数を保存する入れ物
+- `.current`：`useRef`の中に現在保存されている値
+
+```typescript
+useEffect(() => {
+  getTokenRef.current = getToken;
+}, [getToken]);
+```
+
+`getToken`が更新されたときだけ、refの中身を最新の関数へ入れ替えます。refの中身を変えても画面の再描画は発生しません。
+
+```typescript
+const token = await getTokenRef.current();
+```
+
+履歴取得時には、refへ保存された最新のClerk関数を呼び、認証トークンを取得します。
+
+```typescript
+}, [isLoaded, isSignedIn]);
+```
+
+`reloadRecords`を作り直す条件から`getToken`を外しました。Clerkの読込状態またはログイン状態が変わった場合だけ関数を作り直すため、State更新後の無限再取得を防げます。
+
+ただし、これだけでは開発中の再評価を完全に防げなかったため、次の2つの印を追加しました。
+
+```typescript
+const hasAutomaticallyLoadedRef = useRef(false);
+const isReloadingRef = useRef(false);
+```
+
+- `hasAutomaticallyLoadedRef`：同じログイン中に自動取得を已に行ったかを覚える
+- `isReloadingRef`：現在API通信中かを覚える
+
+```typescript
+if (!isLoaded || !isSignedIn || isReloadingRef.current) return;
+```
+
+Clerkの確認前、未ログイン、または履歴の取得中なら、新しいAPI通信を始めません。
+
+```typescript
+if (hasAutomaticallyLoadedRef.current) return;
+hasAutomaticallyLoadedRef.current = true;
+void reloadRecords();
+```
+
+1行目は、自動取得済みならそこで終了します。2行目はAPIを呼ぶ前に「取得済み」の印を付けます。3行目で実際に履歴APIを呼びます。
+
+`void`は、`reloadRecords()`が返すPromiseの完了をこの行で待たずに処理を開始する、という意図をTypeScriptへ伝えます。
+
+ログアウトしたときは`hasAutomaticallyLoadedRef.current = false`へ戻すため、次にログインした利用者の履歴は新しく取得されます。カレンダーの「もう一度読み込む」ボタンからの手動取得もそのまま利用できます。
+
+### 修正後の実通信確認
+
+```text
+GET /api/training-records → HTTP 200、1回で停止
+GET /api/home → HTTP 200、開発モードの2回で停止
+GET /api/ai-menu → HTTP 200、1回で停止
+10秒間監視 → 追加の連続通信なし
+```
+
+開発中のReactは、問題を見つけるために初回処理を2回確認することがあります。2回で止まるのは無限通信ではありません。
+
+これにより、画面を放置してもNeonへの検索が連続しないことを確認しました。
+
+### ホームとAIコーチでも同じ対策が必要な理由
+
+対象ファイルは次の2つです。
+
+- `mobile/src/app/home.tsx`：目標体型と今日のAIメニューを取得する
+- `mobile/src/app/ai-coach.tsx`：Neonに保存済みの最新AIメニューを取得する
+
+どちらも、`useEffect()`からClerkの`getToken()`を使うAPI取得を行っています。`getToken`の更新を契機に処理が繰り返されないよう、次の役割を分けました。
+
+```text
+getTokenRef
+→ 常に最新のClerk関数を使う
+
+hasAutomaticallyLoadedRef / hasLoadedSavedMenuRef
+→ 同じ画面の自動取得を1回に制限する
+
+isLoadingHomeRef
+→ ホームAPIの通信中に、次の通信を重ねない
+```
+
+AIメニューの「再生成」は利用者がボタンを押した場合の別処理です。自動取得を1回に制限しても、ボタンによるメニュー生成は使えます。
+
+### Safariの重複タブに注意する
+
+`npm run web -- --port 8081`を繰り返すと、Safariに新しいlocalhostタブが追加されることがあります。
+
+```text
+localhostの古いタブが複数残る
+↓
+タブごとにReactアプリが動く
+↓
+各タブが同じAPIを呼ぶ
+↓
+コードが正しくても、ログに複数回の通信が表示される
+```
+
+再テストではlocalhostの古いタブを閉じ、1タブだけで確認します。今回はSafariのlocalhostタブを1つに整理してから、上記の通信回数を確認しました。
+
 ## JSON入力検査とAI安全対策
 
 ### 今回の大枠
