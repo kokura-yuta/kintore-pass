@@ -23,13 +23,14 @@ export function BottomNavigation() {
           return (
             <Pressable
               accessibilityRole="tab"
+              accessibilityLabel={item.label}
               accessibilityState={{ selected: active }}
               key={item.href}
               onPress={() => router.replace(item.href as Href)}
               style={styles.item}
             >
               <Text style={[styles.icon, active && styles.active]}>{item.icon}</Text>
-              <Text numberOfLines={1} style={[styles.label, active && styles.active]}>
+              <Text style={[styles.label, active && styles.active]}>
                 {item.label}
               </Text>
             </Pressable>
@@ -46,9 +47,9 @@ const styles = StyleSheet.create({
     borderTopColor: '#2C2924',
     backgroundColor: '#111111',
   },
-  navigation: { height: 64, flexDirection: 'row', alignItems: 'stretch' },
-  item: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 4 },
+  navigation: { minHeight: 64, flexDirection: 'row', alignItems: 'stretch' },
+  item: { flex: 1, minWidth: 0, paddingHorizontal: 3, paddingVertical: 8, alignItems: 'center', justifyContent: 'center', gap: 4 },
   icon: { color: '#737B75', fontSize: 19, fontWeight: '600' },
-  label: { color: '#737B75', fontSize: 9, fontWeight: '600' },
+  label: { maxWidth: '100%', textAlign: 'center', color: '#737B75', fontSize: 9, fontWeight: '600' },
   active: { color: '#FFF1B8' },
 });

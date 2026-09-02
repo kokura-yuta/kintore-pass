@@ -279,6 +279,9 @@ export default function SignInScreen() {
             {step === 'email' ? (
               <>
                 <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Appleで続ける"
+                  accessibilityState={{ disabled: !isReady || isSubmitting, busy: socialProvider === 'apple' }}
                   disabled={!isReady || isSubmitting}
                   onPress={() => signInWithSocial('apple')}
                   style={[styles.socialButton, styles.appleButton, (!isReady || isSubmitting) && styles.disabledButton]}
@@ -286,6 +289,9 @@ export default function SignInScreen() {
                   {socialProvider === 'apple' ? <ActivityIndicator color="#0A0A0A" /> : <Text style={styles.appleButtonText}>Appleで続ける</Text>}
                 </Pressable>
                 <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Googleで続ける"
+                  accessibilityState={{ disabled: !isReady || isSubmitting, busy: socialProvider === 'google' }}
                   disabled={!isReady || isSubmitting}
                   onPress={() => signInWithSocial('google')}
                   style={[styles.socialButton, styles.googleButton, (!isReady || isSubmitting) && styles.disabledButton]}
@@ -301,6 +307,8 @@ export default function SignInScreen() {
             ) : null}
             {step === 'email' ? (
               <TextInput
+                accessibilityLabel="メールアドレス"
+                autoCorrect={false}
                 autoCapitalize="none"
                 autoComplete="email"
                 editable={!isSubmitting}
@@ -316,6 +324,7 @@ export default function SignInScreen() {
               />
             ) : (
               <TextInput
+                accessibilityLabel="6桁の認証コード"
                 autoComplete="one-time-code"
                 editable={!isSubmitting}
                 inputMode="numeric"
@@ -331,7 +340,7 @@ export default function SignInScreen() {
               />
             )}
 
-            {errorMessage ? <Text style={styles.error}>{errorMessage}</Text> : null}
+            {errorMessage ? <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.error}>{errorMessage}</Text> : null}
 
             {Platform.OS === 'web' ? (
               <View
@@ -342,6 +351,9 @@ export default function SignInScreen() {
             ) : null}
 
             <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={step === 'email' ? '認証コードを送る' : 'ログインする'}
+              accessibilityState={{ disabled: !isReady || isSubmitting, busy: isSubmitting }}
               disabled={!isReady || isSubmitting}
               onPress={step === 'email' ? sendCode : verifyCode}
               style={({ pressed }) => [
@@ -362,6 +374,8 @@ export default function SignInScreen() {
             {step === 'code' ? (
               <View style={styles.codeActions}>
                 <Pressable
+                  accessibilityRole="button"
+                  accessibilityState={{ disabled: isSubmitting || resendWaitSeconds > 0 }}
                   disabled={isSubmitting || resendWaitSeconds > 0}
                   onPress={resendCode}
                   style={styles.textButton}
@@ -370,7 +384,7 @@ export default function SignInScreen() {
                     {resendWaitSeconds > 0 ? `認証コードを再送（${resendWaitSeconds}秒）` : '認証コードを再送'}
                   </Text>
                 </Pressable>
-                <Pressable disabled={isSubmitting} onPress={changeEmail} style={styles.textButton}>
+                <Pressable accessibilityRole="button" accessibilityState={{ disabled: isSubmitting }} disabled={isSubmitting} onPress={changeEmail} style={styles.textButton}>
                   <Text style={styles.textButtonLabel}>メールアドレスを変更</Text>
                 </Pressable>
               </View>
@@ -404,11 +418,11 @@ const styles = StyleSheet.create({
     color: '#F4F6F3',
     fontSize: 16,
   },
-  socialButton: { minHeight: 52, alignItems: 'center', justifyContent: 'center', marginBottom: 10, borderRadius: 14 },
+  socialButton: { minHeight: 52, paddingHorizontal: 12, paddingVertical: 12, alignItems: 'center', justifyContent: 'center', marginBottom: 10, borderRadius: 14 },
   appleButton: { backgroundColor: '#F4F6F3' },
-  appleButtonText: { color: '#0A0A0A', fontSize: 14, fontWeight: '700' },
+  appleButtonText: { textAlign: 'center', color: '#0A0A0A', fontSize: 14, fontWeight: '700' },
   googleButton: { borderWidth: 1, borderColor: '#3A3A3A', backgroundColor: '#151515' },
-  googleButtonText: { color: '#F4F6F3', fontSize: 14, fontWeight: '700' },
+  googleButtonText: { textAlign: 'center', color: '#F4F6F3', fontSize: 14, fontWeight: '700' },
   dividerRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginVertical: 10 },
   dividerLine: { flex: 1, height: 1, backgroundColor: '#303030' },
   dividerText: { color: '#697169', fontSize: 10 },
@@ -416,6 +430,8 @@ const styles = StyleSheet.create({
   error: { marginTop: 12, color: '#FF7676', fontSize: 13, lineHeight: 19 },
   captcha: { minHeight: 1, marginTop: 8 },
   primaryButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 14,
     minHeight: 54,
     alignItems: 'center',
     justifyContent: 'center',
@@ -425,9 +441,9 @@ const styles = StyleSheet.create({
   },
   disabledButton: { opacity: 0.45 },
   pressedButton: { opacity: 0.8 },
-  primaryButtonText: { color: '#0A0A0A', fontSize: 15, fontWeight: '700' },
-  textButton: { alignItems: 'center', paddingVertical: 16 },
-  textButtonLabel: { color: '#FFF1B8', fontSize: 14, fontWeight: '700' },
+  primaryButtonText: { textAlign: 'center', color: '#0A0A0A', fontSize: 15, fontWeight: '700' },
+  textButton: { minHeight: 48, alignItems: 'center', paddingVertical: 16 },
+  textButtonLabel: { textAlign: 'center', color: '#FFF1B8', fontSize: 14, fontWeight: '700' },
   codeActions: { marginTop: 2 },
   disabledText: { color: '#697169' },
   note: { marginTop: 24, color: '#697169', fontSize: 12, lineHeight: 18, textAlign: 'center' },

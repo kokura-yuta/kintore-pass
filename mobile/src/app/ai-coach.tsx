@@ -2,10 +2,11 @@ import { useAuth } from '@clerk/expo';
 import * as Crypto from 'expo-crypto';
 import { Redirect, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { BottomNavigation } from '@/components/BottomNavigation';
+import { ScreenStateCard } from '@/components/ScreenStateCard';
 import { useOnboarding } from '@/contexts/OnboardingContext';
 import { useTrainingDraft } from '@/contexts/TrainingDraftContext';
 import { ApiError, isApiBypassEnabled } from '@/lib/api';
@@ -32,6 +33,8 @@ export default function AiCoachScreen() {
   const [menu, setMenu] = useState<GeneratedMenuPreview | null>(null);
   const [error, setError] = useState('');
   const [isLoadingSavedMenu, setIsLoadingSavedMenu] = useState(!isApiBypassEnabled);
+  const [savedMenuError, setSavedMenuError] = useState('');
+  const [savedMenuReloadKey, setSavedMenuReloadKey] = useState(0);
   const pendingMenuRequestId = useRef<string | null>(null);
   const trainingStyle = profile.trainingStyle ?? 'ai';
 
@@ -45,6 +48,7 @@ export default function AiCoachScreen() {
     let cancelled = false;
 
     async function loadLatestMenu() {
+      setSavedMenuError('');
       try {
         const token = await getToken();
         if (!token) {
@@ -62,7 +66,7 @@ export default function AiCoachScreen() {
         setStatus('result');
       } catch (loadError) {
         if (!cancelled) {
-          setError(loadError instanceof Error ? loadError.message : '保存済みメニューを取得できませんでした。');
+          setSavedMenuError(loadError instanceof Error ? loadError.message : '保存済みメニューを取得できませんでした。');
         }
       } finally {
         if (!cancelled) setIsLoadingSavedMenu(false);
@@ -74,7 +78,13 @@ export default function AiCoachScreen() {
     return () => {
       cancelled = true;
     };
-  }, [getToken, isLoaded, isSignedIn, setLatestGeneratedMenu]);
+  }, [getToken, isLoaded, isSignedIn, savedMenuReloadKey, setLatestGeneratedMenu]);
+
+  function retrySavedMenu() {
+    setIsLoadingSavedMenu(true);
+    setSavedMenuError('');
+    setSavedMenuReloadKey((current) => current + 1);
+  }
 
   function selectBodyPart(bodyPart: MenuBodyPart | null) {
     setSelectedBodyPart(bodyPart);
@@ -95,6 +105,7 @@ export default function AiCoachScreen() {
       return;
     }
     setError('');
+    setSavedMenuError('');
     setStatus('loading');
 
     // 1回の生成操作を識別するUUIDを作り、二重実行を同期的に止める
@@ -168,7 +179,20 @@ export default function AiCoachScreen() {
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
           <View style={styles.header}><View><Text style={styles.eyebrow}>AI COACH</Text><Text style={styles.title}>今日のメニュー</Text></View><View style={styles.aiBadge}><Text style={styles.aiBadgeText}>AI</Text></View></View>
 
-          {isLoadingSavedMenu ? <View style={styles.loadingArea}><ActivityIndicator color="#F6D365" size="large" /><Text style={styles.loadingTitle}>保存済みメニューを確認中</Text></View> : null}
+          {isLoadingSavedMenu ? (
+            <ScreenStateCard message="前回生成したメニューを確認しています。" title="保存済みメニューを確認中" type="loading" />
+          ) : null}
+
+          {!isLoadingSavedMenu && savedMenuError ? (
+            <ScreenStateCard
+              actionLabel="もう一度読み込む"
+              compact
+              message={savedMenuError}
+              onAction={retrySavedMenu}
+              title="保存済みメニューを読み込めませんでした"
+              type="error"
+            />
+          ) : null}
 
           {!isLoadingSavedMenu && status === 'condition' ? (
             <>
@@ -197,7 +221,9 @@ export default function AiCoachScreen() {
             </>
           ) : null}
 
-          {!isLoadingSavedMenu && status === 'loading' ? <View style={styles.loadingArea}><ActivityIndicator color="#F6D365" size="large" /><Text style={styles.loadingTitle}>メニューを考えています</Text><Text style={styles.loadingText}>疲労・履歴・目標体型を確認中…</Text></View> : null}
+          {!isLoadingSavedMenu && status === 'loading' ? (
+            <ScreenStateCard message="疲労・履歴・目標体型を確認しています。" title="メニューを考えています" type="loading" />
+          ) : null}
 
           {!isLoadingSavedMenu && status === 'result' && menu ? (
             <>
@@ -224,7 +250,7 @@ const styles = StyleSheet.create({
   bodyPartCard: { marginTop: 17, padding: 17, borderWidth: 1, borderColor: '#303030', borderRadius: 18, backgroundColor: '#151515' }, bodyPartHint: { marginTop: 5, color: '#737B75', fontSize: 9 }, selectedPartLabel: { color: '#FFF1B8', fontSize: 11, fontWeight: '700' }, bodyPartRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 15 }, bodyPartButton: { minWidth: 57, alignItems: 'center', paddingHorizontal: 11, paddingVertical: 10, borderWidth: 1, borderColor: '#3A3A3A', borderRadius: 18, backgroundColor: '#0A0A0A' }, selectedBodyPartButton: { borderColor: '#F6D365', backgroundColor: '#F6D365' }, bodyPartText: { color: '#A5ADA7', fontSize: 10, fontWeight: '700' }, selectedBodyPartText: { color: '#0A0A0A' },
   conditionCard: { marginTop: 17, padding: 17, borderWidth: 1, borderColor: '#303030', borderRadius: 18, backgroundColor: '#151515' }, cardHeading: { flexDirection: 'row', justifyContent: 'space-between' }, cardTitle: { color: '#F4F6F3', fontSize: 16, fontWeight: '700' }, conditionValue: { color: '#FFF1B8', fontSize: 14, fontWeight: '700' }, ratingRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 17 }, ratingButton: { width: 35, height: 35, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#3A3A3A', borderRadius: 10, backgroundColor: '#0A0A0A' }, selectedRating: { borderColor: '#F6D365', backgroundColor: '#F6D365' }, ratingText: { color: '#8E978F', fontSize: 11, fontWeight: '700' }, selectedRatingText: { color: '#0A0A0A' }, ratingGuide: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 9 }, guideText: { color: '#59605A', fontSize: 8 },
   referenceCard: { marginTop: 13, padding: 15, borderRadius: 16, backgroundColor: '#121212' }, referenceTitle: { color: '#A5ADA7', fontSize: 10, fontWeight: '700' }, chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 10 }, infoChip: { paddingHorizontal: 10, paddingVertical: 7, borderRadius: 14, backgroundColor: '#292929' }, infoChipText: { color: '#8E978F', fontSize: 8, fontWeight: '600' }, error: { marginTop: 12, color: '#FF7676', fontSize: 11 },
-  primaryButton: { minHeight: 57, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 15, paddingHorizontal: 17, borderRadius: 15, backgroundColor: '#F6D365' }, primaryText: { color: '#0A0A0A', fontSize: 14, fontWeight: '700' }, primaryArrow: { color: '#0A0A0A', fontSize: 27 }, loadingArea: { flex: 1, minHeight: 500, alignItems: 'center', justifyContent: 'center' }, loadingTitle: { marginTop: 21, color: '#F4F6F3', fontSize: 22, fontWeight: '700', textAlign: 'center' }, loadingText: { marginTop: 9, color: '#737B75', fontSize: 11 },
+  primaryButton: { minHeight: 57, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 15, paddingHorizontal: 17, borderRadius: 15, backgroundColor: '#F6D365' }, primaryText: { color: '#0A0A0A', fontSize: 14, fontWeight: '700' }, primaryArrow: { color: '#0A0A0A', fontSize: 27 },
   targetCard: { marginTop: 19, padding: 17, borderLeftWidth: 3, borderLeftColor: '#F6D365', borderRadius: 16, backgroundColor: '#181818' }, cardEyebrow: { color: '#FFF1B8', fontSize: 8, fontWeight: '700', letterSpacing: 1.3 }, targetArea: { marginTop: 7, color: '#F4F6F3', fontSize: 22, fontWeight: '700' }, reason: { marginTop: 9, color: '#9DA69F', fontSize: 11, lineHeight: 18 }, timeRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 13, padding: 15, borderWidth: 1, borderColor: '#303030', borderRadius: 15, backgroundColor: '#151515' }, timeLabel: { color: '#8E978F', fontSize: 10, fontWeight: '600' }, timeValue: { color: '#F4F6F3', fontSize: 22, fontWeight: '700' }, timeUnit: { color: '#737B75', fontSize: 9 }, sectionTitle: { marginTop: 21, marginBottom: 10, color: '#F4F6F3', fontSize: 15, fontWeight: '700' },
   exerciseCard: { minHeight: 70, flexDirection: 'row', alignItems: 'center', marginBottom: 8, padding: 12, borderWidth: 1, borderColor: '#303030', borderRadius: 15, backgroundColor: '#151515' }, exerciseNumber: { width: 30, height: 30, alignItems: 'center', justifyContent: 'center', borderRadius: 9, backgroundColor: '#292929' }, exerciseNumberText: { color: '#FFF1B8', fontSize: 8, fontWeight: '700' }, exerciseCopy: { flex: 1, marginLeft: 10 }, exerciseName: { color: '#E8EBE8', fontSize: 11, fontWeight: '700' }, equipment: { marginTop: 4, color: '#697169', fontSize: 8 }, prescription: { alignItems: 'flex-end' }, prescriptionMain: { color: '#F4F6F3', fontSize: 12, fontWeight: '700' }, prescriptionSub: { marginTop: 4, color: '#8E978F', fontSize: 8 }, adviceCard: { marginTop: 7, padding: 15, borderRadius: 15, backgroundColor: '#222222' }, adviceTitle: { color: '#FFF1B8', fontSize: 10, fontWeight: '700' }, adviceText: { marginTop: 7, color: '#A5ADA7', fontSize: 10, lineHeight: 17 }, secondaryButton: { minHeight: 52, alignItems: 'center', justifyContent: 'center', marginTop: 10, borderWidth: 1, borderColor: '#F6D365', borderRadius: 14 }, secondaryText: { color: '#FFF1B8', fontSize: 12, fontWeight: '700' }, textButton: { alignItems: 'center', paddingVertical: 15 }, textButtonText: { color: '#8E978F', fontSize: 10, fontWeight: '600' },
   exerciseNameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 }, frequentBadge: { paddingHorizontal: 6, paddingVertical: 3, borderRadius: 8, backgroundColor: '#332B00' }, recommendedBadge: { paddingHorizontal: 6, paddingVertical: 3, borderRadius: 8, backgroundColor: '#292929' }, sourceText: { color: '#FFF1B8', fontSize: 6, fontWeight: '700' },

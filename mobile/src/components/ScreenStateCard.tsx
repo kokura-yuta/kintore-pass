@@ -61,6 +61,6 @@ const styles = StyleSheet.create({
   title: { marginTop: 15, color: '#F4F6F3', fontSize: 20, fontWeight: '700', textAlign: 'center' },
   compactTitle: { marginTop: 8, fontSize: 14 },
   message: { marginTop: 8, color: '#8E978F', fontSize: 11, lineHeight: 18, textAlign: 'center' },
-  actionButton: { minWidth: 180, alignItems: 'center', marginTop: 16, paddingHorizontal: 18, paddingVertical: 13, borderRadius: 13, backgroundColor: '#F6D365' },
-  actionText: { color: '#0A0A0A', fontSize: 12, fontWeight: '700' },
+  actionButton: { width: '100%', maxWidth: 320, minHeight: 48, alignItems: 'center', justifyContent: 'center', marginTop: 16, paddingHorizontal: 18, paddingVertical: 13, borderRadius: 13, backgroundColor: '#F6D365' },
+  actionText: { textAlign: 'center', color: '#0A0A0A', fontSize: 12, fontWeight: '700' },
 });
