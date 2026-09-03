@@ -11,6 +11,8 @@ const eslintConfig = defineConfig([
     ".next/**",
     "out/**",
     "build/**",
+    // mobileは独立したExpoプロジェクトのため、ルート側のNext.js規則から除外する。
+    "mobile/**",
     "next-env.d.ts",
   ]),
 ]);

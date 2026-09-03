@@ -12163,3 +12163,353 @@ const moderationDecision =
 - 全カテゴリが`false`なら`safe`
 - `self-harm/intent`が`true`なら`self_harm_support`
 - `illicit/violent`が`true`なら`blocked`
+
+## Python身体分析のOpenAI失敗テスト
+
+### 何のためのテストか
+
+対象ファイルは`python-analysis/tests/test_openai_errors.py`です。
+
+OpenAIへの画像分析が失敗したとき、Python APIが固まったり内部エラーをそのまま見せたりせず、理由に合ったHTTPエラーを返せるか確認します。
+
+```text
+OpenAIの失敗をテスト内で再現
+↓
+main.pyのanalyze_body()を実行
+↓
+PythonがHTTPExceptionへ変換
+↓
+ステータス番号と日本語メッセージを比較
+```
+
+実際のOpenAI APIは呼ばないため、API利用料金は発生しません。
+
+```python
+PYTHON_ANALYSIS_ROOT = Path(__file__).resolve().parents[1]
+if str(PYTHON_ANALYSIS_ROOT) not in sys.path:
+    sys.path.insert(0, str(PYTHON_ANALYSIS_ROOT))
+```
+
+- `Path(__file__)`：現在のテストファイルの場所
+- `.resolve()`：絶対パスへ変換する
+- `.parents[1]`：`tests`の1つ上にある`python-analysis`を取得する
+- `sys.path`：Pythonが`import`先を探すフォルダ一覧
+- `insert(0, ...)`：`python-analysis`を探索先の先頭へ追加する
+
+これにより、プロジェクト直下と`python-analysis`のどちらからでも`app.main`を読み込めます。
+
+### `unittest.IsolatedAsyncioTestCase`の意味
+
+```python
+class OpenAIErrorResponseTests(
+    unittest.IsolatedAsyncioTestCase,
+):
+```
+
+- `class`：関連するテストを1つのまとまりとして定義する
+- `OpenAIErrorResponseTests`：このテストまとまりの名前
+- `unittest`：Pythonに最初から入っているテスト機能
+- `IsolatedAsyncioTestCase`：`async`関数を`await`して確認できるテスト用の型
+
+`analyze_body()`はOpenAIの返信を`await`で待つ非同期関数なので、この型を使います。
+
+### テスト画像を作る部分
+
+```python
+def make_test_image() -> UploadFile:
+```
+
+- `def`：Pythonの関数を定義する
+- `make_test_image`：テスト用画像を作る関数名
+- `-> UploadFile`：FastAPIがアップロード画像として扱える型を返す
+
+`Image.new()`で8×8ピクセルの小さなPNGをメモリ上に作ります。利用者の写真やローカルファイルは使いません。
+
+### OpenAI通信を偽物に置き換える部分
+
+```python
+with patch.object(
+    openai_client.responses,
+    "parse",
+    new=AsyncMock(side_effect=openai_error),
+):
+```
+
+- `with`：この範囲の中だけ一時的な設定を使う
+- `patch.object()`：既存オブジェクトの一部をテスト用に置き換える
+- `openai_client.responses`：`main.py`が使っているOpenAI通信クライアント
+- `"parse"`：画像と身体情報をOpenAIへ送るメソッド
+- `AsyncMock`：`await`で呼ばれる偽の関数
+- `side_effect=openai_error`：呼ばれたとき、成功結果ではなく指定したOpenAIエラーを発生させる
+
+### HTTPエラーを確認する部分
+
+```python
+with self.assertRaises(HTTPException) as raised:
+    await self.call_analyze()
+```
+
+- `assertRaises()`：指定したエラーが実際に発生したか確認する
+- `HTTPException`：FastAPIがHTTPステータスとメッセージを返すためのエラー
+- `as raised`：発生したエラーを`raised`という変数で確認できるようにする
+- `await self.call_analyze()`：3枚のテスト画像で身体分析を実行する
+
+```python
+self.assertEqual(
+    raised.exception.status_code,
+    expected_status,
+)
+```
+
+`assertEqual()`は「実際の値」と「期待した値」が同じか確認します。ステータス番号だけでなく、利用者向けの日本語メッセージも比較します。
+
+### 確認する6種類
+
+- `APITimeoutError` → HTTP 504：制限時間内に終わらない
+- `APIConnectionError` → HTTP 503：OpenAIへ接続できない
+- `RateLimitError` → HTTP 429：利用回数や混雑の制限
+- HTTP 401 → HTTP 500：APIキーなどのサーバー設定ミス
+- OpenAIのHTTP 500 → HTTP 502：OpenAI側の一時障害
+- `output_parsed=None` → HTTP 502：決めたJSON形式の分析結果がない
+
+### テストの実行方法
+
+```bash
+cd /Users/yuuta/Desktop/musslepas/python-analysis
+.venv/bin/python -m unittest discover -s tests -v
+```
+
+- `-m unittest`：Python標準のテスト機能を実行する
+- `discover`：テストファイルを自動で探す
+- `-s tests`：`tests`フォルダから探す
+- `-v`：各テストの名前と成功・失敗を詳しく表示する
+
+6件すべての後に`OK`が出れば成功です。
+
+## 公開API・Clerk認証・開発用Neonの通しテスト
+
+### 何を確認したか
+
+2026年9月2日に、フロントの仮データモードを無効にして、次の流れを実際の通信で確認しました。
+
+```text
+Expo Webの画面
+↓ Clerkのセッショントークン
+Sitesへ公開したTypeScript API
+↓ DATABASE_URL
+開発用Neon PostgreSQL
+↓ 本人のデータをJSONで返す
+Expo Webの画面へ表示
+```
+
+### 仮データモードを無効にする設定
+
+対象ファイルは`mobile/.env.local`です。
+
+```env
+EXPO_PUBLIC_ENABLE_API_BYPASS=false
+```
+
+- `EXPO_PUBLIC_`：Expoのフロントから読める環境変数
+- `ENABLE_API_BYPASS`：APIを通らず仮データを使うかどうかの設定
+- `false`：仮データを使わず、公開APIへ実際に通信する
+
+この設定を変更した後は、Expoを再起動して読み直す必要があります。
+
+### 確認できた取得処理
+
+- `POST /api/users/bootstrap`：ログイン中の本人と初回設定状態を取得
+- `GET /api/home`：目標体型と最新AIメニューを取得
+- `GET /api/ai-menu`：保存済みの最新AIメニューを取得
+- `GET /api/chat`：本人のチャットとメッセージ履歴を取得
+- `GET /api/training-records`：本人のトレーニング履歴を取得
+- `GET /api/body-analysis`：本人の身体分析履歴を取得
+
+全画面で通信エラーが出ず、Neonの件数と表示内容が一致しました。
+
+### 未ログインテストの意味
+
+`GET /api/health`はHTTP 200、本人データが必要な`bootstrap`と`home`は、トークンを付けない通信にHTTP 401を返しました。
+
+HTTP 401は「ログイン情報がないため拒否した」という意味です。これにより、ログインせずURLを直接開いた人が個人データを読めないことを確認できます。別のログインユーザー間の分離は、2人目のテストアカウントで別に確認します。
+
+### 体重画面で見つかった残作業
+
+Neonの`weight_records`は0件ですが、`mobile/src/app/weight-history.tsx`はまだ確認用の仮体重を表示しています。
+
+そのため、体重APIのバックエンドは存在しますが、体重履歴画面からの実際の保存・取得・更新・削除はまだ接続されていません。
+
+## 全テストをまとめて実行する仕組み
+
+### 何のために作ったか
+
+今後は機能を変更した後、1つずつ手作業で確認しなくても、次の7層をまとめて検査できるようにしました。
+
+```text
+TypeScriptの入力ルール
+↓
+Pythonの画像・OpenAIエラー処理
+↓
+Expo側のTypeScript
+↓
+Lintによるコード品質
+↓
+バックエンドのビルド
+↓
+開発用Neonの保存・制約・削除
+↓
+公開APIの起動状態と未ログイン保護
+```
+
+### 全テストを実行するコマンド
+
+プロジェクト直下で次を実行します。
+
+```bash
+cd /Users/yuuta/Desktop/musslepas
+npm run test:all
+```
+
+`package.json`の`test:all`は、複数のテスト用コマンドを`&&`で順番につないでいます。
+
+```json
+"test:all": "npm run test:unit && npm run test:python && npm run test:mobile-types && npm run lint && npm run build && npm run test:db && npm run test:public"
+```
+
+- `&&`：左側が成功したときだけ右側へ進む
+- `test:unit`：APIの入力形式とAI安全ルールを確認する
+- `test:python`：Python画像検査とOpenAI障害処理を確認する
+- `test:mobile-types`：Expo側のTypeScriptに型エラーがないか確認する
+- `lint`：未使用変数や危険なReactコードなどを確認する
+- `build`：公開用バックエンドを最後まで組み立てられるか確認する
+- `test:db`：開発用Neonへ一時データを保存してDB制約を確認する
+- `test:public`：公開URLが動き、未ログイン通信を拒否するか確認する
+
+途中で1つでも失敗すると、その場所で止まります。最後まで進んで終了コードが`0`なら全体成功です。
+
+### `tests/api-safety.test.mjs`の役割
+
+バックエンドがデータを保存する前に使うZodの設計図を検査します。
+
+今回確認している主な内容は次のとおりです。
+
+- トレーニング種目は最大30件、1種目のセットは最大20件
+- 身長と体重だけがプロフィールの必須項目
+- 理想体型は用意した4種類だけ
+- 日付は実在する日で、未来日は不可
+- UUIDが必要な更新・削除処理へ不正なIDを渡さない
+- AIメニューの調子は1〜10
+- OpenAIが返すAIメニューと身体分析結果が決めたJSON形式か
+- アカウント削除は確認文字`DELETE`の完全一致が必要
+- AIチャットが公開するToolは本人データ取得用の5種類だけ
+- Tool実行回数とAI回答文字数に上限がある
+
+```javascript
+assert.equal(
+  profileSchema.safeParse({
+    heightCm: 170,
+    weightKg: 65,
+  }).success,
+  true,
+);
+```
+
+- `safeParse(...)`：値がZodの設計図どおりか安全に検査する
+- `.success`：検査に通れば`true`、失敗すれば`false`
+- `assert.equal(実際の値, 期待する値)`：実際の結果が予想どおりか比較する
+
+### `python-analysis/tests/test_image_validation.py`の役割
+
+利用者の写真やOpenAI APIを使わず、テスト内で小さなPNGを作って画像処理を検査します。
+
+- 正常なPNGを許可する
+- 画像以外のContent-TypeをHTTP 415相当として拒否する
+- 空ファイルと壊れた画像をHTTP 400相当として拒否する
+- 1枚8MBを超える画像をHTTP 413相当として拒否する
+- OpenAIへ渡すBase64データURLへ正しく変換する
+
+このテストでは個人の身体写真を読み込まず、OpenAI料金も発生しません。
+
+### `tests/db-integration.test.mjs`の役割
+
+開発用Neonへ`自動テスト`と分かる専用ユーザーを一時作成し、実際のPostgreSQLで次を確認します。
+
+- プロフィールと体重を保存できる
+- 同じユーザー・同じ日の体重を2件作れない
+- 体重を更新できる
+- 調子11、セット番号重複、分析点数11などをDB制約が拒否する
+- トレーニング、身体分析、AIメニュー、チャットの親子データを保存できる
+- 子データの保存が失敗すると、同じトランザクションの親データも残らない
+- 親を削除すると`cascade`で子も削除される
+- 別ユーザーIDを条件にすると、他人の記録を取得・更新・削除できない
+- 同じ`requestId`による二重受付を拒否する
+
+```javascript
+try {
+  // テストデータを作成して検査する
+} finally {
+  // 成功・失敗に関係なくテストユーザーを削除する
+}
+```
+
+- `try`：通常のテスト処理を実行する範囲
+- `finally`：途中でテストが失敗しても必ず実行される後片付け
+
+テストユーザーを削除すると、外部キーの`cascade`により所属するテストデータも削除されます。既存利用者のIDは使いません。
+
+### ロールバックテストの意味
+
+```javascript
+await expectDatabaseError(() =>
+  sql.transaction([
+    親データのINSERT,
+    意図的に失敗する子データのINSERT,
+  ]),
+);
+```
+
+- `sql.transaction([...])`：複数のSQLを1つのまとまりとして実行する
+- 途中の1件が失敗：まとまり全体を取り消す
+- ロールバック：すでに実行した親のINSERTも元に戻すこと
+
+これにより「トレーニング本体だけあるが種目がない」といった中途半端なデータを防げることを確認しています。
+
+### `tests/public-api-smoke.test.mjs`の役割
+
+公開中のバックエンドへ実際に通信する軽い動作確認です。
+
+- `GET /api/health`がHTTP 200と`status: "ok"`を返す
+- ログイン情報を付けない本人用APIがHTTP 401を返す
+- GETだけでなくPOST・PATCH・DELETEも未ログインでは拒否する
+
+ここでは保存用JSONを送らず認証も付けないため、既存のユーザーデータは変更されません。
+
+### 2026年9月2日の実行結果
+
+- API・安全ルール：17件合格
+- Python画像・OpenAI障害：12件合格
+- 開発用Neon：1つの統合テスト内の保存・更新・制約・ロールバック・cascade・ユーザー分離が合格
+- 公開API：ヘルスチェックと本人用API全26通信の未ログイン保護が合格
+- Expo TypeScript：合格
+- バックエンドLint：エラー0件、画像最適化の警告2件
+- バックエンド本番ビルド：合格
+
+まだ別に必要なのは、2つの本物のClerkログインセッションを使うユーザー分離と、ログイン済み画面から保存・更新・削除ボタンを押すE2Eテストです。
+
+### Lintを通すために直したReactコード
+
+`IdealBodySection.jsx`と`ProfileSetupForm.jsx`では、以前は`useEffect()`が動いた直後に`setState()`して保存値を読み戻していました。
+
+今回は`useState()`の初期値を作る関数で、最初から保存値を読み込む形へ変更しました。
+
+```javascript
+const [form, setForm] = useState(loadInitialForm);
+```
+
+- `useState(...)`：画面で変化する値を保存する
+- `loadInitialForm`：最初の1回だけ実行して、端末に保存された入力を読み込む関数
+- 関数名だけを渡す：Reactが初期化時に必要になったタイミングで実行する
+
+これにより「初期表示→Effect実行→もう一度State変更」という余分な再描画を減らします。
+
+`eslint.config.mjs`では`mobile/**`をルートのNext.js用Lintから外しました。`mobile`は独立したExpoプロジェクトなので、Next.js専用ルールではなく`npm run test:mobile-types`でTypeScriptを検査します。

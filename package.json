@@ -11,6 +11,11 @@
     "start": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext start",
     "test": "npm run build && npm run test:unit",
     "test:unit": "node --experimental-strip-types --test tests/api-safety.test.mjs",
+    "test:python": "python-analysis/.venv/bin/python -m unittest discover -s python-analysis/tests -v",
+    "test:mobile-types": "tsc --noEmit --project mobile/tsconfig.json",
+    "test:db": "node --test tests/db-integration.test.mjs",
+    "test:public": "node --test tests/public-api-smoke.test.mjs",
+    "test:all": "npm run test:unit && npm run test:python && npm run test:mobile-types && npm run lint && npm run build && npm run test:db && npm run test:public",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "drizzle-kit generate"
   },

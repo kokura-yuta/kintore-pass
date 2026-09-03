@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import FeatureCard from "./FeatureCard";
 
@@ -33,17 +33,14 @@ const bodyTypes = [
 export default function IdealBodySection() {
   const router = useRouter();
   const fileInputRef = useRef(null);
-  const [selectedBodyType, setSelectedBodyType] = useState("");
+  const [selectedBodyType, setSelectedBodyType] = useState(() => {
+    if (typeof window === "undefined") return "";
+
+    return window.localStorage.getItem(GOAL_BODY_TYPE_KEY) ?? "";
+  });
   const [referenceImage, setReferenceImage] = useState(null);
   const [referenceImagePreview, setReferenceImagePreview] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
-
-  useEffect(() => {
-    const savedBodyType = window.localStorage.getItem(GOAL_BODY_TYPE_KEY);
-    if (savedBodyType) {
-      setSelectedBodyType(savedBodyType);
-    }
-  }, []);
 
   function handleBodyTypeSelect(bodyTypeName) {
     setSelectedBodyType(bodyTypeName);
