@@ -18,53 +18,11 @@ import {
   users,
   weightRecords,
 } from "@/db/schema";
-
-// 入力された体重が20〜500kgの通常の数値か確認する
-function isValidWeight(
-  value: unknown,
-): value is number {
-  return (
-    typeof value === "number" &&
-    Number.isFinite(value) &&
-    value >= 20 &&
-    value <= 500
-  );
-}
-
-// 入力された日付がYYYY-MM-DD形式の実在する日付か確認する
-function isValidDate(
-  value: unknown,
-): value is string {
-  if (
-    typeof value !== "string" ||
-    !/^\d{4}-\d{2}-\d{2}$/.test(value)
-  ) {
-    return false;
-  }
-
-  const parsedDate = new Date(
-    `${value}T00:00:00.000Z`,
-  );
-
-  return (
-    !Number.isNaN(parsedDate.getTime()) &&
-    parsedDate
-      .toISOString()
-      .slice(0, 10) === value
-  );
-}
-
-// 体重記録IDがUUID形式か確認する
-function isValidRecordId(
-  value: unknown,
-): value is string {
-  return (
-    typeof value === "string" &&
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-      value,
-    )
-  );
-}
+import {
+  uuidSchema,
+  weightRecordCreateSchema,
+  weightRecordUpdateSchema,
+} from "@/app/lib/validation/apiSchemas";
 
 // 体重記録のJSONを受け取り、ログイン中の本人の履歴として保存する
 export async function POST(
@@ -87,36 +45,12 @@ export async function POST(
     }
 
     // フロントから送られたJSONを読み取る
-    const body = await request
-      .json()
-      .catch(() => null);
-
-    // JSONが通常のオブジェクトでなければHTTP 400を返す
-    if (
-      body === null ||
-      typeof body !== "object" ||
-      Array.isArray(body)
-    ) {
-      return Response.json(
-        {
-          error:
-            "入力内容が不正です。",
-        },
-        { status: 400 },
+    const parsedBody =
+      weightRecordCreateSchema.safeParse(
+        await request.json().catch(() => null),
       );
-    }
 
-    // JSONから記録日と体重を取り出す
-    const {
-      recordedDate,
-      weightKg,
-    } = body;
-
-    // 日付と体重が正しい形式・範囲か確認する
-    if (
-      !isValidDate(recordedDate) ||
-      !isValidWeight(weightKg)
-    ) {
+    if (!parsedBody.success) {
       return Response.json(
         {
           error:
@@ -125,6 +59,9 @@ export async function POST(
         { status: 400 },
       );
     }
+
+    const { recordedDate, weightKg } =
+      parsedBody.data;
 
     // Neonを操作する共通のDB接続を取得する
     const db = getDb();
@@ -368,36 +305,12 @@ export async function PATCH(
     }
 
     // フロントから送られたJSONを読み取る
-    const body = await request
-      .json()
-      .catch(() => null);
-
-    // 通常のJSONオブジェクトでなければHTTP 400を返す
-    if (
-      body === null ||
-      typeof body !== "object" ||
-      Array.isArray(body)
-    ) {
-      return Response.json(
-        {
-          error:
-            "入力内容が不正です。",
-        },
-        { status: 400 },
+    const parsedBody =
+      weightRecordUpdateSchema.safeParse(
+        await request.json().catch(() => null),
       );
-    }
 
-    // 更新する記録IDと新しい体重を取り出す
-    const {
-      recordId,
-      weightKg,
-    } = body;
-
-    // 記録IDと体重が正しいか確認する
-    if (
-      !isValidRecordId(recordId) ||
-      !isValidWeight(weightKg)
-    ) {
+    if (!parsedBody.success) {
       return Response.json(
         {
           error:
@@ -406,6 +319,9 @@ export async function PATCH(
         { status: 400 },
       );
     }
+
+    const { recordId, weightKg } =
+      parsedBody.data;
 
     // Neonを操作するDB接続を取得する
     const db = getDb();
@@ -528,7 +444,10 @@ export async function DELETE(
       );
 
     // 記録IDがUUID形式でなければHTTP 400を返す
-    if (!isValidRecordId(recordId)) {
+    const parsedRecordId =
+      uuidSchema.safeParse(recordId);
+
+    if (!parsedRecordId.success) {
       return Response.json(
         {
           error:
@@ -537,6 +456,9 @@ export async function DELETE(
         { status: 400 },
       );
     }
+
+    const validRecordId =
+      parsedRecordId.data;
 
     // Neonを操作するDB接続を取得する
     const db = getDb();
@@ -577,7 +499,7 @@ export async function DELETE(
         and(
           eq(
             weightRecords.id,
-            recordId,
+            validRecordId,
           ),
           eq(
             weightRecords.userId,

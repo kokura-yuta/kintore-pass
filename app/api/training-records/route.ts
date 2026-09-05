@@ -14,38 +14,23 @@ import {
 
 // 認証確認とNeon接続をトレーニング記録APIで使えるようにする
 import { getClerkUserId } from "@/app/lib/auth/clerk-auth";
+import { createRequestFingerprint } from "@/app/lib/idempotency/createRequestFingerprint";
+import {
+  deleteTrainingRecordSchema,
+  trainingRecordSchema,
+  updateTrainingRecordSchema,
+} from "@/app/lib/validation/apiSchemas";
 import { getDb } from "@/db";
 
 // ユーザー・トレーニング・種目・セットのテーブルを保存処理で使えるようにする
 import {
+  aiRequestGuards,
   trainingExercises,
   trainingSessions,
   trainingSets,
   users,
 } from "@/db/schema";
 
-type TrainingSetInput = {
-  setNumber: number;
-  weightKg?: number | null;
-  reps?: number | null;
-};
-
-type TrainingExerciseInput = {
-  exerciseId: string;
-  exerciseName: string;
-  bodyPart: string;
-  bodyArea?: string | null;
-  displayOrder: number;
-  sets: TrainingSetInput[];
-};
-
-type CreateTrainingRecordInput = {
-  performedAt?: string;
-  durationMinutes?: number | null;
-  conditionScore?: number | null;
-  memo?: string | null;
-  exercises: TrainingExerciseInput[];
-};
 // 履歴取得で一度に返せる最大件数
 const maximumHistoryLimit = 50;
 
@@ -125,203 +110,6 @@ function parseJapanDate(
       japanTimeOffsetMilliseconds,
   );
 }
-// 受け取った記録IDがPostgreSQLのUUID形式か確認する
-function isValidUuid(
-  value: unknown,
-): value is string {
-  return (
-    typeof value === "string" &&
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-      value,
-    )
-  );
-}
-
-// 任意入力の数値が、nullまたは指定範囲内の数値か確認する
-function isOptionalNumberInRange(
-  value: unknown,
-  minimum: number,
-  maximum: number,
-) {
-  return (
-    value === undefined ||
-    value === null ||
-    (typeof value === "number" &&
-      Number.isFinite(value) &&
-      value >= minimum &&
-      value <= maximum)
-  );
-}
-
-// 任意入力の値が、nullまたは指定範囲内の整数か確認する
-function isOptionalIntegerInRange(
-  value: unknown,
-  minimum: number,
-  maximum: number,
-) {
-  return (
-    value === undefined ||
-    value === null ||
-    (typeof value === "number" &&
-      Number.isInteger(value) &&
-      value >= minimum &&
-      value <= maximum)
-  );
-}
-
-// 新規保存と編集の両方で、トレーニング記録の内容を検査する
-function isValidTrainingRecordInput(
-  value: unknown,
-): value is CreateTrainingRecordInput {
-  // JSON全体がオブジェクトでなければ拒否する
-  if (
-    typeof value !== "object" ||
-    value === null
-  ) {
-    return false;
-  }
-
-  const input =
-    value as Partial<CreateTrainingRecordInput>;
-
-  // 記録全体と種目件数を検査する
-  if (
-    !Array.isArray(input.exercises) ||
-    input.exercises.length === 0 ||
-    input.exercises.length > 30 ||
-    !isOptionalIntegerInRange(
-      input.durationMinutes,
-      1,
-      300,
-    ) ||
-    !isOptionalIntegerInRange(
-      input.conditionScore,
-      1,
-      10,
-    ) ||
-    (
-      input.performedAt !== undefined &&
-      (
-        typeof input.performedAt !==
-          "string" ||
-        Number.isNaN(
-          new Date(
-            input.performedAt,
-          ).getTime(),
-        )
-      )
-    ) ||
-    (
-      input.memo !== undefined &&
-      input.memo !== null &&
-      (
-        typeof input.memo !== "string" ||
-        input.memo.length > 1000
-      )
-    )
-  ) {
-    return false;
-  }
-
-  // 種目と、その中の全セットを1件ずつ検査する
-  return input.exercises.every(
-    (exercise: unknown) => {
-      if (
-        typeof exercise !== "object" ||
-        exercise === null
-      ) {
-        return false;
-      }
-
-      const exerciseInput =
-        exercise as Partial<TrainingExerciseInput>;
-
-      if (
-        typeof exerciseInput.exerciseId !==
-          "string" ||
-        exerciseInput.exerciseId.trim() ===
-          "" ||
-        exerciseInput.exerciseId.length >
-          100 ||
-        typeof exerciseInput.exerciseName !==
-          "string" ||
-        exerciseInput.exerciseName.trim() ===
-          "" ||
-        exerciseInput.exerciseName.length >
-          100 ||
-        typeof exerciseInput.bodyPart !==
-          "string" ||
-        exerciseInput.bodyPart.trim() ===
-          "" ||
-        exerciseInput.bodyPart.length > 50 ||
-        (
-          exerciseInput.bodyArea !==
-            undefined &&
-          exerciseInput.bodyArea !== null &&
-          (
-            typeof exerciseInput.bodyArea !==
-              "string" ||
-            exerciseInput.bodyArea.length >
-              50
-          )
-        ) ||
-        !Number.isInteger(
-          exerciseInput.displayOrder,
-        ) ||
-        (
-          exerciseInput.displayOrder ?? -1
-        ) < 0 ||
-        (
-          exerciseInput.displayOrder ?? 30
-        ) > 29 ||
-        !Array.isArray(
-          exerciseInput.sets,
-        ) ||
-        exerciseInput.sets.length === 0 ||
-        exerciseInput.sets.length > 20
-      ) {
-        return false;
-      }
-
-      return exerciseInput.sets.every(
-        (set: unknown) => {
-          if (
-            typeof set !== "object" ||
-            set === null
-          ) {
-            return false;
-          }
-
-          const setInput =
-            set as Partial<TrainingSetInput>;
-
-          return (
-            Number.isInteger(
-              setInput.setNumber,
-            ) &&
-            (
-              setInput.setNumber ?? 0
-            ) >= 1 &&
-            (
-              setInput.setNumber ?? 21
-            ) <= 20 &&
-            isOptionalNumberInRange(
-              setInput.weightKg,
-              0,
-              1000,
-            ) &&
-            isOptionalIntegerInRange(
-              setInput.reps,
-              0,
-              1000,
-            )
-          );
-        },
-      );
-    },
-  );
-}
-
 // GET通信を受け取り、ログイン中のユーザーのトレーニング履歴を取得する
 export async function GET(request: Request) {
   try {
@@ -594,6 +382,9 @@ return {
 }
 // POST通信を受け取り、ログイン中のユーザーのトレーニング記録を保存する
 export async function POST(request: Request) {
+  // 失敗時に重複防止の受付記録を削除できるようIDを保持する
+  let requestGuardId: string | null = null;
+
   try {
     const clerkUserId = await getClerkUserId(request);
 
@@ -611,11 +402,10 @@ export async function POST(request: Request) {
         .catch(() => null);
 
     // 共通検査に失敗したらNeonへ保存しない
-    if (
-      !isValidTrainingRecordInput(
-        rawInput,
-      )
-    ) {
+    const parsedInput =
+      trainingRecordSchema.safeParse(rawInput);
+
+    if (!parsedInput.success) {
       return Response.json(
         {
           error:
@@ -626,7 +416,7 @@ export async function POST(request: Request) {
     }
 
     // 検査後の安全な記録データを使用する
-    const input = rawInput;
+    const input = parsedInput.data;
 
 // Neonへ接続し、ログイン中のClerkユーザーに対応するusers.idを検索する
 const db = getDb();
@@ -677,82 +467,162 @@ if (
   );
 }
 
-// 1回分のトレーニング全体をtraining_sessionsへ保存する
-const createdSessions = await db
-  .insert(trainingSessions)
+// 同じ本人・日時・入力内容なら同じUUIDになる二重送信判定IDを作る
+const requestId =
+  await createRequestFingerprint(
+    JSON.stringify({
+      userId: user.id,
+      performedAt:
+        performedAt.toISOString(),
+      durationMinutes:
+        input.durationMinutes ?? null,
+      conditionScore:
+        input.conditionScore ?? null,
+      memo: input.memo?.trim() || null,
+      exercises: input.exercises.map(
+        (exercise) => ({
+          exerciseId:
+            exercise.exerciseId.trim(),
+          exerciseName:
+            exercise.exerciseName.trim(),
+          bodyPart:
+            exercise.bodyPart.trim(),
+          bodyArea:
+            exercise.bodyArea?.trim() ||
+            null,
+          displayOrder:
+            exercise.displayOrder,
+          sets: exercise.sets.map(
+            (set) => ({
+              setNumber: set.setNumber,
+              weightKg:
+                set.weightKg ?? null,
+              reps: set.reps ?? null,
+            }),
+          ),
+        }),
+      ),
+    }),
+  );
+
+// 同じ保存要求は最初の1件だけ受付記録を作る
+const insertedGuards = await db
+  .insert(aiRequestGuards)
   .values({
+    userId: user.id,
+    requestType: "training-record",
+    requestId,
+  })
+  .onConflictDoNothing({
+    target: [
+      aiRequestGuards.userId,
+      aiRequestGuards.requestType,
+      aiRequestGuards.requestId,
+    ],
+  })
+  .returning({
+    id: aiRequestGuards.id,
+  });
+
+requestGuardId =
+  insertedGuards[0]?.id ?? null;
+
+if (!requestGuardId) {
+  return Response.json(
+    {
+      error:
+        "同じトレーニング記録を処理中または保存済みです。",
+      requestId,
+    },
+    { status: 409 },
+  );
+}
+
+// Neonへ送る前に、記録全体を識別するUUIDを作る
+const trainingSessionId =
+  crypto.randomUUID();
+
+// 各種目にも先にUUIDを付け、種目とセットの親子関係を準備する
+const exercisesWithIds =
+  input.exercises.map((exercise) => ({
+    id: crypto.randomUUID(),
+    exercise,
+  }));
+
+// 全種目をtraining_exercisesへ保存できる形へ変換する
+const exerciseRows = exercisesWithIds.map(
+  ({ id, exercise }) => ({
+    id,
+    sessionId: trainingSessionId,
+    exerciseId: exercise.exerciseId.trim(),
+    exerciseName:
+      exercise.exerciseName.trim(),
+    bodyPart: exercise.bodyPart.trim(),
+    bodyArea:
+      exercise.bodyArea?.trim() || null,
+    displayOrder: exercise.displayOrder,
+  }),
+);
+
+// 全種目の全セットを1つの配列へまとめ、親種目のUUIDを付ける
+const setRows = exercisesWithIds.flatMap(
+  ({ id, exercise }) =>
+    exercise.sets.map((set) => ({
+      id: crypto.randomUUID(),
+      trainingExerciseId: id,
+      setNumber: set.setNumber,
+      weightKg: set.weightKg ?? null,
+      reps: set.reps ?? null,
+    })),
+);
+
+// 記録全体・全種目・全セットを1回のトランザクションで保存する
+await db.batch([
+  db.insert(trainingSessions).values({
+    id: trainingSessionId,
     userId: user.id,
     performedAt,
     durationMinutes:
       input.durationMinutes ?? null,
     conditionScore:
       input.conditionScore ?? null,
-    memo:
-      input.memo?.trim() || null,
-  })
-  .returning({
-    id: trainingSessions.id,
-  });
-
-const session = createdSessions[0] ?? null;
-
-if (!session) {
-  throw new Error(
-    "トレーニング全体を保存できませんでした。",
-  );
-}
-
-// 選択された種目を1件ずつtraining_exercisesへ保存する
-for (const exercise of input.exercises) {
-  const createdExercises = await db
-    .insert(trainingExercises)
-    .values({
-      sessionId: session.id,
-      exerciseId: exercise.exerciseId.trim(),
-      exerciseName:
-        exercise.exerciseName.trim(),
-      bodyPart: exercise.bodyPart.trim(),
-      bodyArea:
-        exercise.bodyArea?.trim() || null,
-      displayOrder: exercise.displayOrder,
-    })
-    .returning({
-      id: trainingExercises.id,
-    });
-
-  const createdExercise =
-    createdExercises[0] ?? null;
-
-  if (!createdExercise) {
-    throw new Error(
-      "トレーニング種目を保存できませんでした。",
-    );
-  }
-
- // 現在の種目に含まれる全セットをtraining_setsへまとめて保存する
-    await db
-    .insert(trainingSets)
-    .values(
-        exercise.sets.map((set) => ({
-        trainingExerciseId:
-            createdExercise.id,
-        setNumber: set.setNumber,
-        weightKg: set.weightKg ?? null,
-        reps: set.reps ?? null,
-        })),
-    );
-}
+    memo: input.memo?.trim() || null,
+  }),
+  db.insert(trainingExercises).values(
+    exerciseRows,
+  ),
+  db.insert(trainingSets).values(setRows),
+]);
 
     // 保存した親記録のIDをフロントエンドへ成功結果として返す
     return Response.json(
     {
         message:
         "トレーニング記録を保存しました。",
-        trainingSessionId: session.id,
+        trainingSessionId,
     },
     { status: 201 },
     );
   } catch (error) {
+    // 保存失敗時は受付記録を消し、同じ内容を安全に再送できるようにする
+    if (requestGuardId) {
+      try {
+        await getDb()
+          .delete(aiRequestGuards)
+          .where(
+            eq(
+              aiRequestGuards.id,
+              requestGuardId,
+            ),
+          );
+      } catch (cleanupError) {
+        console.error(
+          "トレーニング記録の二重送信管理を解除できませんでした。",
+          cleanupError,
+        );
+      }
+    }
+
     console.error(
       "トレーニング記録の保存に失敗しました。",
       error,
@@ -771,10 +641,6 @@ for (const exercise of input.exercises) {
 }
 
 // DELETEで受け取る削除対象IDの形
-type DeleteTrainingRecordInput = {
-  trainingSessionId?: unknown;
-};
-
 // ログイン中の本人が所有する記録だけを削除する
 export async function DELETE(
   request: Request,
@@ -796,18 +662,14 @@ export async function DELETE(
     }
 
     // フロントから削除対象の記録IDを受け取る
-    const input =
-      (await request
-        .json()
-        .catch(() => null)) as
-        | DeleteTrainingRecordInput
-        | null;
+    const parsedInput =
+      deleteTrainingRecordSchema.safeParse(
+        await request.json().catch(() => null),
+      );
 
     // IDがUUID形式でなければNeonへ送らない
     if (
-      !isValidUuid(
-        input?.trainingSessionId,
-      )
+      !parsedInput.success
     ) {
       return Response.json(
         {
@@ -817,6 +679,8 @@ export async function DELETE(
         { status: 400 },
       );
     }
+
+    const input = parsedInput.data;
 
     // Neonへ接続する
     const db = getDb();
@@ -904,11 +768,6 @@ export async function DELETE(
 }
 
 // PATCHで受け取る更新対象IDと新しい記録内容の形
-type UpdateTrainingRecordInput =
-  CreateTrainingRecordInput & {
-    trainingSessionId?: unknown;
-  };
-
 // トレーニング記録の更新通信を受け取る
 export async function PATCH(
   request: Request,
@@ -930,19 +789,14 @@ export async function PATCH(
     }
 
     // 更新対象IDと新しい記録内容をJSONで受け取る
-    const input =
-      (await request
-        .json()
-        .catch(() => null)) as
-        | UpdateTrainingRecordInput
-        | null;
+    const parsedInput =
+      updateTrainingRecordSchema.safeParse(
+        await request.json().catch(() => null),
+      );
 
     // JSONがない、または記録IDがUUID形式でなければ停止する
     if (
-      !input ||
-      !isValidUuid(
-        input.trainingSessionId,
-      )
+      !parsedInput.success
     ) {
       return Response.json(
         {
@@ -953,20 +807,7 @@ export async function PATCH(
       );
     }
 
-    // POSTと同じ共通検査で更新内容を確認する
-    if (
-      !isValidTrainingRecordInput(
-        input,
-      )
-    ) {
-      return Response.json(
-        {
-          error:
-            "トレーニング記録の入力内容を確認してください。",
-        },
-        { status: 400 },
-      );
-    }
+    const input = parsedInput.data;
 
     // Neonへ接続する
     const db = getDb();

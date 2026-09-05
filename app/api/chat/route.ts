@@ -1,7 +1,7 @@
 import type {
   ResponseInput,
 } from "openai/resources/responses/responses";
-
+import { createSafetyIdentifier } from "@/app/lib/ai/createSafetyIdentifier";
 import {
   chatTools,
 } from "@/app/lib/ai/chatTools";
@@ -25,6 +25,17 @@ import {
 import { getClerkUserId } from "@/app/lib/auth/clerk-auth";
 import { systemPrompt } from "@/app/lib/ai/systemPrompt";
 import { openai } from "@/app/lib/ai/openAiClient";
+import { checkModeration } from "@/app/lib/ai/checkModeration";
+import {
+  limitChatAnswer,
+  maxChatOutputTokens,
+  maxChatToolCalls,
+  openAiChatModel,
+} from "@/app/lib/ai/config";
+import {
+  chatRequestSchema,
+  deleteChatSchema,
+} from "@/app/lib/validation/apiSchemas";
 import { getDb } from "@/db";
 import {
   aiRequestGuards,
@@ -217,10 +228,6 @@ export async function GET(request: Request) {
   });
 }
 
-type DeleteChatRequestBody = {
-  conversationId?: string;
-};
-
 // 本人のチャットルームと、その中の全メッセージをNeonから削除する
 export async function DELETE(request: Request) {
   try {
@@ -238,15 +245,12 @@ export async function DELETE(request: Request) {
       );
     }
 
-    const body =
-      (await request
-        .json()
-        .catch(() => null)) as DeleteChatRequestBody | null;
+    const parsedBody =
+      deleteChatSchema.safeParse(
+        await request.json().catch(() => null),
+      );
 
-    const conversationId =
-      body?.conversationId?.trim() ?? "";
-
-    if (!conversationId) {
+    if (!parsedBody.success) {
       return Response.json(
         {
           error:
@@ -257,6 +261,9 @@ export async function DELETE(request: Request) {
         },
       );
     }
+
+    const { conversationId } =
+      parsedBody.data;
 
     const db = getDb();
 
@@ -331,15 +338,6 @@ export async function DELETE(request: Request) {
   }
 }
 
-type ChatRequestBody = {
-  conversationId?: string | null;
-  message?: string;
-  requestId?: string;
-};
-
-const uuidPattern =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
 // フロントから質問を受け取り、本人確認後にOpenAIへ送る
 export async function POST(request: Request) {
   let requestGuardId: string | null = null;
@@ -359,22 +357,22 @@ export async function POST(request: Request) {
       );
     }
 
-    const body =
-      (await request
-        .json()
-        .catch(() => null)) as ChatRequestBody | null;
+    // Clerk IDからOpenAIへ渡す匿名IDを作る
+    const safetyIdentifier =
+      await createSafetyIdentifier(
+        clerkUserId,
+      );
 
-    const message =
-      body?.message?.trim() ?? "";
+    const parsedBody =
+      chatRequestSchema.safeParse(
+        await request.json().catch(() => null),
+      );
 
-    const requestId =
-      body?.requestId?.trim() ?? "";
-
-    if (!uuidPattern.test(requestId)) {
+    if (!parsedBody.success) {
       return Response.json(
         {
           error:
-            "リクエストIDの形式が正しくありません。",
+            "質問・チャットID・リクエストIDを確認してください。",
         },
         {
           status: 400,
@@ -382,26 +380,40 @@ export async function POST(request: Request) {
       );
     }
 
-    if (!message) {
-      return Response.json(
-        {
-          error: "質問を入力してください。",
-        },
-        {
-          status: 400,
-        },
-      );
-    }
+    const body = parsedBody.data;
+    const { message, requestId } = body;
 
-    if (message.length > 2000) {
+    // 質問を保存・回答生成する前に重大な危険内容がないか確認する
+    const moderationDecision =
+      await checkModeration(message);
+
+    if (
+      moderationDecision.status ===
+      "self_harm_support"
+    ) {
       return Response.json(
         {
           error:
-            "質問は2000文字以内で入力してください。",
+            "今すぐ自分を傷つける可能性がある場合は、一人にならず、身近な人や地域の緊急窓口へ連絡してください。差し迫った危険がある場合は119へ連絡してください。",
+          moderationStatus:
+            moderationDecision.status,
         },
+        { status: 400 },
+      );
+    }
+
+    if (
+      moderationDecision.status ===
+      "blocked"
+    ) {
+      return Response.json(
         {
-          status: 400,
+          error:
+            "安全上の理由により、この内容には回答できません。筋力トレーニングに関する別の表現で質問してください。",
+          moderationStatus:
+            moderationDecision.status,
         },
+        { status: 400 },
       );
     }
 
@@ -698,17 +710,22 @@ export async function POST(request: Request) {
     // AIへ会話履歴と利用可能なToolを渡す
     let aiResponse =
       await openai.responses.create({
-        model: "gpt-5.6-luna",
+        model: openAiChatModel,
         instructions: systemPrompt,
         input: aiInput,
         tools: [...chatTools],
         tool_choice: "auto",
+        parallel_tool_calls: false,
+        max_output_tokens:
+          maxChatOutputTokens,
+        safety_identifier:
+        safetyIdentifier,
       });
 
     // AIがToolを選んだ場合、最大3回まで実行して結果を返す
     for (
       let toolRound = 0;
-      toolRound < 3;
+      toolRound < maxChatToolCalls;
       toolRound += 1
     ) {
       const toolCalls =
@@ -754,16 +771,22 @@ export async function POST(request: Request) {
       // Tool結果を読ませて、最終回答または次のTool判断を作らせる
       aiResponse =
         await openai.responses.create({
-          model: "gpt-5.6-luna",
+          model: openAiChatModel,
           instructions: systemPrompt,
           input: aiInput,
           tools: [...chatTools],
           tool_choice: "auto",
+          parallel_tool_calls: false,
+          max_output_tokens:
+            maxChatOutputTokens,
+          safety_identifier:
+          safetyIdentifier,
         });
     }
     
-    const reply =
-      aiResponse.output_text.trim();
+    const reply = limitChatAnswer(
+      aiResponse.output_text.trim(),
+    );
 
     if (!reply) {
       throw new Error(

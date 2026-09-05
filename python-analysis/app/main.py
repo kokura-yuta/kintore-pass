@@ -3,6 +3,7 @@ import base64
 import os
 from io import BytesIO
 from pathlib import Path
+from typing import Literal
 
 from dotenv import load_dotenv
 from openai import (
@@ -63,6 +64,22 @@ OPENAI_MAX_RETRIES = read_non_negative_int_env(
     "PYTHON_OPENAI_MAX_RETRIES",
     1,
 )
+OPENAI_BODY_ANALYSIS_MODEL = os.getenv(
+    "OPENAI_BODY_ANALYSIS_MODEL",
+    "gpt-5.6",
+).strip() or "gpt-5.6"
+OPENAI_BODY_ANALYSIS_MAX_OUTPUT_TOKENS = (
+    max(
+        1,
+        min(
+            read_non_negative_int_env(
+                "OPENAI_BODY_ANALYSIS_MAX_OUTPUT_TOKENS",
+                3000,
+            ),
+            8000,
+        ),
+    )
+)
 
 # OpenAI APIへ画像分析を依頼する共通クライアントを作る
 openai_client = AsyncOpenAI(
@@ -100,6 +117,9 @@ scoreは現在の筋肉の発達度を1から10で評価してください。
 priorityはhigh、medium、lowのいずれかにしてください。
 
 病気や怪我の診断はしないでください。
+治療法や薬の指示はせず、一般的な運動上の情報だけを返してください。
+鋭い痛み、胸の痛み、強いしびれ、息苦しさ、めまいが疑われる場合は、運動を中止して適切な医療機関へ相談するよう伝えてください。
+痛みを確かめるために運動を続ける提案はしないでください。
 体脂肪率など、画像だけでは断定できない数値を作らないでください。
 年齢、人種、健康状態などを推測しないでください。
 画像が不鮮明な場合は、判断できないことを明記してください。
@@ -111,17 +131,20 @@ app = FastAPI(
 )
 
 class BodyAreaResult(BaseModel):
-    body_part: str
+    body_part: str = Field(min_length=1, max_length=50)
     score: int = Field(ge=1, le=10)
-    priority: str
-    observation: str
-    recommendation: str
+    priority: Literal["high", "medium", "low"]
+    observation: str = Field(min_length=1, max_length=1000)
+    recommendation: str = Field(min_length=1, max_length=1000)
 
 
 class BodyAnalysisResponse(BaseModel):
-    summary: str
-    goal_difference: str
-    areas: list[BodyAreaResult]
+    summary: str = Field(min_length=1, max_length=2000)
+    goal_difference: str = Field(min_length=1, max_length=2000)
+    areas: list[BodyAreaResult] = Field(
+        min_length=1,
+        max_length=20,
+    )
 
 
 # アップロード画像1枚の形式・容量を安全確認する
@@ -230,6 +253,11 @@ async def analyze_body(
     front_image: UploadFile = File(...),
     side_image: UploadFile = File(...),
     back_image: UploadFile = File(...),
+    safety_identifier: str = Form(
+        ...,
+        min_length=1,
+        max_length=64,
+    ),
     goal_body_type: str = Form(
         ...,
         min_length=1,
@@ -301,7 +329,7 @@ async def analyze_body(
     # 画像3枚をOpenAIへ送り、決まった形式の分析結果を受け取る
     try:
         response = await openai_client.responses.parse(
-            model="gpt-5.6",
+            model=OPENAI_BODY_ANALYSIS_MODEL,
             instructions=BODY_ANALYSIS_INSTRUCTIONS,
             input=[
                 {
@@ -342,6 +370,10 @@ async def analyze_body(
                 },
             ],
             text_format=BodyAnalysisResponse,
+            max_output_tokens=(
+                OPENAI_BODY_ANALYSIS_MAX_OUTPUT_TOKENS
+            ),
+            safety_identifier=safety_identifier,
             store=False,
         )
     except APITimeoutError as error:

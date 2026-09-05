@@ -1,6 +1,9 @@
+import { sql } from "drizzle-orm";
+
 // PostgreSQLへユーザー情報と身体プロフィールを保存するテーブルの型を読み込む場所
 import {
   boolean,
+  check,
   date,
   index,
   integer,
@@ -165,37 +168,59 @@ export const weightRecords = pgTable(
 );
 
 // 1回分のトレーニング日時・時間・調子・メモをユーザーごとに保存するテーブル
-export const trainingSessions = pgTable("training_sessions", {
-  id: uuid("id").defaultRandom().primaryKey(),
+export const trainingSessions = pgTable(
+  "training_sessions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
 
-  userId: uuid("user_id")
-    .notNull()
-    .references(() => users.id, {
-      onDelete: "cascade",
-    }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, {
+        onDelete: "cascade",
+      }),
 
-  performedAt: timestamp("performed_at", {
-    withTimezone: true,
-  })
-    .notNull()
-    .defaultNow(),
+    performedAt: timestamp("performed_at", {
+      withTimezone: true,
+    })
+      .notNull()
+      .defaultNow(),
 
-  durationMinutes: integer("duration_minutes"),
+    durationMinutes: integer(
+      "duration_minutes",
+    ),
 
-  conditionScore: integer("condition_score"),
+    conditionScore: integer(
+      "condition_score",
+    ),
 
-  memo: text("memo"),
+    memo: text("memo"),
 
-  createdAt: timestamp("created_at", {
-    withTimezone: true,
-  })
-    .notNull()
-    .defaultNow(),
-});
+    createdAt: timestamp("created_at", {
+      withTimezone: true,
+    })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index(
+      "training_sessions_user_performed_idx",
+    ).on(table.userId, table.performedAt),
+    check(
+      "training_sessions_duration_check",
+      sql`${table.durationMinutes} is null or (${table.durationMinutes} >= 1 and ${table.durationMinutes} <= 600)`,
+    ),
+    check(
+      "training_sessions_condition_check",
+      sql`${table.conditionScore} is null or (${table.conditionScore} >= 1 and ${table.conditionScore} <= 10)`,
+    ),
+  ],
+);
 
 // 1回のトレーニングで実施した種目をtrainingSessionsと結び付けて保存するテーブル
-export const trainingExercises = pgTable("training_exercises", {
-  id: uuid("id").defaultRandom().primaryKey(),
+export const trainingExercises = pgTable(
+  "training_exercises",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
 
   sessionId: uuid("session_id")
     .notNull()
@@ -215,16 +240,28 @@ export const trainingExercises = pgTable("training_exercises", {
     .notNull()
     .default(0),
 
-  createdAt: timestamp("created_at", {
-    withTimezone: true,
-  })
-    .notNull()
-    .defaultNow(),
-});
+    createdAt: timestamp("created_at", {
+      withTimezone: true,
+    })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index(
+      "training_exercises_session_order_idx",
+    ).on(table.sessionId, table.displayOrder),
+    check(
+      "training_exercises_display_order_check",
+      sql`${table.displayOrder} >= 0 and ${table.displayOrder} <= 29`,
+    ),
+  ],
+);
 
 // 各種目で行ったセット番号・重量・回数をtrainingExercisesと結び付けて保存するテーブル
-export const trainingSets = pgTable("training_sets", {
-  id: uuid("id").defaultRandom().primaryKey(),
+export const trainingSets = pgTable(
+  "training_sets",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
 
   trainingExerciseId: uuid("training_exercise_id")
     .notNull()
@@ -238,16 +275,39 @@ export const trainingSets = pgTable("training_sets", {
 
   reps: integer("reps"),
 
-  createdAt: timestamp("created_at", {
-    withTimezone: true,
-  })
-    .notNull()
-    .defaultNow(),
-});
+    createdAt: timestamp("created_at", {
+      withTimezone: true,
+    })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex(
+      "training_sets_exercise_number_uidx",
+    ).on(
+      table.trainingExerciseId,
+      table.setNumber,
+    ),
+    check(
+      "training_sets_number_check",
+      sql`${table.setNumber} >= 1 and ${table.setNumber} <= 20`,
+    ),
+    check(
+      "training_sets_weight_check",
+      sql`${table.weightKg} is null or (${table.weightKg} >= 0 and ${table.weightKg} <= 1000)`,
+    ),
+    check(
+      "training_sets_reps_check",
+      sql`${table.reps} is null or (${table.reps} >= 0 and ${table.reps} <= 1000)`,
+    ),
+  ],
+);
 
 // Pythonによる1回分の身体分析結果をユーザーごとに保存する親テーブル
-export const bodyAnalyses = pgTable("body_analyses", {
-  id: uuid("id").defaultRandom().primaryKey(),
+export const bodyAnalyses = pgTable(
+  "body_analyses",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
 
   userId: uuid("user_id")
     .notNull()
@@ -267,12 +327,26 @@ export const bodyAnalyses = pgTable("body_analyses", {
     withTimezone: true,
   }),
 
-  createdAt: timestamp("created_at", {
-    withTimezone: true,
-  })
-    .notNull()
-    .defaultNow(),
-});
+    createdAt: timestamp("created_at", {
+      withTimezone: true,
+    })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index(
+      "body_analyses_user_status_analyzed_idx",
+    ).on(
+      table.userId,
+      table.status,
+      table.analyzedAt,
+    ),
+    check(
+      "body_analyses_status_check",
+      sql`${table.status} in ('pending', 'completed', 'failed')`,
+    ),
+  ],
+);
 // 肩・胸・背中など、Pythonが返した部位別の分析結果を保存するテーブル
 export const bodyAnalysisAreas = pgTable(
   "body_analysis_areas",
@@ -303,6 +377,15 @@ export const bodyAnalysisAreas = pgTable(
       .notNull()
       .defaultNow(),
   },
+  (table) => [
+    index(
+      "body_analysis_areas_analysis_idx",
+    ).on(table.analysisId),
+    check(
+      "body_analysis_areas_score_check",
+      sql`${table.score} is null or (${table.score} >= 1 and ${table.score} <= 10)`,
+    ),
+  ],
 );
 
 // OpenAIが生成した1回分のトレーニングメニューをユーザーごとに保存する親テーブル
@@ -484,7 +567,7 @@ export const chatMessages = pgTable(
   ],
 );
 
-// AIチャット・AIメニューの二重送信を防ぐため、処理開始済みのリクエストを保存する
+// AI・記録保存・身体分析の二重送信を防ぐため、処理開始済みのリクエストを保存する
 export const aiRequestGuards = pgTable(
   "ai_request_guards",
   {
@@ -499,7 +582,7 @@ export const aiRequestGuards = pgTable(
         onDelete: "cascade",
       }),
 
-    // chatまたはmenuのどちらの処理かを保存する
+    // chat・menu・training-record・body-analysisのどの処理かを保存する
     requestType: text("request_type")
       .notNull(),
 
@@ -529,6 +612,10 @@ export const aiRequestGuards = pgTable(
     ).on(
       table.userId,
       table.createdAt,
+    ),
+    check(
+      "ai_request_guards_type_check",
+      sql`${table.requestType} in ('chat', 'menu', 'training-record', 'body-analysis')`,
     ),
   ],
 );

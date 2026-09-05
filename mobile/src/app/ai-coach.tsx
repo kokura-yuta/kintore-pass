@@ -35,8 +35,17 @@ export default function AiCoachScreen() {
   const [isLoadingSavedMenu, setIsLoadingSavedMenu] = useState(!isApiBypassEnabled);
   const [savedMenuError, setSavedMenuError] = useState('');
   const [savedMenuReloadKey, setSavedMenuReloadKey] = useState(0);
+  // Clerkの最新のトークン取得関数を、再描画しない入れ物へ保存する
+  const getTokenRef = useRef(getToken);
+  // 保存済みAIメニューの自動取得を1回に制限する
+  const hasLoadedSavedMenuRef = useRef(false);
   const pendingMenuRequestId = useRef<string | null>(null);
   const trainingStyle = profile.trainingStyle ?? 'ai';
+
+  // Clerk側でgetTokenが更新されたらrefの中身だけを最新にする
+  useEffect(() => {
+    getTokenRef.current = getToken;
+  }, [getToken]);
 
   // 画面を開いたとき、Neonに保存された本人の最新AIメニューを読み戻す
   useEffect(() => {
@@ -44,13 +53,15 @@ export default function AiCoachScreen() {
     if (!isLoaded) return;
 
     if (!isSignedIn) return;
+    if (hasLoadedSavedMenuRef.current) return;
+    hasLoadedSavedMenuRef.current = true;
 
     let cancelled = false;
 
     async function loadLatestMenu() {
       setSavedMenuError('');
       try {
-        const token = await getToken();
+        const token = await getTokenRef.current();
         if (!token) {
           throw new ApiError('ログインを確認できませんでした。', 401);
         }
@@ -78,9 +89,11 @@ export default function AiCoachScreen() {
     return () => {
       cancelled = true;
     };
-  }, [getToken, isLoaded, isSignedIn, savedMenuReloadKey, setLatestGeneratedMenu]);
+  }, [isLoaded, isSignedIn, savedMenuReloadKey, setLatestGeneratedMenu]);
 
   function retrySavedMenu() {
+    // 利用者が再読み込みを押したときだけ、もう1回の取得を許可する
+    hasLoadedSavedMenuRef.current = false;
     setIsLoadingSavedMenu(true);
     setSavedMenuError('');
     setSavedMenuReloadKey((current) => current + 1);

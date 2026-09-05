@@ -9,6 +9,8 @@ import {
 import { getDb } from "@/db";
 
 import {
+  aiGeneratedMenuExercises,
+  aiGeneratedMenus,
   bodyAnalyses,
   bodyAnalysisAreas,
   trainingExercises,
@@ -33,7 +35,7 @@ export type UserAiContext = {
     weakBodyParts: string[] | null;
   } | null;
 
-    // 最新の身体分析結果と部位別評価
+  // 最新の身体分析結果と部位別評価
   latestBodyAnalysis: {
     id: string;
     summary: string | null;
@@ -49,7 +51,7 @@ export type UserAiContext = {
     }[];
   } | null;
 
-    // AIが参考にする最近のトレーニング履歴
+  // AIが参考にする最近のトレーニング履歴
   recentTrainingSessions: {
     id: string;
     performedAt: Date;
@@ -67,6 +69,20 @@ export type UserAiContext = {
         weightKg: number | null;
         reps: number | null;
       }[];
+    }[];
+  }[];
+
+  // 同じ内容が続きすぎないようにAIが比較する直近の生成メニュー
+  recentAiMenus: {
+    id: string;
+    recommendedBodyPart: string;
+    reason: string;
+    createdAt: Date;
+
+    exercises: {
+      exerciseName: string;
+      bodyPart: string;
+      bodyArea: string | null;
     }[];
   }[];
 };
@@ -135,7 +151,7 @@ export async function getUserAiContext(
   if (!user) {
     return null;
   }
-    // 本人の完了済み身体分析を新しい順で最大1件取得する
+  // 本人の完了済み身体分析を新しい順で最大1件取得する
   const matchedAnalyses = await db
     .select({
       id: bodyAnalyses.id,
@@ -164,8 +180,7 @@ export async function getUserAiContext(
 
   const latestAnalysis =
     matchedAnalyses[0] ?? null;
-    // 後から完成したAI用データを返す場所
-      // 最新分析がある場合だけ肩・胸・背中などの部位別評価を取得する
+  // 最新分析がある場合だけ肩・胸・背中などの部位別評価を取得する
   const latestAnalysisAreas =
     latestAnalysis
       ? await db
@@ -189,7 +204,7 @@ export async function getUserAiContext(
             ),
           )
       : [];
-        // 本人の最近10回のトレーニング記録を新しい順で取得する
+  // 本人の最近10回のトレーニング記録を新しい順で取得する
   const recentSessions = await db
     .select({
       id: trainingSessions.id,
@@ -212,7 +227,7 @@ export async function getUserAiContext(
       desc(trainingSessions.performedAt),
     )
     .limit(10);
-      // 各トレーニング記録へ、その日に実施した種目を追加する
+  // 各トレーニング記録へ、その日に実施した種目を追加する
   const sessionsWithExercises =
     await Promise.all(
       recentSessions.map(
@@ -247,7 +262,7 @@ export async function getUserAiContext(
         },
       ),
     );
-      // 各種目へセット番号・重量・回数を追加する
+  // 各種目へセット番号・重量・回数を追加する
   const recentTrainingSessions =
     await Promise.all(
       sessionsWithExercises.map(
@@ -281,7 +296,64 @@ export async function getUserAiContext(
         },
       ),
     );
-    // Neonから集めた本人情報をAI用の1つのデータにまとめて返す
+  // 本人が直近に生成したAIメニュー本体を新しい順で3件取得する
+  const recentMenus = await db
+    .select({
+      id: aiGeneratedMenus.id,
+      recommendedBodyPart:
+        aiGeneratedMenus.recommendedBodyPart,
+      reason: aiGeneratedMenus.reason,
+      createdAt: aiGeneratedMenus.createdAt,
+    })
+    .from(aiGeneratedMenus)
+    .where(
+      eq(
+        aiGeneratedMenus.userId,
+        user.userId,
+      ),
+    )
+    .orderBy(
+      desc(aiGeneratedMenus.createdAt),
+      desc(aiGeneratedMenus.id),
+    )
+    .limit(3);
+
+  // 各メニューへ、比較に必要な種目名と部位を追加する
+  const recentAiMenus =
+    await Promise.all(
+      recentMenus.map(
+        async (menu) => {
+          const exercises = await db
+            .select({
+              exerciseName:
+                aiGeneratedMenuExercises.exerciseName,
+              bodyPart:
+                aiGeneratedMenuExercises.bodyPart,
+              bodyArea:
+                aiGeneratedMenuExercises.bodyArea,
+            })
+            .from(
+              aiGeneratedMenuExercises,
+            )
+            .where(
+              eq(
+                aiGeneratedMenuExercises.menuId,
+                menu.id,
+              ),
+            )
+            .orderBy(
+              aiGeneratedMenuExercises.displayOrder,
+            );
+
+          return {
+            ...menu,
+            exercises,
+          };
+        },
+      ),
+    );
+
+  // Neonから集めた本人情報をAI用の1つのデータにまとめて返す
   return {
     userId: user.userId,
     goalBodyType: user.goalBodyType,
@@ -314,5 +386,6 @@ export async function getUserAiContext(
       : null,
 
     recentTrainingSessions,
+    recentAiMenus,
   };
 }

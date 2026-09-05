@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 
 const PROFILE_DRAFT_KEY = "kintore-pas:profile-draft";
@@ -23,19 +23,23 @@ const initialForm = {
   weakBodyParts: [],
 };
 
+function loadInitialForm() {
+  if (typeof window === "undefined") return initialForm;
+
+  try {
+    const savedDraft = window.localStorage.getItem(PROFILE_DRAFT_KEY);
+    return savedDraft
+      ? { ...initialForm, ...JSON.parse(savedDraft) }
+      : initialForm;
+  } catch {
+    return initialForm;
+  }
+}
+
 export default function ProfileSetupForm() {
   const router = useRouter();
-  const [form, setForm] = useState(initialForm);
+  const [form, setForm] = useState(loadInitialForm);
   const [errors, setErrors] = useState({});
-
-  useEffect(() => {
-    try {
-      const savedDraft = window.localStorage.getItem(PROFILE_DRAFT_KEY);
-      if (savedDraft) setForm({ ...initialForm, ...JSON.parse(savedDraft) });
-    } catch {
-      // 保存済みデータが壊れていても、新しい入力を続けられるようにする。
-    }
-  }, []);
 
   function updateField(field, value) {
     const nextForm = { ...form, [field]: value };
@@ -73,7 +77,7 @@ export default function ProfileSetupForm() {
   function handleSubmit(event) {
     event.preventDefault();
     if (!validate()) return;
-        const profileData = {
+    const profileData = {
       heightCm: Number(form.height),
       weightKg: Number(form.weight),
       bodyFatPercentage:
@@ -96,6 +100,10 @@ export default function ProfileSetupForm() {
           : null,
     };
 
+    window.localStorage.setItem(
+      "kintore-pas:profile-data",
+      JSON.stringify(profileData),
+    );
     window.localStorage.setItem(PROFILE_DRAFT_KEY, JSON.stringify(form));
     router.push("/initial-analysis");
   }
