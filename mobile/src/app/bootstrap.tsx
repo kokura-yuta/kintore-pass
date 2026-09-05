@@ -125,7 +125,7 @@ export default function BootstrapScreen() {
     setTimeout(() => void loadBootstrap(), 350);
   }
 
-  if (isLoaded && !isSignedIn) {
+  if (isLoaded && !isSignedIn && !isApiBypassEnabled) {
     return <Redirect href="/sign-in" />;
   }
 
@@ -140,6 +140,24 @@ export default function BootstrapScreen() {
               title="ユーザー情報を読み込んでいます…"
               type="loading"
             />
+            {isApiBypassEnabled ? (
+              <>
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => router.replace('/ideal-body')}
+                  style={styles.developmentButton}
+                >
+                  <Text style={styles.developmentButtonText}>開発用に初回設定へ進む</Text>
+                </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => router.replace('/home')}
+                  style={styles.developmentHomeButton}
+                >
+                  <Text style={styles.developmentHomeButtonText}>開発用にホームを確認する</Text>
+                </Pressable>
+              </>
+            ) : null}
           </View>
         ) : null}
 

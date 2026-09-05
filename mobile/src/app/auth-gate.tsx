@@ -2,6 +2,8 @@ import { useAuth } from '@clerk/expo';
 import { Redirect } from 'expo-router';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 
+import { isApiBypassEnabled } from '@/lib/api';
+
 export default function AuthGateScreen() {
   const { isLoaded, isSignedIn } = useAuth({ treatPendingAsSignedOut: false });
 
@@ -14,7 +16,8 @@ export default function AuthGateScreen() {
     );
   }
 
-  return <Redirect href={isSignedIn ? '/bootstrap' : '/sign-in'} />;
+  // API未接続中の画面開発では、未ログインでも開発用の入口を表示する。
+  return <Redirect href={isSignedIn || isApiBypassEnabled ? '/bootstrap' : '/sign-in'} />;
 }
 
 const styles = StyleSheet.create({
