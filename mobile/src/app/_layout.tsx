@@ -17,12 +17,12 @@ const musclePasTheme = {
   ...DarkTheme,
   colors: {
     ...DarkTheme.colors,
-    primary: '#F6D365',
-    background: '#0A0A0A',
-    card: '#141715',
+    primary: '#00D4FF',
+    background: '#050A0F',
+    card: '#0C151D',
     text: '#F4F6F3',
-    border: '#303030',
-    notification: '#F6D365',
+    border: '#203441',
+    notification: '#00D4FF',
   },
 };
 
@@ -60,7 +60,7 @@ function UserDataProviders() {
         <TrainingHistoryProvider>
           <WeightHistoryProvider>
             <ChatHistoryProvider>
-              <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#0A0A0A' } }} />
+              <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#050A0F' } }} />
             </ChatHistoryProvider>
           </WeightHistoryProvider>
         </TrainingHistoryProvider>

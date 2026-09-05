@@ -196,13 +196,13 @@ export default function BootstrapScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#0A0A0A' },
+  screen: { flex: 1, backgroundColor: '#050A0F' },
   safeArea: { flex: 1 },
   scrollContent: { flexGrow: 1 },
   centerContent: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: 24, paddingVertical: 24 },
-  eyebrow: { color: '#FFF1B8', fontSize: 11, fontWeight: '600', letterSpacing: 1.6 },
+  eyebrow: { color: '#73E7FF', fontSize: 11, fontWeight: '600', letterSpacing: 1.6 },
   title: { marginTop: 10, color: '#F4F6F3', fontSize: 32, fontWeight: '700' },
-  description: { marginTop: 14, color: '#9DA69F', fontSize: 14, lineHeight: 22 },
+  description: { marginTop: 14, color: '#99AAB4', fontSize: 14, lineHeight: 22 },
   primaryButton: {
     paddingHorizontal: 16,
     paddingVertical: 14,
@@ -211,9 +211,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginTop: 24,
     borderRadius: 14,
-    backgroundColor: '#F6D365',
+    backgroundColor: '#00D4FF',
   },
-  primaryButtonText: { textAlign: 'center', color: '#0A0A0A', fontSize: 15, fontWeight: '700' },
+  primaryButtonText: { textAlign: 'center', color: '#050A0F', fontSize: 15, fontWeight: '700' },
   developmentButton: {
     paddingHorizontal: 16,
     paddingVertical: 14,
@@ -222,10 +222,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginTop: 12,
     borderWidth: 1,
-    borderColor: '#F6D365',
+    borderColor: '#00D4FF',
     borderRadius: 14,
   },
-  developmentButtonText: { textAlign: 'center', color: '#FFF1B8', fontSize: 14, fontWeight: '700' },
+  developmentButtonText: { textAlign: 'center', color: '#73E7FF', fontSize: 14, fontWeight: '700' },
   developmentHomeButton: {
     paddingHorizontal: 16,
     paddingVertical: 14,
@@ -234,12 +234,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginTop: 12,
     borderRadius: 14,
-    backgroundColor: '#242424',
+    backgroundColor: '#111E28',
   },
   developmentHomeButtonText: { textAlign: 'center', color: '#F4F6F3', fontSize: 14, fontWeight: '700' },
   developmentNote: {
     marginTop: 12,
-    color: '#697169',
+    color: '#657681',
     fontSize: 11,
     lineHeight: 17,
     textAlign: 'center',

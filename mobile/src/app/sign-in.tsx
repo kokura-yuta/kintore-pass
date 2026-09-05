@@ -286,7 +286,7 @@ export default function SignInScreen() {
                   onPress={() => signInWithSocial('apple')}
                   style={[styles.socialButton, styles.appleButton, (!isReady || isSubmitting) && styles.disabledButton]}
                 >
-                  {socialProvider === 'apple' ? <ActivityIndicator color="#0A0A0A" /> : <Text style={styles.appleButtonText}>Appleで続ける</Text>}
+                  {socialProvider === 'apple' ? <ActivityIndicator color="#050A0F" /> : <Text style={styles.appleButtonText}>Appleで続ける</Text>}
                 </Pressable>
                 <Pressable
                   accessibilityRole="button"
@@ -317,7 +317,7 @@ export default function SignInScreen() {
                 onChangeText={setEmail}
                 onSubmitEditing={sendCode}
                 placeholder="example@email.com"
-                placeholderTextColor="#697169"
+                placeholderTextColor="#657681"
                 returnKeyType="send"
                 style={styles.input}
                 value={email}
@@ -333,7 +333,7 @@ export default function SignInScreen() {
                 onChangeText={(value) => setCode(value.replace(/\D/g, ''))}
                 onSubmitEditing={verifyCode}
                 placeholder="000000"
-                placeholderTextColor="#697169"
+                placeholderTextColor="#657681"
                 style={[styles.input, styles.codeInput]}
                 textContentType="oneTimeCode"
                 value={code}
@@ -363,7 +363,7 @@ export default function SignInScreen() {
               ]}
             >
               {isSubmitting ? (
-                <ActivityIndicator color="#0A0A0A" />
+                <ActivityIndicator color="#050A0F" />
               ) : (
                 <Text style={styles.primaryButtonText}>
                   {step === 'email' ? '認証コードを送る' : 'ログインする'}
@@ -400,32 +400,32 @@ export default function SignInScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#0A0A0A' },
+  screen: { flex: 1, backgroundColor: '#050A0F' },
   safeArea: { flex: 1 },
   content: { flex: 1, justifyContent: 'center', paddingHorizontal: 24 },
   scrollContent: { flexGrow: 1, justifyContent: 'center', paddingVertical: 24 },
-  eyebrow: { color: '#FFF1B8', fontSize: 11, fontWeight: '600', letterSpacing: 1.8 },
+  eyebrow: { color: '#73E7FF', fontSize: 11, fontWeight: '600', letterSpacing: 1.8 },
   title: { marginTop: 10, color: '#F4F6F3', fontSize: 38, fontWeight: '700' },
-  description: { marginTop: 12, color: '#A5ADA7', fontSize: 14, lineHeight: 22 },
+  description: { marginTop: 12, color: '#AAB7BF', fontSize: 14, lineHeight: 22 },
   form: { marginTop: 30 },
   input: {
     minHeight: 56,
     paddingHorizontal: 16,
     borderWidth: 1,
-    borderColor: '#3A3A3A',
+    borderColor: '#294653',
     borderRadius: 14,
-    backgroundColor: '#151515',
+    backgroundColor: '#0C151D',
     color: '#F4F6F3',
     fontSize: 16,
   },
   socialButton: { minHeight: 52, paddingHorizontal: 12, paddingVertical: 12, alignItems: 'center', justifyContent: 'center', marginBottom: 10, borderRadius: 14 },
   appleButton: { backgroundColor: '#F4F6F3' },
-  appleButtonText: { textAlign: 'center', color: '#0A0A0A', fontSize: 14, fontWeight: '700' },
-  googleButton: { borderWidth: 1, borderColor: '#3A3A3A', backgroundColor: '#151515' },
+  appleButtonText: { textAlign: 'center', color: '#050A0F', fontSize: 14, fontWeight: '700' },
+  googleButton: { borderWidth: 1, borderColor: '#294653', backgroundColor: '#0C151D' },
   googleButtonText: { textAlign: 'center', color: '#F4F6F3', fontSize: 14, fontWeight: '700' },
   dividerRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginVertical: 10 },
-  dividerLine: { flex: 1, height: 1, backgroundColor: '#303030' },
-  dividerText: { color: '#697169', fontSize: 10 },
+  dividerLine: { flex: 1, height: 1, backgroundColor: '#203441' },
+  dividerText: { color: '#657681', fontSize: 10 },
   codeInput: { fontSize: 25, fontWeight: '600', letterSpacing: 8, textAlign: 'center' },
   error: { marginTop: 12, color: '#FF7676', fontSize: 13, lineHeight: 19 },
   captcha: { minHeight: 1, marginTop: 8 },
@@ -437,14 +437,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginTop: 16,
     borderRadius: 14,
-    backgroundColor: '#F6D365',
+    backgroundColor: '#00D4FF',
   },
   disabledButton: { opacity: 0.45 },
   pressedButton: { opacity: 0.8 },
-  primaryButtonText: { textAlign: 'center', color: '#0A0A0A', fontSize: 15, fontWeight: '700' },
+  primaryButtonText: { textAlign: 'center', color: '#050A0F', fontSize: 15, fontWeight: '700' },
   textButton: { minHeight: 48, alignItems: 'center', paddingVertical: 16 },
-  textButtonLabel: { textAlign: 'center', color: '#FFF1B8', fontSize: 14, fontWeight: '700' },
+  textButtonLabel: { textAlign: 'center', color: '#73E7FF', fontSize: 14, fontWeight: '700' },
   codeActions: { marginTop: 2 },
-  disabledText: { color: '#697169' },
-  note: { marginTop: 24, color: '#697169', fontSize: 12, lineHeight: 18, textAlign: 'center' },
+  disabledText: { color: '#657681' },
+  note: { marginTop: 24, color: '#657681', fontSize: 12, lineHeight: 18, textAlign: 'center' },
 });

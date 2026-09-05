@@ -241,7 +241,7 @@ export default function TrainingScreen() {
                 keyboardType="number-pad"
                 onChangeText={(text) => setTrainingMinutes(text.replace(/\D/g, ''))}
                 placeholder="60"
-                placeholderTextColor="#59605A"
+                placeholderTextColor="#556772"
                 style={styles.timeInput}
                 value={trainingMinutes}
               />
@@ -263,7 +263,7 @@ export default function TrainingScreen() {
               maxLength={500}
               onChangeText={setMemo}
               placeholder="フォーム、疲労、気づいたことなど"
-              placeholderTextColor="#59605A"
+              placeholderTextColor="#556772"
               style={styles.memoInput}
               textAlignVertical="top"
               value={memo}
@@ -274,7 +274,7 @@ export default function TrainingScreen() {
           {successMessage ? <Text style={styles.success}>{successMessage}</Text> : null}
 
           <Pressable disabled={isSaving} onPress={saveRecord} style={[styles.saveButton, isSaving && styles.disabledButton]}>
-            {isSaving ? <ActivityIndicator color="#0A0A0A" /> : <Text style={styles.saveButtonText}>記録を保存</Text>}
+            {isSaving ? <ActivityIndicator color="#050A0F" /> : <Text style={styles.saveButtonText}>記録を保存</Text>}
           </Pressable>
           <Text style={styles.previewNote}>保存した記録は履歴とカレンダーへ反映されます。</Text>
         </ScrollView>
@@ -293,41 +293,41 @@ export default function TrainingScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#0A0A0A' },
+  screen: { flex: 1, backgroundColor: '#050A0F' },
   safeArea: { flex: 1 },
   content: { paddingHorizontal: 18, paddingTop: 17, paddingBottom: 28 },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  eyebrow: { color: '#FFF1B8', fontSize: 9, fontWeight: '700', letterSpacing: 1.5 },
+  eyebrow: { color: '#73E7FF', fontSize: 9, fontWeight: '700', letterSpacing: 1.5 },
   title: { marginTop: 5, color: '#F4F6F3', fontSize: 27, fontWeight: '700' },
-  dateBadge: { paddingHorizontal: 12, paddingVertical: 9, borderWidth: 1, borderColor: '#303030', borderRadius: 13, backgroundColor: '#151515' },
-  dateLabel: { color: '#697169', fontSize: 7, fontWeight: '700', letterSpacing: 1.1 },
+  dateBadge: { paddingHorizontal: 12, paddingVertical: 9, borderWidth: 1, borderColor: '#203441', borderRadius: 13, backgroundColor: '#0C151D' },
+  dateLabel: { color: '#657681', fontSize: 7, fontWeight: '700', letterSpacing: 1.1 },
   dateValue: { marginTop: 3, color: '#DDE1DD', fontSize: 10, fontWeight: '600' },
-  lead: { marginTop: 11, color: '#8E978F', fontSize: 12, lineHeight: 19 },
+  lead: { marginTop: 11, color: '#8798A3', fontSize: 12, lineHeight: 19 },
   sectionHeading: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 24, marginBottom: 11 },
   sectionTitle: { color: '#F4F6F3', fontSize: 15, fontWeight: '700' },
-  exerciseCount: { color: '#FFF1B8', fontSize: 11, fontWeight: '700' },
-  addButton: { minHeight: 53, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, borderWidth: 1, borderColor: '#F6D365', borderRadius: 15 },
-  addButtonIcon: { color: '#FFF1B8', fontSize: 19, fontWeight: '700' },
-  addButtonText: { color: '#FFF1B8', fontSize: 13, fontWeight: '700' },
-  detailsCard: { marginTop: 16, padding: 16, borderWidth: 1, borderColor: '#303030', borderRadius: 17, backgroundColor: '#151515' },
+  exerciseCount: { color: '#73E7FF', fontSize: 11, fontWeight: '700' },
+  addButton: { minHeight: 53, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, borderWidth: 1, borderColor: '#00D4FF', borderRadius: 15 },
+  addButtonIcon: { color: '#73E7FF', fontSize: 19, fontWeight: '700' },
+  addButtonText: { color: '#73E7FF', fontSize: 13, fontWeight: '700' },
+  detailsCard: { marginTop: 16, padding: 16, borderWidth: 1, borderColor: '#203441', borderRadius: 17, backgroundColor: '#0C151D' },
   cardTitle: { color: '#F4F6F3', fontSize: 16, fontWeight: '700' },
-  fieldLabel: { marginTop: 19, marginBottom: 8, color: '#A5ADA7', fontSize: 11, fontWeight: '600' },
-  timeInputWrap: { minHeight: 50, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#3A3A3A', borderRadius: 12, backgroundColor: '#0A0A0A' },
+  fieldLabel: { marginTop: 19, marginBottom: 8, color: '#AAB7BF', fontSize: 11, fontWeight: '600' },
+  timeInputWrap: { minHeight: 50, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#294653', borderRadius: 12, backgroundColor: '#050A0F' },
   timeInput: { flex: 1, paddingHorizontal: 13, color: '#F4F6F3', fontSize: 15, fontWeight: '600' },
-  timeUnit: { paddingRight: 13, color: '#737B75', fontSize: 11 },
-  conditionLabel: { marginTop: 20, color: '#A5ADA7', fontSize: 11, fontWeight: '600' },
-  conditionValue: { color: '#FFF1B8' },
+  timeUnit: { paddingRight: 13, color: '#72828D', fontSize: 11 },
+  conditionLabel: { marginTop: 20, color: '#AAB7BF', fontSize: 11, fontWeight: '600' },
+  conditionValue: { color: '#73E7FF' },
   ratingRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 10 },
-  ratingButton: { width: 35, height: 35, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#3A3A3A', borderRadius: 10, backgroundColor: '#0A0A0A' },
-  selectedRating: { borderColor: '#F6D365', backgroundColor: '#F6D365' },
-  ratingText: { color: '#8E978F', fontSize: 11, fontWeight: '700' },
-  selectedRatingText: { color: '#0A0A0A' },
-  optionalText: { color: '#697169', fontSize: 9 },
-  memoInput: { minHeight: 100, padding: 13, borderWidth: 1, borderColor: '#3A3A3A', borderRadius: 12, backgroundColor: '#0A0A0A', color: '#F4F6F3', fontSize: 13, lineHeight: 20 },
+  ratingButton: { width: 35, height: 35, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#294653', borderRadius: 10, backgroundColor: '#050A0F' },
+  selectedRating: { borderColor: '#00D4FF', backgroundColor: '#00D4FF' },
+  ratingText: { color: '#8798A3', fontSize: 11, fontWeight: '700' },
+  selectedRatingText: { color: '#050A0F' },
+  optionalText: { color: '#657681', fontSize: 9 },
+  memoInput: { minHeight: 100, padding: 13, borderWidth: 1, borderColor: '#294653', borderRadius: 12, backgroundColor: '#050A0F', color: '#F4F6F3', fontSize: 13, lineHeight: 20 },
   error: { marginTop: 13, color: '#FF7676', fontSize: 12, lineHeight: 18 },
-  success: { marginTop: 13, color: '#FFF1B8', fontSize: 12, lineHeight: 18 },
-  saveButton: { minHeight: 55, alignItems: 'center', justifyContent: 'center', marginTop: 16, borderRadius: 15, backgroundColor: '#F6D365' },
+  success: { marginTop: 13, color: '#73E7FF', fontSize: 12, lineHeight: 18 },
+  saveButton: { minHeight: 55, alignItems: 'center', justifyContent: 'center', marginTop: 16, borderRadius: 15, backgroundColor: '#00D4FF' },
   disabledButton: { opacity: 0.5 },
-  saveButtonText: { color: '#0A0A0A', fontSize: 15, fontWeight: '700' },
-  previewNote: { marginTop: 12, color: '#59605A', fontSize: 9, lineHeight: 15, textAlign: 'center' },
+  saveButtonText: { color: '#050A0F', fontSize: 15, fontWeight: '700' },
+  previewNote: { marginTop: 12, color: '#556772', fontSize: 9, lineHeight: 15, textAlign: 'center' },
 });

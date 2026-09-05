@@ -95,7 +95,7 @@ function RecordInput({ inputType, onChangeText, unit, value }: { inputType: 'dec
         keyboardType={inputType === 'decimal' ? 'decimal-pad' : 'number-pad'}
         onChangeText={(text) => onChangeText(inputType === 'decimal' ? sanitizeDecimalInput(text) : sanitizeIntegerInput(text))}
         placeholder="0"
-        placeholderTextColor="#59605A"
+        placeholderTextColor="#556772"
         style={styles.input}
         value={value}
       />
@@ -105,33 +105,33 @@ function RecordInput({ inputType, onChangeText, unit, value }: { inputType: 'dec
 }
 
 const styles = StyleSheet.create({
-  card: { marginBottom: 12, padding: 15, borderWidth: 1, borderColor: '#303030', borderRadius: 17, backgroundColor: '#151515' },
+  card: { marginBottom: 12, padding: 15, borderWidth: 1, borderColor: '#203441', borderRadius: 17, backgroundColor: '#0C151D' },
   heading: { flexDirection: 'row', alignItems: 'center' },
-  numberBadge: { width: 31, height: 31, alignItems: 'center', justifyContent: 'center', borderRadius: 9, backgroundColor: '#292929' },
-  number: { color: '#FFF1B8', fontSize: 9, fontWeight: '700' },
+  numberBadge: { width: 31, height: 31, alignItems: 'center', justifyContent: 'center', borderRadius: 9, backgroundColor: '#13222D' },
+  number: { color: '#73E7FF', fontSize: 9, fontWeight: '700' },
   headingCopy: { flex: 1, marginLeft: 10 },
   name: { color: '#F4F6F3', fontSize: 14, fontWeight: '700' },
-  meta: { marginTop: 3, color: '#737B75', fontSize: 10 },
+  meta: { marginTop: 3, color: '#72828D', fontSize: 10 },
   removeButton: { paddingHorizontal: 7, paddingVertical: 8 },
   removeText: { color: '#FF8D98', fontSize: 11, fontWeight: '600' },
-  previousBox: { flexDirection: 'row', alignItems: 'center', gap: 9, marginTop: 14, padding: 10, borderRadius: 11, backgroundColor: '#222222' },
+  previousBox: { flexDirection: 'row', alignItems: 'center', gap: 9, marginTop: 14, padding: 10, borderRadius: 11, backgroundColor: '#101C25' },
   previousCopy: { flex: 1 },
-  previousLabel: { color: '#737B75', fontSize: 8, fontWeight: '700', letterSpacing: 1 },
+  previousLabel: { color: '#72828D', fontSize: 8, fontWeight: '700', letterSpacing: 1 },
   previousValue: { marginTop: 3, color: '#DDE1DD', fontSize: 10, fontWeight: '700' },
-  copyButton: { paddingHorizontal: 10, paddingVertical: 8, borderWidth: 1, borderColor: '#F6D365', borderRadius: 9 },
-  copyButtonText: { color: '#FFF1B8', fontSize: 9, fontWeight: '700' },
+  copyButton: { paddingHorizontal: 10, paddingVertical: 8, borderWidth: 1, borderColor: '#00D4FF', borderRadius: 9 },
+  copyButtonText: { color: '#73E7FF', fontSize: 9, fontWeight: '700' },
   columnLabels: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 16, marginBottom: 6 },
-  columnLabel: { flex: 1, color: '#858E87', fontSize: 9, fontWeight: '600' },
+  columnLabel: { flex: 1, color: '#81939E', fontSize: 9, fontWeight: '600' },
   setColumn: { width: 30, flex: 0, textAlign: 'center' },
   deleteColumn: { width: 28 },
   setRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
-  setNumber: { color: '#FFF1B8', fontSize: 12, fontWeight: '700', textAlign: 'center' },
-  inputWrap: { minHeight: 46, flex: 1, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#3A3A3A', borderRadius: 11, backgroundColor: '#0A0A0A' },
+  setNumber: { color: '#73E7FF', fontSize: 12, fontWeight: '700', textAlign: 'center' },
+  inputWrap: { minHeight: 46, flex: 1, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#294653', borderRadius: 11, backgroundColor: '#050A0F' },
   input: { flex: 1, minWidth: 0, paddingLeft: 10, color: '#F4F6F3', fontSize: 14, fontWeight: '600' },
-  unit: { paddingRight: 8, color: '#697169', fontSize: 8, fontWeight: '600' },
+  unit: { paddingRight: 8, color: '#657681', fontSize: 8, fontWeight: '600' },
   deleteSetButton: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center' },
   deleteSetText: { color: '#FF8D98', fontSize: 18, fontWeight: '500' },
   disabledDelete: { opacity: 0.2 },
-  addSetButton: { minHeight: 40, alignItems: 'center', justifyContent: 'center', marginTop: 5, borderWidth: 1, borderColor: '#3A3A3A', borderRadius: 11 },
-  addSetText: { color: '#FFF1B8', fontSize: 11, fontWeight: '700' },
+  addSetButton: { minHeight: 40, alignItems: 'center', justifyContent: 'center', marginTop: 5, borderWidth: 1, borderColor: '#294653', borderRadius: 11 },
+  addSetText: { color: '#73E7FF', fontSize: 11, fontWeight: '700' },
 });

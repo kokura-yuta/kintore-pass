@@ -191,7 +191,7 @@ export default function InitialAnalysisScreen() {
             </Text>
             {isSkipping ? (
               <ActivityIndicator
-                color="#FFF1B8"
+                color="#73E7FF"
                 size="small"
               />
             ) : null}
@@ -239,30 +239,30 @@ function SummaryRow({
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#0A0A0A' },
+  screen: { flex: 1, backgroundColor: '#050A0F' },
   safeArea: { flex: 1 },
   content: { flexGrow: 1, paddingHorizontal: 20, paddingTop: 18, paddingBottom: 46 },
   header: { flexDirection: 'row', justifyContent: 'space-between' },
-  eyebrow: { color: '#FFF1B8', fontSize: 11, fontWeight: '600', letterSpacing: 1.6 },
-  step: { color: '#737B75', fontSize: 11, fontWeight: '600', letterSpacing: 1.2 },
+  eyebrow: { color: '#73E7FF', fontSize: 11, fontWeight: '600', letterSpacing: 1.6 },
+  step: { color: '#72828D', fontSize: 11, fontWeight: '600', letterSpacing: 1.2 },
   title: { marginTop: 24, color: '#F4F6F3', fontSize: 31, fontWeight: '700' },
-  lead: { marginTop: 10, color: '#9DA69F', fontSize: 14, lineHeight: 22 },
-  card: { marginTop: 24, padding: 17, borderWidth: 1, borderColor: '#303030', borderRadius: 17, backgroundColor: '#151515' },
-  cardEyebrow: { marginBottom: 6, color: '#FFF1B8', fontSize: 10, fontWeight: '700', letterSpacing: 1.4 },
-  summaryRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#303030' },
+  lead: { marginTop: 10, color: '#99AAB4', fontSize: 14, lineHeight: 22 },
+  card: { marginTop: 24, padding: 17, borderWidth: 1, borderColor: '#203441', borderRadius: 17, backgroundColor: '#0C151D' },
+  cardEyebrow: { marginBottom: 6, color: '#73E7FF', fontSize: 10, fontWeight: '700', letterSpacing: 1.4 },
+  summaryRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#203441' },
   lastSummaryRow: { borderBottomWidth: 0, paddingBottom: 2 },
-  summaryLabel: { color: '#737B75', fontSize: 12 },
+  summaryLabel: { color: '#72828D', fontSize: 12 },
   summaryValue: { flex: 1, color: '#F4F6F3', fontSize: 12, fontWeight: '600', textAlign: 'right' },
-  noticeCard: { marginTop: 15, padding: 14, borderRadius: 13, backgroundColor: '#222222' },
-  noticeTitle: { color: '#FFF1B8', fontSize: 11, fontWeight: '700' },
-  noticeText: { marginTop: 5, color: '#899189', fontSize: 11, lineHeight: 17 },
+  noticeCard: { marginTop: 15, padding: 14, borderRadius: 13, backgroundColor: '#101C25' },
+  noticeTitle: { color: '#73E7FF', fontSize: 11, fontWeight: '700' },
+  noticeText: { marginTop: 5, color: '#8395A0', fontSize: 11, lineHeight: 17 },
   error: { marginTop: 12, color: '#FF7676', fontSize: 12, lineHeight: 18 },
-  primaryButton: { minHeight: 54, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 20, paddingHorizontal: 18, borderRadius: 15, backgroundColor: '#F6D365' },
+  primaryButton: { minHeight: 54, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 20, paddingHorizontal: 18, borderRadius: 15, backgroundColor: '#00D4FF' },
   disabledButton: { opacity: 0.4 },
-  primaryButtonText: { color: '#0A0A0A', fontSize: 15, fontWeight: '700' },
-  primaryArrow: { color: '#0A0A0A', fontSize: 20, fontWeight: '700' },
+  primaryButtonText: { color: '#050A0F', fontSize: 15, fontWeight: '700' },
+  primaryArrow: { color: '#050A0F', fontSize: 20, fontWeight: '700' },
   textButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 17 },
-  textButtonLabel: { color: '#FFF1B8', fontSize: 13, fontWeight: '600' },
+  textButtonLabel: { color: '#73E7FF', fontSize: 13, fontWeight: '600' },
   changeButton: { alignItems: 'center', paddingVertical: 8 },
-  changeButtonLabel: { color: '#737B75', fontSize: 12, fontWeight: '600' },
+  changeButtonLabel: { color: '#72828D', fontSize: 12, fontWeight: '600' },
 });

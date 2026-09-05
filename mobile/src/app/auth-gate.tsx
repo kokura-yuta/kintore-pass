@@ -8,7 +8,7 @@ export default function AuthGateScreen() {
   if (!isLoaded) {
     return (
       <View style={styles.screen}>
-        <ActivityIndicator size="large" color="#F6D365" />
+        <ActivityIndicator size="large" color="#00D4FF" />
         <Text style={styles.message}>ログイン状態を確認しています…</Text>
       </View>
     );
@@ -23,7 +23,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 18,
-    backgroundColor: '#0A0A0A',
+    backgroundColor: '#050A0F',
   },
-  message: { color: '#9DA69F', fontSize: 13 },
+  message: { color: '#99AAB4', fontSize: 13 },
 });

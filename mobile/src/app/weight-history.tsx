@@ -95,16 +95,16 @@ export default function WeightHistoryScreen() {
             <View style={styles.card}>
               <Text style={styles.cardTitle}>今日の体重を追加</Text>
               <Text style={styles.fieldLabel}>日付</Text>
-              <TextInput autoCapitalize="none" onChangeText={setRecordedOn} placeholder="YYYY-MM-DD" placeholderTextColor="#59605A" style={styles.textInput} value={recordedOn} />
+              <TextInput autoCapitalize="none" onChangeText={setRecordedOn} placeholder="YYYY-MM-DD" placeholderTextColor="#556772" style={styles.textInput} value={recordedOn} />
               <Text style={styles.fieldLabel}>体重</Text>
               <View style={styles.weightInputWrap}>
-                <TextInput inputMode="decimal" keyboardType="decimal-pad" onChangeText={(text) => { setWeightKg(sanitizeDecimalInput(text)); setError(''); setSuccess(''); }} placeholder="65.0" placeholderTextColor="#59605A" style={styles.weightInput} value={weightKg} />
+                <TextInput inputMode="decimal" keyboardType="decimal-pad" onChangeText={(text) => { setWeightKg(sanitizeDecimalInput(text)); setError(''); setSuccess(''); }} placeholder="65.0" placeholderTextColor="#556772" style={styles.weightInput} value={weightKg} />
                 <Text style={styles.inputUnit}>kg</Text>
               </View>
               {error ? <Text style={styles.error}>{error}</Text> : null}
               {success ? <Text style={styles.success}>{success}</Text> : null}
               <Pressable disabled={isSaving} onPress={addWeight} style={[styles.saveButton, isSaving && styles.disabledButton]}>
-                {isSaving ? <ActivityIndicator color="#0A0A0A" /> : <Text style={styles.saveText}>体重を記録</Text>}
+                {isSaving ? <ActivityIndicator color="#050A0F" /> : <Text style={styles.saveText}>体重を記録</Text>}
               </Pressable>
             </View>
 
@@ -125,13 +125,13 @@ export default function WeightHistoryScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#0A0A0A' }, safeArea: { flex: 1 }, content: { paddingHorizontal: 18, paddingTop: 14, paddingBottom: 32 },
-  header: { flexDirection: 'row', alignItems: 'center' }, backButton: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center', marginRight: 10, borderWidth: 1, borderColor: '#303030', borderRadius: 13 }, backText: { color: '#F4F6F3', fontSize: 30, lineHeight: 32 },
-  eyebrow: { color: '#FFF1B8', fontSize: 8, fontWeight: '700', letterSpacing: 1.4 }, title: { marginTop: 3, color: '#F4F6F3', fontSize: 27, fontWeight: '700' },
-  summaryRow: { flexDirection: 'row', gap: 10, marginTop: 18 }, summaryCard: { flex: 1, padding: 15, borderWidth: 1, borderColor: '#303030', borderRadius: 16, backgroundColor: '#151515' }, summaryLabel: { color: '#737B75', fontSize: 9, fontWeight: '600' }, summaryValue: { marginTop: 8, color: '#F4F6F3', fontSize: 23, fontWeight: '700' }, greenValue: { color: '#FFF1B8' }, summaryUnit: { color: '#8E978F', fontSize: 10 },
-  card: { marginTop: 13, padding: 16, borderWidth: 1, borderColor: '#303030', borderRadius: 17, backgroundColor: '#151515' }, cardHeading: { flexDirection: 'row', justifyContent: 'space-between' }, cardTitle: { color: '#F4F6F3', fontSize: 15, fontWeight: '700' }, cardHint: { color: '#737B75', fontSize: 9, fontWeight: '600' },
-  chart: { height: 190, flexDirection: 'row', alignItems: 'flex-end', gap: 7, marginTop: 18, paddingTop: 14 }, barColumn: { flex: 1, alignItems: 'center' }, barValue: { marginBottom: 5, color: '#C9CECA', fontSize: 8, fontWeight: '600' }, bar: { width: '65%', maxWidth: 28, borderRadius: 7, backgroundColor: '#F6D365' }, barDate: { marginTop: 6, color: '#697169', fontSize: 7, fontWeight: '700' },
-  fieldLabel: { marginTop: 16, marginBottom: 7, color: '#A5ADA7', fontSize: 10, fontWeight: '600' }, textInput: { minHeight: 50, paddingHorizontal: 13, borderWidth: 1, borderColor: '#3A3A3A', borderRadius: 12, backgroundColor: '#0A0A0A', color: '#F4F6F3', fontSize: 13 }, weightInputWrap: { minHeight: 50, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#3A3A3A', borderRadius: 12, backgroundColor: '#0A0A0A' }, weightInput: { flex: 1, paddingHorizontal: 13, color: '#F4F6F3', fontSize: 15, fontWeight: '600' }, inputUnit: { paddingRight: 13, color: '#737B75', fontSize: 10 },
-  error: { marginTop: 9, color: '#FF7676', fontSize: 10 }, success: { marginTop: 9, color: '#FFF1B8', fontSize: 10 }, saveButton: { minHeight: 51, alignItems: 'center', justifyContent: 'center', marginTop: 13, borderRadius: 13, backgroundColor: '#F6D365' }, disabledButton: { opacity: 0.5 }, saveText: { color: '#0A0A0A', fontSize: 13, fontWeight: '700' },
-  historyRow: { minHeight: 53, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: 1, borderBottomColor: '#303030' }, historyDate: { color: '#A5ADA7', fontSize: 10, fontWeight: '700' }, historyRight: { flexDirection: 'row', alignItems: 'center', gap: 12 }, historyWeight: { color: '#F4F6F3', fontSize: 12, fontWeight: '700' }, historyDiff: { width: 45, color: '#737B75', fontSize: 8, textAlign: 'right' }, previewNote: { marginTop: 14, color: '#59605A', fontSize: 9, lineHeight: 15, textAlign: 'center' },
+  screen: { flex: 1, backgroundColor: '#050A0F' }, safeArea: { flex: 1 }, content: { paddingHorizontal: 18, paddingTop: 14, paddingBottom: 32 },
+  header: { flexDirection: 'row', alignItems: 'center' }, backButton: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center', marginRight: 10, borderWidth: 1, borderColor: '#203441', borderRadius: 13 }, backText: { color: '#F4F6F3', fontSize: 30, lineHeight: 32 },
+  eyebrow: { color: '#73E7FF', fontSize: 8, fontWeight: '700', letterSpacing: 1.4 }, title: { marginTop: 3, color: '#F4F6F3', fontSize: 27, fontWeight: '700' },
+  summaryRow: { flexDirection: 'row', gap: 10, marginTop: 18 }, summaryCard: { flex: 1, padding: 15, borderWidth: 1, borderColor: '#203441', borderRadius: 16, backgroundColor: '#0C151D' }, summaryLabel: { color: '#72828D', fontSize: 9, fontWeight: '600' }, summaryValue: { marginTop: 8, color: '#F4F6F3', fontSize: 23, fontWeight: '700' }, greenValue: { color: '#73E7FF' }, summaryUnit: { color: '#8798A3', fontSize: 10 },
+  card: { marginTop: 13, padding: 16, borderWidth: 1, borderColor: '#203441', borderRadius: 17, backgroundColor: '#0C151D' }, cardHeading: { flexDirection: 'row', justifyContent: 'space-between' }, cardTitle: { color: '#F4F6F3', fontSize: 15, fontWeight: '700' }, cardHint: { color: '#72828D', fontSize: 9, fontWeight: '600' },
+  chart: { height: 190, flexDirection: 'row', alignItems: 'flex-end', gap: 7, marginTop: 18, paddingTop: 14 }, barColumn: { flex: 1, alignItems: 'center' }, barValue: { marginBottom: 5, color: '#CDD7DD', fontSize: 8, fontWeight: '600' }, bar: { width: '65%', maxWidth: 28, borderRadius: 7, backgroundColor: '#00D4FF' }, barDate: { marginTop: 6, color: '#657681', fontSize: 7, fontWeight: '700' },
+  fieldLabel: { marginTop: 16, marginBottom: 7, color: '#AAB7BF', fontSize: 10, fontWeight: '600' }, textInput: { minHeight: 50, paddingHorizontal: 13, borderWidth: 1, borderColor: '#294653', borderRadius: 12, backgroundColor: '#050A0F', color: '#F4F6F3', fontSize: 13 }, weightInputWrap: { minHeight: 50, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#294653', borderRadius: 12, backgroundColor: '#050A0F' }, weightInput: { flex: 1, paddingHorizontal: 13, color: '#F4F6F3', fontSize: 15, fontWeight: '600' }, inputUnit: { paddingRight: 13, color: '#72828D', fontSize: 10 },
+  error: { marginTop: 9, color: '#FF7676', fontSize: 10 }, success: { marginTop: 9, color: '#73E7FF', fontSize: 10 }, saveButton: { minHeight: 51, alignItems: 'center', justifyContent: 'center', marginTop: 13, borderRadius: 13, backgroundColor: '#00D4FF' }, disabledButton: { opacity: 0.5 }, saveText: { color: '#050A0F', fontSize: 13, fontWeight: '700' },
+  historyRow: { minHeight: 53, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: 1, borderBottomColor: '#203441' }, historyDate: { color: '#AAB7BF', fontSize: 10, fontWeight: '700' }, historyRight: { flexDirection: 'row', alignItems: 'center', gap: 12 }, historyWeight: { color: '#F4F6F3', fontSize: 12, fontWeight: '700' }, historyDiff: { width: 45, color: '#72828D', fontSize: 8, textAlign: 'right' }, previewNote: { marginTop: 14, color: '#556772', fontSize: 9, lineHeight: 15, textAlign: 'center' },
 });

@@ -44,12 +44,12 @@ export function BottomNavigation() {
 const styles = StyleSheet.create({
   safeArea: {
     borderTopWidth: 1,
-    borderTopColor: '#2C2924',
-    backgroundColor: '#111111',
+    borderTopColor: '#142833',
+    backgroundColor: '#081018',
   },
   navigation: { minHeight: 64, flexDirection: 'row', alignItems: 'stretch' },
   item: { flex: 1, minWidth: 0, paddingHorizontal: 3, paddingVertical: 8, alignItems: 'center', justifyContent: 'center', gap: 4 },
-  icon: { color: '#737B75', fontSize: 19, fontWeight: '600' },
-  label: { maxWidth: '100%', textAlign: 'center', color: '#737B75', fontSize: 9, fontWeight: '600' },
-  active: { color: '#FFF1B8' },
+  icon: { color: '#72828D', fontSize: 19, fontWeight: '600' },
+  label: { maxWidth: '100%', textAlign: 'center', color: '#72828D', fontSize: 9, fontWeight: '600' },
+  active: { color: '#73E7FF' },
 });

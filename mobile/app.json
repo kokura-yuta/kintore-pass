@@ -7,7 +7,7 @@
     "icon": "./assets/images/kintore-pas-icon-v2.png",
     "scheme": "kintorepas",
     "userInterfaceStyle": "dark",
-    "backgroundColor": "#0A0A0A",
+    "backgroundColor": "#050A0F",
     "ios": {
       "icon": "./assets/images/kintore-pas-icon-v2.png",
       "bundleIdentifier": "com.yoshida.kintorepas",
@@ -15,7 +15,7 @@
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#0A0A0A",
+        "backgroundColor": "#050A0F",
         "foregroundImage": "./assets/images/kintore-pas-icon-v2.png"
       },
       "predictiveBackGestureEnabled": false
@@ -29,7 +29,7 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#0A0A0A",
+          "backgroundColor": "#050A0F",
           "image": "./assets/images/kintore-pas-icon-v2.png",
           "imageWidth": 180,
           "resizeMode": "contain"

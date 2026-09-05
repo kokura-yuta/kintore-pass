@@ -34,7 +34,7 @@ export function ProfileNumberField({
           keyboardType="decimal-pad"
           onChangeText={(text) => onChangeText(sanitizeDecimalInput(text))}
           placeholder={placeholder}
-          placeholderTextColor="#697169"
+          placeholderTextColor="#657681"
           style={styles.input}
           value={value}
         />
@@ -49,19 +49,19 @@ const styles = StyleSheet.create({
   field: { flex: 1, minWidth: 130 },
   labelRow: { flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 8 },
   label: { color: '#E8EBE8', fontSize: 13, fontWeight: '600' },
-  required: { color: '#FFF1B8', fontSize: 10, fontWeight: '700' },
-  optional: { color: '#737B75', fontSize: 10, fontWeight: '600' },
+  required: { color: '#73E7FF', fontSize: 10, fontWeight: '700' },
+  optional: { color: '#72828D', fontSize: 10, fontWeight: '600' },
   inputWrap: {
     minHeight: 54,
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#3A3A3A',
+    borderColor: '#294653',
     borderRadius: 13,
-    backgroundColor: '#0A0A0A',
+    backgroundColor: '#050A0F',
   },
   inputError: { borderColor: '#FF7676' },
   input: { flex: 1, paddingHorizontal: 14, color: '#F4F6F3', fontSize: 16 },
-  unit: { paddingRight: 14, color: '#8F9891', fontSize: 12, fontWeight: '700' },
+  unit: { paddingRight: 14, color: '#8B9CA6', fontSize: 12, fontWeight: '700' },
   error: { marginTop: 6, color: '#FF7676', fontSize: 11, lineHeight: 16 },
 });

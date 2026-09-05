@@ -23,9 +23,9 @@ export function AppPlaceholderScreen({ description, eyebrow, title }: Props) {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#0A0A0A' },
+  screen: { flex: 1, backgroundColor: '#050A0F' },
   content: { flex: 1, justifyContent: 'center', paddingHorizontal: 24 },
-  eyebrow: { color: '#FFF1B8', fontSize: 11, fontWeight: '700', letterSpacing: 1.5 },
+  eyebrow: { color: '#73E7FF', fontSize: 11, fontWeight: '700', letterSpacing: 1.5 },
   title: { marginTop: 10, color: '#F4F6F3', fontSize: 32, fontWeight: '700' },
-  description: { marginTop: 14, color: '#9DA69F', fontSize: 14, lineHeight: 22 },
+  description: { marginTop: 14, color: '#99AAB4', fontSize: 14, lineHeight: 22 },
 });
