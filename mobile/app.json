@@ -44,7 +44,8 @@
           "cameraPermission": "身体分析用の写真を撮影するためにカメラを使用します。",
           "microphonePermission": false
         }
-      ]
+      ],
+      "expo-image"
     ],
     "experiments": {
       "typedRoutes": true,

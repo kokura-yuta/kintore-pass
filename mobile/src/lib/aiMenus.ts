@@ -1,8 +1,7 @@
 // AIメニュー画面とバックエンドの生成・最新取得APIをつなぐ通信処理
 import { apiRequest } from '@/lib/api';
 import { exerciseCatalog } from '@/lib/exerciseCatalog';
-import type { GeneratedMenuPreview } from '@/lib/aiMenuPreview';
-import type { MenuBodyPart } from '@/lib/aiMenuPreview';
+import type { GeneratedMenuPreview, MenuBodyPart } from '@/lib/aiMenuPreview';
 
 export type AiMenuExercise = {
   exerciseName: string;

@@ -96,7 +96,6 @@ export function TrainingHistoryProvider({ children }: PropsWithChildren) {
 
     if (!isSignedIn) {
       hasAutomaticallyLoadedRef.current = false;
-      setRecords([]);
       return;
     }
 

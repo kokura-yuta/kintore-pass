@@ -16,6 +16,16 @@ Codexはフロントエンドを変更するたびに、このファイルも更
 - 未確認：Clerkへ実ログインした画面からのホーム、初回設定、記録、AI、身体分析の通し通信と、iPhone・Android実機操作。
 - バックエンド依存：Neonが利用可能な状態、テストユーザー、各APIの実データが必要。次はログイン済み端末で`bootstrap → home`を確認する。
 
+### iOS・Androidビルドと依存関係の追加確認
+
+- Expo SDK 57の依存関係チェックを実行し、推奨される互換バージョンへ更新。更新後は`Dependencies are up to date`を確認。
+- AIチャットのMarkdown処理が参照する`punycode`不足を検出して追加し、iOS・Android・Webの全プラットフォームで書き出し成功。
+- mobile専用のExpo ESLint設定を追加し、重複importと履歴Contextの不要なEffect内State更新を修正。Expo LintとTypeScript型チェックが成功。
+- クライアントコードを秘密鍵名で検査し、Clerk秘密鍵・DB接続情報・OpenAI秘密鍵の混入がないことを確認。
+- 公開APIテストでヘルスチェック成功と、未ログイン状態の個人データAPI26通りが401で拒否されることを確認。
+- `npm audit --omit=dev`では推移的依存関係に29件のmoderate・6件のhighが残存。強制更新はExpo互換性を壊すため未実施し、Markdown依存を含め公開前に対応方針を決める。
+- 次の作業：ログイン済み端末の実通信テストと、依存パッケージの脆弱性影響範囲の確認。
+
 ## 今回の対応（2026-09-01）
 
 ### 身体分析画面の分析中表示・操作補助

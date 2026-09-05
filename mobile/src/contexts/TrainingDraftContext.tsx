@@ -1,7 +1,6 @@
 import { createContext, type PropsWithChildren, useContext, useMemo, useState } from 'react';
 
-import type { GeneratedMenuPreview } from '@/lib/aiMenuPreview';
-import type { MenuBodyPart } from '@/lib/aiMenuPreview';
+import type { GeneratedMenuPreview, MenuBodyPart } from '@/lib/aiMenuPreview';
 
 export type TrainingDraftExercise = {
   exerciseId: string;
