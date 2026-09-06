@@ -12,6 +12,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { BottomNavigation } from '@/components/BottomNavigation';
 import { type ChatMessage, useChatHistory } from '@/contexts/ChatHistoryContext';
 import { deleteChatConversation, fetchChatHistory, sendChatMessage } from '@/lib/chatApi';
+import { isApiBypassEnabled } from '@/lib/api';
 
 const MAX_MESSAGE_LENGTH = 2000;
 
@@ -51,6 +52,7 @@ export default function ChatScreen() {
   }, [getToken]);
 
   useEffect(() => {
+    if (isApiBypassEnabled) return;
     if (!isLoaded || !isSignedIn) return;
     let cancelled = false;
 
@@ -86,6 +88,7 @@ export default function ChatScreen() {
   }, [historyReloadKey, isLoaded, isSignedIn, replaceConversations]);
 
   useEffect(() => {
+    if (isApiBypassEnabled) return;
     const localConversationId = activeConversation?.id ?? null;
     const serverConversationId = activeConversation?.serverConversationId ?? null;
     if (!isLoaded || !isSignedIn || !localConversationId || !serverConversationId) return;
@@ -167,6 +170,15 @@ export default function ChatScreen() {
     setIsSending(true);
 
     try {
+      if (isApiBypassEnabled) {
+        addMessage(localConversationId, {
+          id: `assistant-${Date.now()}`,
+          role: 'assistant',
+          content: '## 開発用AI回答\n\nメッセージを受け取りました。\n\n- Markdown表示\n- 複数行表示\n- チャット操作\n\nをAPIなしで確認できます。',
+          createdAt: Date.now(),
+        });
+        return;
+      }
       const token = await getTokenRef.current();
       if (!token) throw new Error('ログインを確認できませんでした。');
       const response = await sendChatMessage(
@@ -201,6 +213,11 @@ export default function ChatScreen() {
 
     setDeletingConversationId(id);
     try {
+      if (isApiBypassEnabled) {
+        deleteConversation(id);
+        if (resolvedActiveId === id) setActiveId(null);
+        return;
+      }
       const token = await getTokenRef.current();
       if (!token) throw new Error('ログインを確認できませんでした。');
       await deleteChatConversation(token, conversation.serverConversationId);
@@ -226,7 +243,7 @@ export default function ChatScreen() {
     ]);
   }
 
-  if (isLoaded && !isSignedIn) return <Redirect href="/sign-in" />;
+  if (isLoaded && !isSignedIn && !isApiBypassEnabled) return <Redirect href="/sign-in" />;
 
   return (
     <View style={styles.screen}>

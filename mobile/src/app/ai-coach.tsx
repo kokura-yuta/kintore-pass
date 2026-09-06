@@ -182,7 +182,7 @@ export default function AiCoachScreen() {
     router.push('/training');
   }
 
-  if (isLoaded && !isSignedIn) {
+  if (isLoaded && !isSignedIn && !isApiBypassEnabled) {
     return <Redirect href="/sign-in" />;
   }
 
