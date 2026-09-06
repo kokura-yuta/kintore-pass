@@ -62,7 +62,7 @@ export default function WeightHistoryScreen() {
   return (
     <View style={styles.screen}>
       <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.safeArea}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : Platform.OS === 'android' ? 'height' : undefined} keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0} style={styles.safeArea}>
           <ScrollView automaticallyAdjustKeyboardInsets contentContainerStyle={styles.content} keyboardDismissMode="interactive" keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
             <View style={styles.header}>
               <Pressable accessibilityLabel="マイページへ戻る" onPress={() => router.back()} style={styles.backButton}><Text style={styles.backText}>‹</Text></Pressable>
@@ -95,15 +95,15 @@ export default function WeightHistoryScreen() {
             <View style={styles.card}>
               <Text style={styles.cardTitle}>今日の体重を追加</Text>
               <Text style={styles.fieldLabel}>日付</Text>
-              <TextInput autoCapitalize="none" onChangeText={setRecordedOn} placeholder="YYYY-MM-DD" placeholderTextColor="#556772" style={styles.textInput} value={recordedOn} />
+              <TextInput accessibilityLabel="体重を記録する日付" autoCapitalize="none" onChangeText={setRecordedOn} placeholder="YYYY-MM-DD" placeholderTextColor="#556772" style={styles.textInput} value={recordedOn} />
               <Text style={styles.fieldLabel}>体重</Text>
               <View style={styles.weightInputWrap}>
-                <TextInput inputMode="decimal" keyboardType="decimal-pad" onChangeText={(text) => { setWeightKg(sanitizeDecimalInput(text)); setError(''); setSuccess(''); }} placeholder="65.0" placeholderTextColor="#556772" style={styles.weightInput} value={weightKg} />
+                <TextInput accessibilityLabel="記録する体重" inputMode="decimal" keyboardType="decimal-pad" onChangeText={(text) => { setWeightKg(sanitizeDecimalInput(text)); setError(''); setSuccess(''); }} placeholder="65.0" placeholderTextColor="#556772" style={styles.weightInput} value={weightKg} />
                 <Text style={styles.inputUnit}>kg</Text>
               </View>
               {error ? <Text style={styles.error}>{error}</Text> : null}
               {success ? <Text style={styles.success}>{success}</Text> : null}
-              <Pressable disabled={isSaving} onPress={addWeight} style={[styles.saveButton, isSaving && styles.disabledButton]}>
+              <Pressable accessibilityLabel="体重を記録" accessibilityState={{ disabled: isSaving, busy: isSaving }} disabled={isSaving} onPress={addWeight} style={[styles.saveButton, isSaving && styles.disabledButton]}>
                 {isSaving ? <ActivityIndicator color="#050A0F" /> : <Text style={styles.saveText}>体重を記録</Text>}
               </Pressable>
             </View>

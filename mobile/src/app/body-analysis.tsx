@@ -8,6 +8,7 @@ import {
 import { useState } from 'react';
 import {
   ActivityIndicator,
+  KeyboardAvoidingView,
   Platform,
   Pressable,
   ScrollView,
@@ -445,7 +446,12 @@ if (
   return (
     <View style={styles.screen}>
       <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
-        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : Platform.OS === 'android' ? 'height' : undefined}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
+          style={styles.safeArea}
+        >
+        <ScrollView automaticallyAdjustKeyboardInsets contentContainerStyle={styles.content} keyboardDismissMode="interactive" keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
           <View style={styles.header}><Pressable accessibilityLabel="分析履歴へ戻る" accessibilityRole="button" onPress={() => router.back()} style={styles.backButton}><Text style={styles.backText}>‹</Text></Pressable><View><Text style={styles.eyebrow}>BODY ANALYSIS</Text><Text style={styles.title}>身体写真を設定</Text></View></View>
           <Text style={styles.lead}>正面・横・背面の3枚を、できるだけ同じ場所と明るさで撮影してください。</Text>
           <View style={styles.progressRow}>
@@ -476,6 +482,7 @@ if (
           {error ? <Text accessibilityLiveRegion="polite" accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
           <Pressable accessibilityRole="button" accessibilityState={{ disabled: !hasAllPhotos || Boolean(selectingPosition) }} disabled={!hasAllPhotos || Boolean(selectingPosition)} onPress={beginAnalysis} style={[styles.primaryButton, (!hasAllPhotos || Boolean(selectingPosition)) && styles.disabledButton]}><Text style={styles.primaryText}>{hasAllPhotos ? 'この写真で分析する' : `あと${3 - selectedPhotoCount}枚設定してください`}</Text><Text style={styles.primaryArrow}>›</Text></Pressable>
         </ScrollView>
+        </KeyboardAvoidingView>
       </SafeAreaView>
     </View>
   );
