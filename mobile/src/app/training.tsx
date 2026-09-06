@@ -194,7 +194,7 @@ export default function TrainingScreen() {
   return (
     <View style={styles.screen}>
       <SafeAreaView edges={['top']} style={styles.safeArea}>
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.safeArea}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : Platform.OS === 'android' ? 'height' : undefined} keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0} style={styles.safeArea}>
         <ScrollView automaticallyAdjustKeyboardInsets contentContainerStyle={styles.content} keyboardDismissMode="interactive" keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
           <View style={styles.header}>
             <View>
@@ -237,6 +237,7 @@ export default function TrainingScreen() {
             <Text style={styles.fieldLabel}>トレーニング時間 <Text style={styles.optionalText}>任意</Text></Text>
             <View style={styles.timeInputWrap}>
               <TextInput
+                accessibilityLabel="トレーニング時間（分）"
                 inputMode="numeric"
                 keyboardType="number-pad"
                 onChangeText={(text) => setTrainingMinutes(text.replace(/\D/g, ''))}
@@ -259,6 +260,7 @@ export default function TrainingScreen() {
 
             <Text style={styles.fieldLabel}>メモ <Text style={styles.optionalText}>任意</Text></Text>
             <TextInput
+              accessibilityLabel="トレーニングメモ"
               multiline
               maxLength={500}
               onChangeText={setMemo}
@@ -273,7 +275,7 @@ export default function TrainingScreen() {
           {errorMessage ? <Text style={styles.error}>{errorMessage}</Text> : null}
           {successMessage ? <Text style={styles.success}>{successMessage}</Text> : null}
 
-          <Pressable disabled={isSaving} onPress={saveRecord} style={[styles.saveButton, isSaving && styles.disabledButton]}>
+          <Pressable accessibilityLabel="トレーニング記録を保存" accessibilityState={{ disabled: isSaving, busy: isSaving }} disabled={isSaving} onPress={saveRecord} style={[styles.saveButton, isSaving && styles.disabledButton]}>
             {isSaving ? <ActivityIndicator color="#050A0F" /> : <Text style={styles.saveButtonText}>記録を保存</Text>}
           </Pressable>
           <Text style={styles.previewNote}>保存した記録は履歴とカレンダーへ反映されます。</Text>
