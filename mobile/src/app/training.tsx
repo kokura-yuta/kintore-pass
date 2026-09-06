@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useAuth } from '@clerk/expo';
 import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -9,7 +9,7 @@ import { ExerciseRecordCard, type ExerciseRecord } from '@/components/ExerciseRe
 import { useTrainingDraft } from '@/contexts/TrainingDraftContext';
 import { useTrainingHistory } from '@/contexts/TrainingHistoryContext';
 import { exerciseCatalog, type ExerciseOption } from '@/lib/exerciseCatalog';
-import { ApiError } from '@/lib/api';
+import { ApiError, isApiBypassEnabled } from '@/lib/api';
 import type { PreviousSetPreview } from '@/lib/previousRecordPreview';
 import { createTrainingRecord } from '@/lib/trainingRecords';
 
@@ -66,6 +66,7 @@ export default function TrainingScreen() {
   const [errorMessage, setErrorMessage] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const savingLock = useRef(false);
   const trainingDate = formatLocalDate(new Date());
 
   function addExercise(exercise: ExerciseOption) {
@@ -120,6 +121,7 @@ export default function TrainingScreen() {
   }
 
   async function saveRecord() {
+    if (savingLock.current) return;
     setSuccessMessage('');
     if (exercises.length === 0) {
       setErrorMessage('実施した種目を1つ以上追加してください。');
@@ -141,14 +143,10 @@ export default function TrainingScreen() {
       return;
     }
     setErrorMessage('');
+    savingLock.current = true;
     setIsSaving(true);
     try {
-      const token = await getToken();
-      if (!token) {
-        throw new ApiError('ログインを確認できませんでした。もう一度ログインしてください。', 401);
-      }
-
-      const response = await createTrainingRecord(token, {
+      const payload = {
         performedAt: new Date().toISOString(),
         durationMinutes: duration,
         conditionScore: condition,
@@ -165,7 +163,20 @@ export default function TrainingScreen() {
             reps: set.reps ? Number(set.reps) : null,
           })),
         })),
-      });
+      };
+
+      const response = isApiBypassEnabled
+        ? {
+            message: 'トレーニング記録を保存しました。',
+            trainingSessionId: `development-${Date.now()}`,
+          }
+        : await (async () => {
+            const token = await getToken();
+            if (!token) {
+              throw new ApiError('ログインを確認できませんでした。もう一度ログインしてください。', 401);
+            }
+            return createTrainingRecord(token, payload);
+          })();
 
       addRecord({
         id: response.trainingSessionId,
@@ -187,6 +198,7 @@ export default function TrainingScreen() {
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : '記録の保存に失敗しました。');
     } finally {
+      savingLock.current = false;
       setIsSaving(false);
     }
   }
