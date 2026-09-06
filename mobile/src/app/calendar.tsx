@@ -77,7 +77,7 @@ export default function CalendarScreen() {
             <ScreenStateCard actionLabel="もう一度読み込む" compact message={errorMessage} onAction={() => void reloadRecords()} title="記録を読み込めませんでした" type="error" />
           ) : null}
           {!isLoading && !errorMessage && selectedRecords.length === 0 ? (
-            <ScreenStateCard compact message="トレーニングを保存すると、この日に金色の印が付きます。" title="記録はありません" type="empty" />
+            <ScreenStateCard compact message="トレーニングを保存すると、この日に青色の印が付きます。" title="記録はありません" type="empty" />
           ) : null}
           {!isLoading && !errorMessage ? selectedRecords.map((record, recordIndex) => (
             <View key={record.id} style={styles.recordCard}>

@@ -1,6 +1,6 @@
 import { useAuth } from '@clerk/expo';
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   KeyboardAvoidingView,
   ActivityIndicator,
@@ -52,6 +52,7 @@ export default function ProfileSetupScreen() {
     useState('');
   const [isSaving, setIsSaving] =
     useState(false);
+  const savingLock = useRef(false);
 
   function updateField<K extends keyof ProfileDraft>(field: K, value: ProfileDraft[K]) {
     setForm((current) => ({ ...current, [field]: value }));
@@ -71,6 +72,7 @@ export default function ProfileSetupScreen() {
   }
 
   async function continueToAnalysis() {
+    if (savingLock.current) return;
     const nextErrors: Errors = {};
     const height = Number(form.heightCm);
     const weight = Number(form.weightKg);
@@ -85,10 +87,12 @@ export default function ProfileSetupScreen() {
     if (form.bodyFatPercentage && (bodyFat < 2 || bodyFat > 70)) {
       nextErrors.bodyFatPercentage = '2〜70%で入力してください。';
     }
+    if (!form.trainingStyle) nextErrors.trainingStyle = 'トレーニング形式を選択してください。';
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return;
 
     setSubmitError('');
+    savingLock.current = true;
     setIsSaving(true);
 
     try {
@@ -117,6 +121,7 @@ export default function ProfileSetupScreen() {
           : '身体情報を保存できませんでした。',
       );
     } finally {
+      savingLock.current = false;
       setIsSaving(false);
     }
   }
@@ -211,12 +216,12 @@ export default function ProfileSetupScreen() {
               <View style={styles.cardHeadingRow}>
                 <View>
                   <Text style={styles.cardTitle}>トレーニング習慣</Text>
-                  <Text style={styles.cardHint}>決まっていなければ空欄でOK</Text>
+                  <Text style={styles.cardHint}>形式を選び、ほかは必要に応じて入力</Text>
                 </View>
-                <Text style={styles.optionalBadge}>任意</Text>
+                <Text style={styles.optionalBadge}>一部任意</Text>
               </View>
 
-              <Text style={styles.optionLabel}>トレーニング形式 <Text style={styles.optionalBadge}>任意</Text></Text>
+              <Text style={styles.optionLabel}>トレーニング形式 <Text style={styles.requiredBadge}>必須</Text></Text>
               <View style={styles.chipRow}>
                 {trainingStyleOptions.map((style) => (
                   <Pressable key={style.value} onPress={() => updateField('trainingStyle', style.value)} style={[styles.chip, form.trainingStyle === style.value && styles.selectedChip]}>
@@ -274,7 +279,7 @@ export default function ProfileSetupScreen() {
             </View>
 
             {submitError ? <Text style={styles.fieldError}>{submitError}</Text> : null}
-            <Pressable disabled={isSaving} onPress={continueToAnalysis} style={[styles.continueButton, isSaving && { opacity: 0.5 }]}>
+            <Pressable accessibilityLabel="身体情報を保存して次へ" accessibilityState={{ disabled: isSaving, busy: isSaving }} disabled={isSaving} onPress={continueToAnalysis} style={[styles.continueButton, isSaving && { opacity: 0.5 }]}> 
               {isSaving ? <ActivityIndicator color="#050A0F" /> : <Text style={styles.continueText}>入力内容を保存して次へ</Text>}
               <Text style={styles.continueArrow}>→</Text>
             </Pressable>
@@ -307,6 +312,7 @@ const styles = StyleSheet.create({
   cardTitle: { color: '#F4F6F3', fontSize: 16, fontWeight: '700' },
   cardHint: { marginTop: 4, color: '#72828D', fontSize: 11 },
   optionalBadge: { color: '#72828D', fontSize: 10, fontWeight: '600' },
+  requiredBadge: { color: '#73E7FF', fontSize: 10, fontWeight: '700' },
   measurementRow: { flexDirection: 'row', gap: 12, marginTop: 18 },
   optionalField: { marginTop: 18 },
   locationRow: { flexDirection: 'row', gap: 8, marginTop: 18 },
