@@ -84,7 +84,7 @@ export default function HomeScreen() {
   }, [getToken]);
 
   const loadHome = useCallback(async () => {
-    if (!isLoaded || !isSignedIn || isLoadingHomeRef.current) return;
+    if (!isLoaded || (!isSignedIn && !isApiBypassEnabled) || isLoadingHomeRef.current) return;
     isLoadingHomeRef.current = true;
     setIsLoading(true);
     setError('');
@@ -118,7 +118,7 @@ export default function HomeScreen() {
   useEffect(() => {
     if (!isLoaded) return;
 
-    if (!isSignedIn) {
+    if (!isSignedIn && !isApiBypassEnabled) {
       hasAutomaticallyLoadedRef.current = false;
       return;
     }
@@ -161,7 +161,7 @@ export default function HomeScreen() {
     router.push('/ai-coach' as Href);
   }
 
-  if (isLoaded && !isSignedIn) return <Redirect href="/sign-in" />;
+  if (isLoaded && !isSignedIn && !isApiBypassEnabled) return <Redirect href="/sign-in" />;
 
   return (
     <View style={styles.screen}>
