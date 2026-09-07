@@ -108,6 +108,7 @@ export default function HomeScreen() {
   const [isGenerating, setIsGenerating] = useState(false);
   const generationIndexRef = useRef(0);
   const menuRequestRef = useRef<string | null>(null);
+  const scrollViewRef = useRef<ScrollView>(null);
 
   // Clerk側でgetTokenが更新されたらrefの中身だけを最新にする
   useEffect(() => {
@@ -190,6 +191,15 @@ export default function HomeScreen() {
     setBuilderError('');
   }
 
+  function openMenuBuilder() {
+    setBuilderCondition(conditionScore);
+    setBuilderBodyPart(todayBodyPart);
+    setBuilderError('');
+    setShowMenuBuilder(true);
+    // 設定欄はホーム上部に表示されるため、押した直後に見える位置へ移動する。
+    requestAnimationFrame(() => scrollViewRef.current?.scrollTo({ y: 0, animated: true }));
+  }
+
   async function generateMenuOnHome() {
     if (menuRequestRef.current || isGenerating) return;
     if (!builderCondition) {
@@ -245,7 +255,7 @@ export default function HomeScreen() {
   return (
     <View style={styles.screen}>
       <SafeAreaView edges={['top']} style={styles.safeArea}>
-        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <ScrollView ref={scrollViewRef} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
           <View style={styles.header}>
             <View><Text style={styles.brand}>筋トレ<Text style={styles.brandAccent}>PAS</Text></Text><Text style={styles.date}>{formatToday()}</Text></View>
             <View style={styles.goalPill}><Text style={styles.goalLabel}>GOAL</Text><Text numberOfLines={1} style={styles.goalValue}>{goalLabel}</Text></View>
@@ -293,7 +303,7 @@ export default function HomeScreen() {
           ) : null}
 
           {!isLoading && !error && homeData && !displayedMenu ? (
-            <ScreenStateCard actionLabel="AIメニューを作成する" message="今日の調子と鍛えたい部位を入力して、メニューを作成しましょう。" onAction={() => setShowMenuBuilder(true)} title="AIメニューはまだありません" type="empty" />
+            <ScreenStateCard actionLabel="AIメニューを作成する" message="今日の調子と鍛えたい部位を入力して、メニューを作成しましょう。" onAction={openMenuBuilder} title="AIメニューはまだありません" type="empty" />
           ) : null}
 
           {!isLoading && !error && displayedMenu ? (
@@ -315,7 +325,7 @@ export default function HomeScreen() {
                 <View style={styles.statusCard}><Text style={styles.statusLabel}>コンディション</Text><Text style={styles.conditionValue}>{getConditionLabel(conditionScore, homeData?.condition?.label ?? null)}</Text><View style={styles.conditionTrack}><View style={[styles.conditionBar, { width: `${Math.max(0, Math.min(10, conditionScore ?? 0)) * 10}%` }]} /></View></View>
               </View>
               <Pressable onPress={startTraining} style={styles.startButton}><View><Text style={styles.startLabel}>START NOW</Text><Text style={styles.startText}>トレーニングを開始</Text></View><Text style={styles.startArrow}>→</Text></Pressable>
-              <Pressable disabled={isGenerating} onPress={() => { setBuilderCondition(conditionScore); setBuilderBodyPart(todayBodyPart); setBuilderError(''); setShowMenuBuilder(true); }} style={styles.adjustButton}><Text style={styles.adjustButtonText}>部位・調子を変えてメニューを調整</Text></Pressable>
+              <Pressable accessibilityRole="button" accessibilityState={{ disabled: isGenerating }} disabled={isGenerating} onPress={openMenuBuilder} style={styles.adjustButton}><Text style={styles.adjustButtonText}>部位・調子を変えてメニューを調整</Text></Pressable>
             </>
           ) : null}
 
