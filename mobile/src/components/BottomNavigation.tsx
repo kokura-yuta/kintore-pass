@@ -5,7 +5,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 const navigationItems = [
   { href: '/home', label: 'ホーム', icon: '⌂' },
   { href: '/training', label: 'トレーニング', icon: '▤' },
-  { href: '/ai-coach', label: 'AIコーチ', icon: '✦' },
   { href: '/chat', label: 'チャット', icon: '◌' },
   { href: '/my-page', label: 'マイページ', icon: '●' },
 ] as const;

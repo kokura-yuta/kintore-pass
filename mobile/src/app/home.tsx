@@ -1,7 +1,8 @@
 import { useAuth } from '@clerk/expo';
+import * as Crypto from 'expo-crypto';
 import { type Href, Redirect, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { BottomNavigation } from '@/components/BottomNavigation';
@@ -10,7 +11,7 @@ import { useOnboarding } from '@/contexts/OnboardingContext';
 import { useTrainingDraft } from '@/contexts/TrainingDraftContext';
 import { ApiError, isApiBypassEnabled } from '@/lib/api';
 import { getMenuPreview, type GeneratedMenuPreview, type MenuBodyPart } from '@/lib/aiMenuPreview';
-import { toGeneratedMenuPreview } from '@/lib/aiMenus';
+import { generateAiMenu, toGeneratedMenuPreview, type SavedAiMenu } from '@/lib/aiMenus';
 import { fetchHome, type HomeResponse } from '@/lib/homeApi';
 import { homePreview } from '@/lib/homePreview';
 import { getGoalBodyLabel } from '@/lib/initialAnalysisPreview';
@@ -33,6 +34,29 @@ function getConditionLabel(score: number | null, label: string | null) {
 
 function getFirstNumber(value: string) {
   return value.match(/\d+(?:\.\d+)?/)?.[0] ?? '';
+}
+
+function previewToSavedMenu(menu: GeneratedMenuPreview, conditionScore: number): SavedAiMenu {
+  return {
+    id: menu.menuId,
+    recommendedBodyPart: menu.targetArea,
+    reason: menu.reason,
+    estimatedMinutes: menu.estimatedMinutes,
+    advice: [menu.advice],
+    conditionScore,
+    requestNote: null,
+    createdAt: new Date().toISOString(),
+    exercises: menu.exercises.map((exercise) => ({
+      exerciseName: exercise.name,
+      bodyPart: exercise.category ?? menu.targetArea,
+      bodyArea: null,
+      targetWeightKg: exercise.weightKg ? Number(exercise.weightKg) : null,
+      targetReps: exercise.reps,
+      sets: exercise.setCount,
+      restSeconds: 60,
+      note: '',
+    })),
+  };
 }
 
 function createDevelopmentHomeResponse(): HomeResponse {
@@ -77,6 +101,13 @@ export default function HomeScreen() {
   const [homeData, setHomeData] = useState<HomeResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
+  const [showMenuBuilder, setShowMenuBuilder] = useState(false);
+  const [builderCondition, setBuilderCondition] = useState<number | null>(null);
+  const [builderBodyPart, setBuilderBodyPart] = useState<MenuBodyPart | null>(todayBodyPart);
+  const [builderError, setBuilderError] = useState('');
+  const [isGenerating, setIsGenerating] = useState(false);
+  const generationIndexRef = useRef(0);
+  const menuRequestRef = useRef<string | null>(null);
 
   // Clerk側でgetTokenが更新されたらrefの中身だけを最新にする
   useEffect(() => {
@@ -154,11 +185,59 @@ export default function HomeScreen() {
 
   function selectTodayBodyPart(bodyPart: MenuBodyPart) {
     setTodayBodyPart(bodyPart);
-    if (isApiBypassEnabled) {
-      const score = conditionScore ?? homePreview.conditionScore;
-      setLatestGeneratedMenu({ menu: getMenuPreview(score, 0, 'split', bodyPart), condition: score });
+    setBuilderBodyPart(bodyPart);
+    setShowMenuBuilder(true);
+    setBuilderError('');
+  }
+
+  async function generateMenuOnHome() {
+    if (menuRequestRef.current || isGenerating) return;
+    if (!builderCondition) {
+      setBuilderError('今日の調子を1〜10で選択してください。');
+      return;
     }
-    router.push('/ai-coach' as Href);
+    if (profile.trainingStyle === 'split' && !builderBodyPart) {
+      setBuilderError('今日鍛える部位を選択してください。');
+      return;
+    }
+
+    const requestId = Crypto.randomUUID();
+    menuRequestRef.current = requestId;
+    setBuilderError('');
+    setIsGenerating(true);
+    try {
+      let savedMenu: SavedAiMenu;
+      if (isApiBypassEnabled) {
+        generationIndexRef.current += 1;
+        const preview = getMenuPreview(
+          builderCondition,
+          generationIndexRef.current,
+          builderBodyPart ? 'split' : profile.trainingStyle ?? 'ai',
+          builderBodyPart,
+        );
+        savedMenu = previewToSavedMenu(preview, builderCondition);
+      } else {
+        const token = await getTokenRef.current();
+        if (!token) throw new ApiError('ログインを確認できませんでした。', 401);
+        savedMenu = (await generateAiMenu(token, builderCondition, builderBodyPart, requestId)).menu;
+      }
+
+      const preview = toGeneratedMenuPreview(savedMenu);
+      setHomeData((current) => ({
+        goalBodyType: current?.goalBodyType ?? getGoalBodyLabel(goalBody),
+        menu: savedMenu,
+        condition: { score: builderCondition, label: getConditionLabel(builderCondition, null) },
+        aiMessage: preview.advice,
+      }));
+      setLatestGeneratedMenu({ menu: preview, condition: builderCondition });
+      setTodayBodyPart(builderBodyPart);
+      setShowMenuBuilder(false);
+    } catch (generationError) {
+      setBuilderError(generationError instanceof Error ? generationError.message : 'AIメニューを生成できませんでした。');
+    } finally {
+      menuRequestRef.current = null;
+      setIsGenerating(false);
+    }
   }
 
   if (isLoaded && !isSignedIn && !isApiBypassEnabled) return <Redirect href="/sign-in" />;
@@ -191,12 +270,30 @@ export default function HomeScreen() {
             <View style={styles.bodyPartCard}>
               <View style={styles.bodyPartHeading}><Text style={styles.bodyPartTitle}>今日鍛える部位</Text><Text style={styles.bodyPartHint}>部位別トレーニング</Text></View>
               <View style={styles.bodyPartRow}>{selectableBodyParts.map((bodyPart) => <Pressable key={bodyPart} onPress={() => selectTodayBodyPart(bodyPart)} style={[styles.bodyPartChip, todayBodyPart === bodyPart && styles.selectedBodyPartChip]}><Text style={[styles.bodyPartText, todayBodyPart === bodyPart && styles.selectedBodyPartText]}>{bodyPart}</Text></Pressable>)}</View>
-              <Text style={styles.bodyPartNote}>部位を選ぶとAIメニュー生成画面へ進みます。</Text>
+              <Text style={styles.bodyPartNote}>部位を選ぶと、この画面でメニューを調整できます。</Text>
+            </View>
+          ) : null}
+
+          {!isLoading && !error && showMenuBuilder ? (
+            <View style={styles.builderCard}>
+              <View style={styles.builderHeading}>
+                <View><Text style={styles.cardEyebrow}>MENU SETTING</Text><Text style={styles.builderTitle}>今日のメニューを作る</Text></View>
+                <Pressable accessibilityLabel="メニュー調整を閉じる" disabled={isGenerating} onPress={() => setShowMenuBuilder(false)} style={styles.builderClose}><Text style={styles.builderCloseText}>×</Text></Pressable>
+              </View>
+              <Text style={styles.builderLabel}>今日の調子</Text>
+              <View style={styles.ratingRow}>{Array.from({ length: 10 }, (_, index) => index + 1).map((score) => <Pressable accessibilityRole="radio" accessibilityState={{ checked: builderCondition === score }} key={score} onPress={() => { setBuilderCondition(score); setBuilderError(''); }} style={[styles.ratingButton, builderCondition === score && styles.selectedRatingButton]}><Text style={[styles.ratingText, builderCondition === score && styles.selectedRatingText]}>{score}</Text></Pressable>)}</View>
+              <Text style={styles.builderLabel}>鍛える部位 <Text style={styles.builderOptional}>{profile.trainingStyle === 'split' ? '必須' : '任意'}</Text></Text>
+              <View style={styles.bodyPartRow}>
+                <Pressable accessibilityRole="radio" accessibilityState={{ checked: builderBodyPart === null }} onPress={() => { setBuilderBodyPart(null); setBuilderError(''); }} style={[styles.bodyPartChip, builderBodyPart === null && styles.selectedBodyPartChip]}><Text style={[styles.bodyPartText, builderBodyPart === null && styles.selectedBodyPartText]}>おまかせ</Text></Pressable>
+                {selectableBodyParts.map((bodyPart) => <Pressable accessibilityRole="radio" accessibilityState={{ checked: builderBodyPart === bodyPart }} key={bodyPart} onPress={() => { setBuilderBodyPart(bodyPart); setBuilderError(''); }} style={[styles.bodyPartChip, builderBodyPart === bodyPart && styles.selectedBodyPartChip]}><Text style={[styles.bodyPartText, builderBodyPart === bodyPart && styles.selectedBodyPartText]}>{bodyPart}</Text></Pressable>)}
+              </View>
+              {builderError ? <Text accessibilityRole="alert" style={styles.builderError}>{builderError}</Text> : null}
+              <Pressable accessibilityState={{ busy: isGenerating, disabled: isGenerating }} disabled={isGenerating} onPress={() => void generateMenuOnHome()} style={[styles.builderButton, isGenerating && styles.disabledButton]}>{isGenerating ? <ActivityIndicator color="#050A0F" /> : <Text style={styles.builderButtonText}>{displayedMenu ? 'メニューを再生成' : 'AIメニューを生成'}</Text>}</Pressable>
             </View>
           ) : null}
 
           {!isLoading && !error && homeData && !displayedMenu ? (
-            <ScreenStateCard actionLabel="AIメニューを作成する" message="今日の調子と鍛えたい部位を入力して、メニューを作成しましょう。" onAction={() => router.push('/ai-coach' as Href)} title="AIメニューはまだありません" type="empty" />
+            <ScreenStateCard actionLabel="AIメニューを作成する" message="今日の調子と鍛えたい部位を入力して、メニューを作成しましょう。" onAction={() => setShowMenuBuilder(true)} title="AIメニューはまだありません" type="empty" />
           ) : null}
 
           {!isLoading && !error && displayedMenu ? (
@@ -218,6 +315,7 @@ export default function HomeScreen() {
                 <View style={styles.statusCard}><Text style={styles.statusLabel}>コンディション</Text><Text style={styles.conditionValue}>{getConditionLabel(conditionScore, homeData?.condition?.label ?? null)}</Text><View style={styles.conditionTrack}><View style={[styles.conditionBar, { width: `${Math.max(0, Math.min(10, conditionScore ?? 0)) * 10}%` }]} /></View></View>
               </View>
               <Pressable onPress={startTraining} style={styles.startButton}><View><Text style={styles.startLabel}>START NOW</Text><Text style={styles.startText}>トレーニングを開始</Text></View><Text style={styles.startArrow}>→</Text></Pressable>
+              <Pressable disabled={isGenerating} onPress={() => { setBuilderCondition(conditionScore); setBuilderBodyPart(todayBodyPart); setBuilderError(''); setShowMenuBuilder(true); }} style={styles.adjustButton}><Text style={styles.adjustButtonText}>部位・調子を変えてメニューを調整</Text></Pressable>
             </>
           ) : null}
 
@@ -235,9 +333,10 @@ const styles = StyleSheet.create({
   goalPill: { maxWidth: '48%', paddingHorizontal: 13, paddingVertical: 9, borderWidth: 1, borderColor: '#203441', borderRadius: 22, backgroundColor: '#0C151D' }, goalLabel: { color: '#72828D', fontSize: 8, fontWeight: '700', letterSpacing: 1.2 }, goalValue: { marginTop: 2, color: '#E8EBE8', fontSize: 11, fontWeight: '700' },
   noticeCard: { marginTop: 17, padding: 16, borderWidth: 1, borderColor: '#1A5365', borderRadius: 16, backgroundColor: '#0A141B' }, noticeTitle: { color: '#73E7FF', fontSize: 14, fontWeight: '700' }, noticeText: { marginTop: 6, color: '#99AAB4', fontSize: 10, lineHeight: 16 }, outlineButton: { alignItems: 'center', marginTop: 13, padding: 12, borderWidth: 1, borderColor: '#00D4FF', borderRadius: 12 }, outlineButtonText: { color: '#73E7FF', fontSize: 11, fontWeight: '700' },
   bodyPartCard: { marginTop: 17, padding: 15, borderWidth: 1, borderColor: '#203441', borderRadius: 16, backgroundColor: '#0C151D' }, bodyPartHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, bodyPartTitle: { color: '#F4F6F3', fontSize: 13, fontWeight: '700' }, bodyPartHint: { color: '#657681', fontSize: 8, fontWeight: '600' }, bodyPartRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 12 }, bodyPartChip: { minWidth: 49, alignItems: 'center', paddingHorizontal: 10, paddingVertical: 9, borderWidth: 1, borderColor: '#294653', borderRadius: 16, backgroundColor: '#050A0F' }, selectedBodyPartChip: { borderColor: '#00D4FF', backgroundColor: '#00D4FF' }, bodyPartText: { color: '#AAB7BF', fontSize: 10, fontWeight: '600' }, selectedBodyPartText: { color: '#050A0F' }, bodyPartNote: { marginTop: 9, color: '#657681', fontSize: 8 },
+  builderCard: { marginTop: 14, padding: 16, borderWidth: 1, borderColor: '#1E6076', borderRadius: 17, backgroundColor: '#081821' }, builderHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, builderTitle: { marginTop: 5, color: '#F4F6F3', fontSize: 19, fontWeight: '700' }, builderClose: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }, builderCloseText: { color: '#8798A3', fontSize: 25 }, builderLabel: { marginTop: 18, color: '#CDD7DD', fontSize: 11, fontWeight: '700' }, builderOptional: { color: '#73E7FF', fontSize: 9 }, ratingRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 10 }, ratingButton: { width: 35, height: 35, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#294653', borderRadius: 10, backgroundColor: '#050A0F' }, selectedRatingButton: { borderColor: '#00D4FF', backgroundColor: '#00D4FF' }, ratingText: { color: '#AAB7BF', fontSize: 11, fontWeight: '700' }, selectedRatingText: { color: '#050A0F' }, builderError: { marginTop: 12, color: '#FF8D98', fontSize: 11, lineHeight: 17 }, builderButton: { minHeight: 52, alignItems: 'center', justifyContent: 'center', marginTop: 15, borderRadius: 14, backgroundColor: '#00D4FF' }, builderButtonText: { color: '#050A0F', fontSize: 13, fontWeight: '700' }, disabledButton: { opacity: 0.5 },
   coachCard: { marginTop: 22, padding: 18, borderLeftWidth: 3, borderLeftColor: '#00D4FF', borderRadius: 14, backgroundColor: '#0B141C' }, cardEyebrow: { color: '#73E7FF', fontSize: 9, fontWeight: '700', letterSpacing: 1.5 }, coachMessage: { marginTop: 9, color: '#F4F6F3', fontSize: 16, fontWeight: '600', lineHeight: 25 },
   menuCard: { marginTop: 14, padding: 18, borderWidth: 1, borderColor: '#203441', borderRadius: 18, backgroundColor: '#091118' }, menuHeading: { flexDirection: 'row', justifyContent: 'space-between' }, menuHeadingCopy: { flex: 1 }, menuTitle: { marginTop: 6, color: '#F4F6F3', fontSize: 25, fontWeight: '700' }, menuNumberBadge: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center', borderRadius: 19, backgroundColor: '#00D4FF' }, menuNumber: { color: '#050A0F', fontSize: 11, fontWeight: '700' }, targetLabel: { marginTop: 22, color: '#72828D', fontSize: 10, fontWeight: '600' }, targetArea: { marginTop: 5, color: '#73E7FF', fontSize: 18, fontWeight: '700' }, reason: { marginTop: 8, color: '#8798A3', fontSize: 12, lineHeight: 19 },
   exerciseList: { marginTop: 18, borderTopWidth: 1, borderTopColor: '#203441' }, exerciseRow: { minHeight: 58, flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: '#203441' }, lastExercise: { borderBottomWidth: 0 }, exerciseIndex: { width: 27, height: 27, alignItems: 'center', justifyContent: 'center', borderRadius: 8, backgroundColor: '#12202A' }, exerciseIndexText: { color: '#73E7FF', fontSize: 9, fontWeight: '700' }, exerciseName: { flex: 1, marginLeft: 10, color: '#E8EBE8', fontSize: 12, fontWeight: '600' }, prescription: { maxWidth: '43%', color: '#7B8D98', fontSize: 9, fontWeight: '700', textAlign: 'right' },
   statusRow: { flexDirection: 'row', gap: 11, marginTop: 14 }, statusCard: { flex: 1, minHeight: 118, padding: 15, borderWidth: 1, borderColor: '#203441', borderRadius: 16, backgroundColor: '#0C151D' }, statusLabel: { color: '#72828D', fontSize: 10, fontWeight: '600' }, statusValue: { marginTop: 10, color: '#F4F6F3', fontSize: 25, fontWeight: '700' }, statusUnit: { color: '#99AAB4', fontSize: 11 }, statusHint: { marginTop: 6, color: '#657681', fontSize: 9 }, conditionValue: { marginTop: 10, color: '#73E7FF', fontSize: 21, fontWeight: '700' }, conditionTrack: { height: 4, marginTop: 12, overflow: 'hidden', borderRadius: 2, backgroundColor: '#203844' }, conditionBar: { height: '100%', borderRadius: 2, backgroundColor: '#00D4FF' },
-  startButton: { minHeight: 68, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 14, paddingHorizontal: 19, borderRadius: 17, backgroundColor: '#00D4FF' }, startLabel: { color: '#06455C', fontSize: 8, fontWeight: '700', letterSpacing: 1.4 }, startText: { marginTop: 4, color: '#050A0F', fontSize: 16, fontWeight: '700' }, startArrow: { color: '#050A0F', fontSize: 24, fontWeight: '700' }, previewNote: { marginTop: 13, color: '#556772', fontSize: 9, textAlign: 'center' },
+  startButton: { minHeight: 68, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 14, paddingHorizontal: 19, borderRadius: 17, backgroundColor: '#00D4FF' }, startLabel: { color: '#06455C', fontSize: 8, fontWeight: '700', letterSpacing: 1.4 }, startText: { marginTop: 4, color: '#050A0F', fontSize: 16, fontWeight: '700' }, startArrow: { color: '#050A0F', fontSize: 24, fontWeight: '700' }, adjustButton: { minHeight: 50, alignItems: 'center', justifyContent: 'center', marginTop: 10, borderWidth: 1, borderColor: '#00D4FF', borderRadius: 14 }, adjustButtonText: { color: '#73E7FF', fontSize: 11, fontWeight: '700' }, previewNote: { marginTop: 13, color: '#556772', fontSize: 9, textAlign: 'center' },
 });
