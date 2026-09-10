@@ -14,8 +14,20 @@
 
 ## 現在地
 
-- バックエンドMVP進捗の目安：約98%
-- 現在の次作業：ログイン済み画面から保存・更新・削除APIを通すE2E確認と、iPhone実機確認
+### 2026年9月11日の公開・監視確認
+
+- [x] Cloudflare Sitesバージョン5へ最新バックエンドを公開
+- [x] 公開`GET /api/health`がTypeScript APIだけでなくNeonへ`SELECT 1`を実行することを確認
+- [x] 公開環境で`dependencies.database: "ok"`とHTTP 200を確認
+- [x] RenderのPython分析APIがHTTP 200を返すことを確認
+- [x] 公開APIの未ログイン保護テストに合格
+- [x] GitHub Actionsの定期監視が`active`で、直近の定期実行が成功していることを確認
+- [x] 単体・セキュリティ・Python・mobile・型・Lint・Build・Neon実DB・公開APIの全テストに合格
+
+バックエンドのコード作成と自動テストは完了しています。残る大きな作業は、OpenAI管理画面の予算アラート確認とApp Store公開準備です。Clerk本番キーへの切り替え、iPhone実機確認、利用規約・プライバシー表示、課金はApp Store公開準備に含めます。
+
+- バックエンドMVP進捗の目安：約99%
+- 現在の次作業：OpenAI予算アラートの管理画面確認。その後はApp Store公開準備へ進む
 - ログ・監視：APIリクエストID、安全なエラーログ、OpenAIトークン使用量ログを実装しローカル本番通信で確認済み
 - 保留：Neonデータ転送量はHTTP 402で停止中。Neon CLI表示の次回リセットは2026-10-01 00:00 UTC
 - ホームAPI：`GET /api/home`のコード・フロント接続・Neon実通信を確認済み
@@ -364,7 +376,10 @@
   - [x] OpenAI側の障害と不正な分析結果をHTTP 502へ変換
   - [x] OpenAI APIを実際に呼ばない自動テスト6件が成功
 - [x] 合成画像3枚を使い、PythonからOpenAIへ実通信して決めた分析JSONを受け取る
-- [ ] `/health`の定期監視
+- [x] `/health`の定期監視
+  - [x] GitHub Actionsで毎時2回実行
+  - [x] 公開TypeScript API・Neon・Renderをまとめて確認
+  - [x] 直近の定期実行が成功していることを公開GitHub APIで確認
 
 ## 画像とプライバシー
 
@@ -440,6 +455,8 @@
   - [x] Neon接続失敗時は秘密情報を含めずHTTP 503を返す
   - [x] `scripts/health-check.mjs`でTypeScript・Neon・RenderのHTTPとJSONを確認
   - [x] GitHub Actionsで毎時2回の定期確認を追加
+  - [x] Sitesバージョン5を公開し、公開Neon接続を含むHTTP 200を確認
+  - [x] GitHub Actionsが有効で直近の定期実行が成功していることを確認
 - [x] Neonのバックアップ・復元確認
   - [x] 開発DBから期限付きブランチを作り、マイグレーション10件とデータ複製を確認
   - [x] 確認後に一時ブランチを削除

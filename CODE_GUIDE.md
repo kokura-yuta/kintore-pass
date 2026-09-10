@@ -13579,3 +13579,69 @@ Neonのブランチは、元のブランチのスキーマとデータをコピ�
 - メールアドレス
 
 Authorizationヘッダーは`********`へ伏字化されていました。今後もデプロイ後に同じ点検を行います。
+
+## 追加：公開版バージョン5の最終確認（2026-09-11）
+
+### 今回何を確認したのか
+
+最新コードをCloudflare Sitesのバージョン5として公開しました。公開後は手元のコードだけを見るのではなく、実際の公開URLへ通信して次の順番を確認しています。
+
+```text
+監視スクリプト
+↓
+Cloudflare上のTypeScript API
+↓
+Neon PostgreSQL
+
+監視スクリプト
+↓
+Render上のPython身体分析API
+```
+
+TypeScript APIが起動していてもNeonへ接続できなければ、アプリの保存・取得機能は使えません。そのため`GET /api/health`の中でNeonへ`SELECT 1`を送り、データベースまで応答することを確認します。
+
+公開環境から返った主な結果は次の形です。
+
+```json
+{
+  "status": "ok",
+  "environment": "production",
+  "dependencies": {
+    "database": "ok"
+  }
+}
+```
+
+- `status: "ok"`：TypeScript APIのヘルス確認が完了した
+- `environment: "production"`：ローカルではなく公開環境で動いている
+- `dependencies.database: "ok"`：Neonへ実際に小さなSQLを送り、応答を受け取れた
+- HTTP 200：必要な処理が正常に完了した
+- HTTP 503：API自体は動いていても、Neonなど必要な接続先が利用できない
+
+### 全テストの読み方
+
+```bash
+npm run test:all
+```
+
+この1行は、複数のテストを決めた順番でまとめて実行します。
+
+- API単体テスト：入力値や安全ルールを確認する
+- ソースセキュリティテスト：秘密鍵や個人情報を端末・ログへ出していないか確認する
+- Pythonテスト：画像検査とOpenAI障害時のHTTP状態を確認する
+- mobileテスト：フロントからAPIへ送る内容とタイムアウトを確認する
+- TypeScript・Lint・Build：型、書き方、公開用ビルドを確認する
+- Neon実DBテスト：制約、更新、削除、cascadeを本物のDBで確認する
+- 公開APIテスト：公開URLが動き、未ログイン通信を拒否することを確認する
+
+外部通信が禁止された実行環境では、Neonのホスト名を見つけられず`ENOTFOUND`になる場合があります。これはアプリのコードエラーとは限りません。今回も通信許可を付けて同じ全テストを再実行し、最後まで合格することを確認しました。
+
+### 定期監視が動く場所
+
+`.github/workflows/health-check.yml`はGitHub Actions上で毎時2回起動し、`scripts/health-check.mjs`を実行します。Macのターミナルを開き続ける必要はありません。
+
+定期監視で失敗した場合はGitHub Actionsの履歴に失敗が残ります。通知を受け取るかどうかはGitHubアカウント側の通知設定で決まります。
+
+### 公開ログで再確認したこと
+
+バージョン5公開後のWorkerログでは、`GET /api/health`がHTTP 200で終了し、アプリ側のリクエストIDと処理時間が記録されていました。秘密鍵、DB接続URL、Bearerトークン、身体画像、質問本文はログへ出していません。
