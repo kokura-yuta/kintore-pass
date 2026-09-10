@@ -13533,6 +13533,17 @@ try {
 
 `scripts/health-check.mjs`は、TypeScript APIとRender上のPython APIへ接続し、HTTP成功と`status: "ok"`を確認します。
 
+TypeScript側の`GET /api/health`は、起動しているだけでなくNeonへ`select 1`という非常に小さな読取も実行します。成功時は`dependencies.database`が`ok`になります。Neonへ接続できない場合はHTTP 503と`database: "unavailable"`を返しますが、接続URLやDBエラー本文は返しません。
+
+```typescript
+await getDb().execute(sql`select 1`);
+```
+
+- `getDb()`：Neonへ接続する共通入口を取得する
+- `execute()`：SQLを実行する
+- `select 1`：表の個人データを読まず、DBがSQLへ応答できるかだけを確認する軽い命令
+- HTTP 503：サーバーは動いているが、必要な依存先が一時的に利用できない状態
+
 ```javascript
 const response = await fetch(target.url, {
   signal: AbortSignal.timeout(30_000),

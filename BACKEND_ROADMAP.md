@@ -436,7 +436,9 @@
 
 - [ ] OpenAIの予算アラートを管理画面で確認
 - [x] 公開APIとRenderの定期ヘルス監視
-  - [x] `scripts/health-check.mjs`で両方のHTTP 200とJSONを確認
+  - [x] `/api/health`でTypeScript API本体とNeonの`SELECT 1`を確認
+  - [x] Neon接続失敗時は秘密情報を含めずHTTP 503を返す
+  - [x] `scripts/health-check.mjs`でTypeScript・Neon・RenderのHTTPとJSONを確認
   - [x] GitHub Actionsで毎時2回の定期確認を追加
 - [x] Neonのバックアップ・復元確認
   - [x] 開発DBから期限付きブランチを作り、マイグレーション10件とデータ複製を確認
