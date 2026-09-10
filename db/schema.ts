@@ -102,6 +102,11 @@ export const userProfiles = pgTable(
       "training_location",
     ),
 
+    // 全身・部位別・AIおまかせのどの形式でメニューを作るか保存する
+    trainingStyle: text(
+      "training_style",
+    ),
+
     weakBodyParts: text(
       "weak_body_parts",
     ).array(),

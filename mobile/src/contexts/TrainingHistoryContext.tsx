@@ -17,6 +17,7 @@ export type SavedTrainingExercise = {
 
 export type SavedTrainingRecord = {
   id: string;
+  performedAt: string;
   performedOn: string;
   menuId: string | null;
   exercises: SavedTrainingExercise[];
@@ -28,6 +29,8 @@ export type SavedTrainingRecord = {
 type TrainingHistoryContextValue = {
   records: SavedTrainingRecord[];
   addRecord: (record: SavedTrainingRecord) => void;
+  updateRecord: (record: SavedTrainingRecord) => void;
+  removeRecord: (recordId: string) => void;
   isLoading: boolean;
   errorMessage: string;
   reloadRecords: () => Promise<void>;
@@ -65,10 +68,11 @@ export function TrainingHistoryProvider({ children }: PropsWithChildren) {
       const mappedRecords = response.records
         .map((record): SavedTrainingRecord => ({
           id: record.id,
+          performedAt: record.performedAt,
           performedOn: formatLocalDate(new Date(record.performedAt)),
           menuId: null,
           exercises: record.exercises.map((exercise, index) => ({
-            exerciseId: exerciseCatalog.find((item) => item.name === exercise.exerciseName)?.id ?? `${record.id}-exercise-${index}`,
+            exerciseId: exercise.exerciseId || (exerciseCatalog.find((item) => item.name === exercise.exerciseName)?.id ?? `${record.id}-exercise-${index}`),
             name: exercise.exerciseName,
             sets: [...exercise.sets]
               .sort((a, b) => a.setNumber - b.setNumber)
@@ -107,6 +111,8 @@ export function TrainingHistoryProvider({ children }: PropsWithChildren) {
   const value = useMemo(() => ({
     records,
     addRecord: (record: SavedTrainingRecord) => setRecords((current) => [record, ...current]),
+    updateRecord: (record: SavedTrainingRecord) => setRecords((current) => current.map((item) => item.id === record.id ? record : item)),
+    removeRecord: (recordId: string) => setRecords((current) => current.filter((record) => record.id !== recordId)),
     isLoading,
     errorMessage,
     reloadRecords,

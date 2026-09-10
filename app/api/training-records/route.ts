@@ -15,6 +15,7 @@ import {
 // 認証確認とNeon接続をトレーニング記録APIで使えるようにする
 import { getClerkUserId } from "@/app/lib/auth/clerk-auth";
 import { createRequestFingerprint } from "@/app/lib/idempotency/createRequestFingerprint";
+import { logServerError } from "@/app/lib/observability/serverLog";
 import {
   deleteTrainingRecordSchema,
   trainingRecordSchema,
@@ -366,10 +367,7 @@ return {
       },
     });
   } catch (error) {
-    console.error(
-      "トレーニング履歴の取得に失敗しました。",
-      error,
-    );
+    logServerError("training_records_get_failed", error);
 
     return Response.json(
       {
@@ -616,17 +614,14 @@ await db.batch([
             ),
           );
       } catch (cleanupError) {
-        console.error(
-          "トレーニング記録の二重送信管理を解除できませんでした。",
+        logServerError(
+          "training_record_guard_cleanup_failed",
           cleanupError,
         );
       }
     }
 
-    console.error(
-      "トレーニング記録の保存に失敗しました。",
-      error,
-    );
+    logServerError("training_record_create_failed", error);
 
 
 
@@ -752,10 +747,7 @@ export async function DELETE(
     });
   } catch (error) {
     // 詳しい原因は利用者へ返さずログへ残す
-    console.error(
-      "トレーニング記録の削除に失敗しました。",
-      error,
-    );
+    logServerError("training_record_delete_failed", error);
 
     return Response.json(
       {
@@ -971,10 +963,7 @@ export async function PATCH(
     });
   } catch (error) {
     // 詳しい原因は利用者へ返さずログへ残す
-    console.error(
-      "トレーニング記録の更新に失敗しました。",
-      error,
-    );
+    logServerError("training_record_update_failed", error);
 
     return Response.json(
       {

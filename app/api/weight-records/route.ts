@@ -23,6 +23,7 @@ import {
   weightRecordCreateSchema,
   weightRecordUpdateSchema,
 } from "@/app/lib/validation/apiSchemas";
+import { logServerError } from "@/app/lib/observability/serverLog";
 
 // 体重記録のJSONを受け取り、ログイン中の本人の履歴として保存する
 export async function POST(
@@ -136,10 +137,7 @@ export async function POST(
     );
   } catch (error) {
     // 詳しい原因はサーバーログだけへ残す
-    console.error(
-      "体重記録の保存に失敗しました。",
-      error,
-    );
+    logServerError("weight_record_create_failed", error);
 
     // 利用者には秘密情報を含まない共通エラーを返す
     return Response.json(
@@ -268,10 +266,7 @@ export async function GET(
     });
   } catch (error) {
     // 詳細な原因はサーバーログへ残す
-    console.error(
-      "体重履歴の取得に失敗しました。",
-      error,
-    );
+    logServerError("weight_records_get_failed", error);
 
     // 利用者へ安全な共通エラーを返す
     return Response.json(
@@ -397,10 +392,7 @@ export async function PATCH(
     });
   } catch (error) {
     // 詳しい原因はサーバーログへ残す
-    console.error(
-      "体重記録の更新に失敗しました。",
-      error,
-    );
+    logServerError("weight_record_update_failed", error);
 
     // 利用者へ安全な共通エラーを返す
     return Response.json(
@@ -535,10 +527,7 @@ export async function DELETE(
     });
   } catch (error) {
     // 詳しい原因はサーバーログへ残す
-    console.error(
-      "体重記録の削除に失敗しました。",
-      error,
-    );
+    logServerError("weight_record_delete_failed", error);
 
     // 利用者へ安全な共通エラーを返す
     return Response.json(

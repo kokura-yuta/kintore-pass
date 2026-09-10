@@ -38,6 +38,10 @@ import {
   aiRequestGuards,
   users,
 } from "@/db/schema";
+import {
+  logOpenAiUsage,
+  logServerError,
+} from "@/app/lib/observability/serverLog";
 
 // 1日と日本時間の時差をミリ秒で表す
 const millisecondsPerDay =
@@ -186,7 +190,7 @@ export async function GET(request: Request) {
       },
     });
   } catch (error) {
-    console.error("AIメニュー取得APIエラー:", error);
+    logServerError("ai_menu_get_failed", error);
 
     return Response.json(
       {
@@ -447,6 +451,13 @@ ${JSON.stringify(aiInput, null, 2)}`,
           safetyIdentifier,
       });
 
+    // メニュー内容や身体情報を残さず、料金確認に必要なトークン数だけをログへ記録する
+    logOpenAiUsage(
+      "menu",
+      aiResponse.usage,
+      requestId,
+    );
+
     // 決めた形式として検証済みのOpenAI生成結果を取り出す
     const generatedMenu =
       aiResponse.output_parsed;
@@ -555,8 +566,8 @@ ${JSON.stringify(aiInput, null, 2)}`,
             ),
           );
       } catch (cleanupError) {
-        console.error(
-          "AIメニュー受付記録の削除エラー:",
+        logServerError(
+          "ai_menu_guard_cleanup_failed",
           cleanupError,
         );
       }
@@ -566,8 +577,8 @@ ${JSON.stringify(aiInput, null, 2)}`,
       error instanceof
       APIConnectionTimeoutError
     ) {
-      console.error(
-        "AIメニューOpenAIタイムアウト:",
+      logServerError(
+        "ai_menu_openai_timeout",
         error,
       );
 
@@ -583,10 +594,7 @@ ${JSON.stringify(aiInput, null, 2)}`,
     }
 
     // 予想外のエラーをサーバー側へ記録する
-    console.error(
-      "AIメニューAPIエラー:",
-      error,
-    );
+    logServerError("ai_menu_post_failed", error);
 
     // 詳細を利用者へ見せず共通エラーを返す
     return Response.json(

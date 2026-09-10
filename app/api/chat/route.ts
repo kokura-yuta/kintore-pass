@@ -43,6 +43,10 @@ import {
   chatMessages,
   users,
 } from "@/db/schema";
+import {
+  logOpenAiUsage,
+  logServerError,
+} from "@/app/lib/observability/serverLog";
 
 // 1日と日本時間の時差をミリ秒で表す
 const millisecondsPerDay =
@@ -321,10 +325,7 @@ export async function DELETE(request: Request) {
         matchedConversation.id,
     });
   } catch (error) {
-    console.error(
-      "チャット削除APIエラー:",
-      error,
-    );
+    logServerError("chat_delete_failed", error);
 
     return Response.json(
       {
@@ -722,6 +723,13 @@ export async function POST(request: Request) {
         safetyIdentifier,
       });
 
+    // 質問・回答本文を残さず、料金確認に必要なトークン数だけをログへ記録する
+    logOpenAiUsage(
+      "chat",
+      aiResponse.usage,
+      requestId,
+    );
+
     // AIがToolを選んだ場合、最大3回まで実行して結果を返す
     for (
       let toolRound = 0;
@@ -782,6 +790,13 @@ export async function POST(request: Request) {
           safety_identifier:
           safetyIdentifier,
         });
+
+      // Tool実行後の追加通信も、本文を含めず使用量だけを記録する
+      logOpenAiUsage(
+        "chat",
+        aiResponse.usage,
+        requestId,
+      );
     }
     
     const reply = limitChatAnswer(
@@ -852,8 +867,8 @@ export async function POST(request: Request) {
             ),
           );
       } catch (cleanupError) {
-        console.error(
-          "チャット受付記録の削除エラー:",
+        logServerError(
+          "chat_guard_cleanup_failed",
           cleanupError,
         );
       }
@@ -863,8 +878,8 @@ export async function POST(request: Request) {
       error instanceof
       APIConnectionTimeoutError
     ) {
-      console.error(
-        "AIチャットOpenAIタイムアウト:",
+      logServerError(
+        "chat_openai_timeout",
         error,
       );
 
@@ -879,10 +894,7 @@ export async function POST(request: Request) {
       );
     }
 
-    console.error(
-      "AIチャットAPIエラー:",
-      error,
-    );
+    logServerError("chat_post_failed", error);
 
     return Response.json(
       {

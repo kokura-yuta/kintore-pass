@@ -133,6 +133,10 @@ export const profileSchema = z.object({
     .enum(["home", "gym", "both"])
     .nullable()
     .optional(),
+  trainingStyle: z
+    .enum(["full-body", "split", "ai"])
+    .nullable()
+    .optional(),
   weakBodyParts: z
     .array(z.string().trim().min(1).max(50))
     .max(20)

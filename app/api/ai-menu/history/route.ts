@@ -25,6 +25,7 @@ import {
   users,
 } from "@/db/schema";
 import { markAiMenuPerformedSchema } from "@/app/lib/validation/apiSchemas";
+import { logServerError } from "@/app/lib/observability/serverLog";
 
 // AIメニュー履歴を1ページ20件、最大50件まで取得する
 const defaultHistoryLimit = 20;
@@ -359,10 +360,7 @@ export async function GET(
     });
   } catch (error) {
     // 詳細はサーバーログへ残し、利用者には見せない
-    console.error(
-      "AIメニュー履歴の取得に失敗しました。",
-      error,
-    );
+    logServerError("ai_menu_history_get_failed", error);
 
     return Response.json(
       {
@@ -496,10 +494,7 @@ export async function DELETE(
         deletedMenu.id,
     });
   } catch (error) {
-    console.error(
-      "AIメニュー履歴の削除に失敗しました。",
-      error,
-    );
+    logServerError("ai_menu_history_delete_failed", error);
 
     return Response.json(
       {
@@ -764,10 +759,7 @@ export async function PATCH(
       },
     });
   } catch (error) {
-    console.error(
-      "AIメニューの実施状態更新に失敗しました。",
-      error,
-    );
+    logServerError("ai_menu_history_update_failed", error);
 
     return Response.json(
       {

@@ -1,10 +1,13 @@
 import { useRouter } from 'expo-router';
-import { useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useMemo, useRef, useState } from 'react';
+import { Alert, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useAuth } from '@clerk/expo';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useTrainingHistory } from '@/contexts/TrainingHistoryContext';
 import { ScreenStateCard } from '@/components/ScreenStateCard';
+import { ApiError, isApiBypassEnabled } from '@/lib/api';
+import { deleteTrainingRecord } from '@/lib/trainingRecords';
 
 const weekdayLabels = ['日', '月', '火', '水', '木', '金', '土'];
 
@@ -19,7 +22,10 @@ function todayKey() {
 
 export default function CalendarScreen() {
   const router = useRouter();
-  const { errorMessage, isLoading, records, reloadRecords } = useTrainingHistory();
+  const { getToken } = useAuth();
+  const { errorMessage, isLoading, records, reloadRecords, removeRecord } = useTrainingHistory();
+  const deletingLock = useRef(false);
+  const [actionError, setActionError] = useState('');
   const today = new Date();
   const [visibleMonth, setVisibleMonth] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
   const [selectedDate, setSelectedDate] = useState(todayKey());
@@ -35,6 +41,35 @@ export default function CalendarScreen() {
     const next = new Date(year, monthIndex + offset, 1);
     setVisibleMonth(next);
     setSelectedDate(dateKey(next.getFullYear(), next.getMonth(), 1));
+  }
+
+  async function removeTrainingRecord(recordId: string) {
+    if (deletingLock.current) return;
+    deletingLock.current = true;
+    setActionError('');
+    try {
+      if (!isApiBypassEnabled) {
+        const token = await getToken();
+        if (!token) throw new ApiError('ログインを確認できませんでした。', 401);
+        await deleteTrainingRecord(token, recordId);
+      }
+      removeRecord(recordId);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : '記録を削除できませんでした。');
+    } finally {
+      deletingLock.current = false;
+    }
+  }
+
+  function confirmDelete(recordId: string) {
+    if (Platform.OS === 'web') {
+      if (globalThis.confirm?.('このトレーニング記録を削除しますか？')) void removeTrainingRecord(recordId);
+      return;
+    }
+    Alert.alert('記録を削除', 'このトレーニング記録を削除しますか？', [
+      { text: 'キャンセル', style: 'cancel' },
+      { text: '削除', style: 'destructive', onPress: () => void removeTrainingRecord(recordId) },
+    ]);
   }
 
   return (
@@ -76,6 +111,7 @@ export default function CalendarScreen() {
           {errorMessage ? (
             <ScreenStateCard actionLabel="もう一度読み込む" compact message={errorMessage} onAction={() => void reloadRecords()} title="記録を読み込めませんでした" type="error" />
           ) : null}
+          {actionError ? <ScreenStateCard compact message={actionError} title="操作に失敗しました" type="error" /> : null}
           {!isLoading && !errorMessage && selectedRecords.length === 0 ? (
             <ScreenStateCard compact message="トレーニングを保存すると、この日に青色の印が付きます。" title="記録はありません" type="empty" />
           ) : null}
@@ -89,6 +125,10 @@ export default function CalendarScreen() {
                 </View>
               ))}
               {record.memo ? <Text style={styles.memo}>メモ：{record.memo}</Text> : null}
+              <View style={styles.recordActions}>
+                <Pressable accessibilityLabel="トレーニング記録を編集" onPress={() => router.push({ pathname: '/training', params: { editId: record.id } })} style={styles.editButton}><Text style={styles.editButtonText}>編集</Text></Pressable>
+                <Pressable accessibilityLabel="トレーニング記録を削除" onPress={() => confirmDelete(record.id)} style={styles.deleteButton}><Text style={styles.deleteButtonText}>削除</Text></Pressable>
+              </View>
             </View>
           )) : null}
           <Text style={styles.previewNote}>ログイン中のユーザーの保存済み記録を表示しています。</Text>
@@ -133,5 +173,10 @@ const styles = StyleSheet.create({
   exerciseName: { color: '#E8EBE8', fontSize: 12, fontWeight: '700' },
   setSummary: { marginTop: 5, color: '#8798A3', fontSize: 9, lineHeight: 14 },
   memo: { marginTop: 12, color: '#AAB7BF', fontSize: 10, lineHeight: 16 },
+  recordActions: { flexDirection: 'row', gap: 8, marginTop: 14 },
+  editButton: { flex: 1, minHeight: 40, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#00D4FF', borderRadius: 11 },
+  editButtonText: { color: '#73E7FF', fontSize: 11, fontWeight: '700' },
+  deleteButton: { flex: 1, minHeight: 40, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#7B3640', borderRadius: 11 },
+  deleteButtonText: { color: '#FF8D98', fontSize: 11, fontWeight: '700' },
   previewNote: { marginTop: 14, color: '#556772', fontSize: 9, lineHeight: 15, textAlign: 'center' },
 });

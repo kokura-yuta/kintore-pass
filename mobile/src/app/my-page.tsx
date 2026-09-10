@@ -1,13 +1,19 @@
-import { useClerk, useUser } from '@clerk/expo';
+import { useAuth, useClerk, useUser } from '@clerk/expo';
 import { type Href, useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { BottomNavigation } from '@/components/BottomNavigation';
 import { ProfileNumberField } from '@/components/ProfileNumberField';
 import { type ProfileDraft, type TrainingLocation, type TrainingStyle, useOnboarding } from '@/contexts/OnboardingContext';
+import { isApiBypassEnabled } from '@/lib/api';
 import { getGoalBodyLabel } from '@/lib/initialAnalysisPreview';
+import {
+  fetchUserProfile,
+  saveUserProfile,
+  userProfileToDraft,
+} from '@/lib/profiles';
 
 const locations: { value: TrainingLocation; label: string }[] = [
   { value: 'home', label: '自宅' },
@@ -27,15 +33,71 @@ type Errors = Partial<Record<'heightCm' | 'weightKg' | 'bodyFatPercentage' | 'tr
 
 export default function MyPageScreen() {
   const router = useRouter();
+  const { getToken } = useAuth({
+    treatPendingAsSignedOut: false,
+  });
   const { user } = useUser();
   const { signOut } = useClerk();
   const { goalBody, profile, setProfile } = useOnboarding();
   const [form, setForm] = useState<ProfileDraft>(profile);
   const [errors, setErrors] = useState<Errors>({});
   const [isSaving, setIsSaving] = useState(false);
+  const [isLoadingProfile, setIsLoadingProfile] = useState(!isApiBypassEnabled);
+  const [profileError, setProfileError] = useState('');
   const [savedMessage, setSavedMessage] = useState('');
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [accountError, setAccountError] = useState('');
+  const getTokenRef = useRef(getToken);
+  const savingLock = useRef(false);
+
+  // Clerkの最新トークン取得関数を、再描画しても同じRefから呼べるようにする
+  useEffect(() => {
+    getTokenRef.current = getToken;
+  }, [getToken]);
+
+  // マイページを開いたとき、本人のプロフィールをNeonから取得してフォームへ戻す
+  const loadProfile = useCallback(async () => {
+    if (isApiBypassEnabled) {
+      setIsLoadingProfile(false);
+      return;
+    }
+
+    setIsLoadingProfile(true);
+    setProfileError('');
+
+    try {
+      const token = await getTokenRef.current();
+
+      if (!token) {
+        throw new Error('ログイン状態を確認できませんでした。');
+      }
+
+      const response = await fetchUserProfile(token);
+
+      if (response.profile) {
+        const restoredProfile = userProfileToDraft(response.profile);
+        setForm(restoredProfile);
+        setProfile(restoredProfile);
+      }
+    } catch (error) {
+      setProfileError(
+        error instanceof Error
+          ? error.message
+          : 'プロフィールを読み込めませんでした。',
+      );
+    } finally {
+      setIsLoadingProfile(false);
+    }
+  }, [setProfile]);
+
+  // 画面の初回表示時に、保存済みプロフィールを1回取得する
+  useEffect(() => {
+    const timerId = setTimeout(() => {
+      void loadProfile();
+    }, 0);
+
+    return () => clearTimeout(timerId);
+  }, [loadProfile]);
 
   function updateField<K extends keyof ProfileDraft>(field: K, value: ProfileDraft[K]) {
     setForm((current) => ({ ...current, [field]: value }));
@@ -53,6 +115,8 @@ export default function MyPageScreen() {
   }
 
   async function saveProfile() {
+    if (savingLock.current) return;
+
     const nextErrors: Errors = {};
     const height = Number(form.heightCm);
     const weight = Number(form.weightKg);
@@ -68,11 +132,38 @@ export default function MyPageScreen() {
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return;
 
+    savingLock.current = true;
     setIsSaving(true);
-    await new Promise((resolve) => setTimeout(resolve, 600));
-    setProfile(form);
-    setIsSaving(false);
-    setSavedMessage('プロフィールを保存しました。');
+    setSavedMessage('');
+    setProfileError('');
+
+    try {
+      if (!isApiBypassEnabled) {
+        const token = await getTokenRef.current();
+
+        if (!token) {
+          throw new Error('ログイン状態を確認できませんでした。');
+        }
+
+        const response = await saveUserProfile(token, form);
+        const savedProfile = userProfileToDraft(response.profile);
+        setForm(savedProfile);
+        setProfile(savedProfile);
+      } else {
+        setProfile(form);
+      }
+
+      setSavedMessage('プロフィールを保存しました。');
+    } catch (error) {
+      setProfileError(
+        error instanceof Error
+          ? error.message
+          : 'プロフィールを保存できませんでした。',
+      );
+    } finally {
+      savingLock.current = false;
+      setIsSaving(false);
+    }
   }
 
   async function performSignOut() {
@@ -108,6 +199,13 @@ export default function MyPageScreen() {
             <Text style={styles.eyebrow}>MY PAGE</Text>
             <Text style={styles.title}>マイページ</Text>
             <Text style={styles.account}>{user?.primaryEmailAddress?.emailAddress ?? 'ログイン中のユーザー'}</Text>
+
+            {isLoadingProfile ? (
+              <View style={styles.loadingRow}>
+                <ActivityIndicator color="#73E7FF" />
+                <Text style={styles.loadingText}>保存済みプロフィールを読み込み中</Text>
+              </View>
+            ) : null}
 
             <View style={styles.shortcutRow}>
               <ShortcutCard label="体重記録" onPress={() => router.push('/weight-history' as Href)} value="推移を見る" />
@@ -168,10 +266,11 @@ export default function MyPageScreen() {
             </View>
 
             {savedMessage ? <Text style={styles.success}>{savedMessage}</Text> : null}
-            <Pressable disabled={isSaving} onPress={saveProfile} style={[styles.saveButton, isSaving && styles.disabledButton]}>
+            {profileError ? <Text style={styles.accountError}>{profileError}</Text> : null}
+            <Pressable disabled={isSaving || isLoadingProfile} onPress={saveProfile} style={[styles.saveButton, (isSaving || isLoadingProfile) && styles.disabledButton]}>
               {isSaving ? <ActivityIndicator color="#050A0F" /> : <Text style={styles.saveText}>プロフィールを保存</Text>}
             </Pressable>
-            <Text style={styles.previewNote}>現在はフロントエンド内の仮保存です。プロフィールAPI接続後にサーバー保存へ切り替えます。</Text>
+            <Text style={styles.previewNote}>{isApiBypassEnabled ? '開発用モードでは画面内へ一時保存します。' : '入力内容は本人のプロフィールとしてNeonへ保存されます。'}</Text>
             {accountError ? <Text style={styles.accountError}>{accountError}</Text> : null}
             <Pressable disabled={isSigningOut} onPress={confirmSignOut} style={[styles.signOutButton, isSigningOut && styles.disabledButton]}>
               {isSigningOut ? <ActivityIndicator color="#FF8D98" /> : <Text style={styles.signOutText}>ログアウト</Text>}
@@ -203,6 +302,8 @@ const styles = StyleSheet.create({
   eyebrow: { color: '#73E7FF', fontSize: 9, fontWeight: '700', letterSpacing: 1.5 },
   title: { marginTop: 5, color: '#F4F6F3', fontSize: 29, fontWeight: '700' },
   account: { marginTop: 6, color: '#72828D', fontSize: 11 },
+  loadingRow: { flexDirection: 'row', alignItems: 'center', gap: 9, marginTop: 14 },
+  loadingText: { color: '#99AAB4', fontSize: 11 },
   shortcutRow: { flexDirection: 'row', gap: 8, marginTop: 20 },
   shortcutCard: { flex: 1, minHeight: 72, padding: 11, borderWidth: 1, borderColor: '#203441', borderRadius: 14, backgroundColor: '#0C151D' },
   shortcutLabel: { color: '#E8EBE8', fontSize: 11, fontWeight: '700' },

@@ -7,6 +7,7 @@ import { getClerkUserId } from "@/app/lib/auth/clerk-auth";
 import { getDb } from "@/db";
 import { users } from "@/db/schema";
 import { goalInputSchema } from "@/app/lib/validation/apiSchemas";
+import { logServerError } from "@/app/lib/observability/serverLog";
 
 // GET通信を受け取り、ログイン中の本人が設定した理想体型を取得する
 export async function GET(
@@ -73,10 +74,7 @@ export async function GET(
     });
   } catch (error) {
     // 詳しいエラーを開発者用ログへ記録する
-    console.error(
-      "理想体型の取得に失敗しました。",
-      error,
-    );
+    logServerError("goal_get_failed", error);
 
     // フロントエンドへ安全な共通エラーを返す
     return Response.json(
@@ -162,10 +160,7 @@ export async function PATCH(request: Request) {
     });
   } catch (error) {
     // 詳しい原因は利用者へ見せず、開発者向けサーバーログへ残す
-    console.error(
-      "理想体型の保存に失敗しました。",
-      error,
-    );
+    logServerError("goal_update_failed", error);
 
     // フロントエンドへ安全なエラーメッセージとHTTP 500を返す
     return Response.json(

@@ -3,6 +3,7 @@ import { getClerkUserId } from "@/app/lib/auth/clerk-auth";
 import { bodyAnalysisResultSchema } from "@/app/lib/ai/bodyAnalysisSchema";
 import { createSafetyIdentifier } from "@/app/lib/ai/createSafetyIdentifier";
 import { createRequestFingerprint } from "@/app/lib/idempotency/createRequestFingerprint";
+import { logServerError } from "@/app/lib/observability/serverLog";
 import {
   and,
   desc,
@@ -211,8 +212,8 @@ export async function GET(request: Request) {
       analyses: analysesWithAreas,
     });
   } catch (error) {
-    console.error(
-      "身体分析履歴の取得に失敗しました。",
+    logServerError(
+      "body_analysis_history_failed",
       error,
     );
 
@@ -482,6 +483,17 @@ export async function POST(request: Request) {
       safetyIdentifier,
     );
 
+    // TypeScript APIとPython分析ログを同じ通信IDで追えるようにする
+    const apiRequestId =
+      request.headers.get("x-request-id");
+
+    if (apiRequestId) {
+      pythonFormData.append(
+        "request_id",
+        apiRequestId,
+      );
+    }
+
     pythonFormData.append(
       "front_image",
       frontImage,
@@ -660,8 +672,8 @@ export async function POST(request: Request) {
             ),
           );
       } catch (cleanupError) {
-        console.error(
-          "身体分析の二重送信管理を解除できませんでした。",
+        logServerError(
+          "body_analysis_guard_cleanup_failed",
           cleanupError,
         );
       }
@@ -671,8 +683,8 @@ export async function POST(request: Request) {
       error instanceof
       PythonAnalysisTimeoutError
     ) {
-      console.error(
-        "Python身体分析APIタイムアウト:",
+      logServerError(
+        "body_analysis_python_timeout",
         error,
       );
 
@@ -691,8 +703,8 @@ export async function POST(request: Request) {
       error instanceof
       PythonAnalysisUnavailableError
     ) {
-      console.error(
-        "Python身体分析APIへ接続できません:",
+      logServerError(
+        "body_analysis_python_unavailable",
         error,
       );
 
@@ -708,8 +720,8 @@ export async function POST(request: Request) {
     if (
       error instanceof PythonAnalysisApiError
     ) {
-      console.error(
-        "Python身体分析APIエラー:",
+      logServerError(
+        "body_analysis_python_failed",
         error,
       );
 
@@ -733,10 +745,7 @@ export async function POST(request: Request) {
       );
     }
 
-    console.error(
-      "身体分析に失敗しました。",
-      error,
-    );
+    logServerError("body_analysis_failed", error);
 
     return Response.json(
       {

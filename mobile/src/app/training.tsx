@@ -1,4 +1,5 @@
-import { useRef, useState } from 'react';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useMemo, useRef, useState } from 'react';
 import { useAuth } from '@clerk/expo';
 import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -11,7 +12,7 @@ import { useTrainingHistory } from '@/contexts/TrainingHistoryContext';
 import { exerciseCatalog, type ExerciseOption } from '@/lib/exerciseCatalog';
 import { ApiError, isApiBypassEnabled } from '@/lib/api';
 import type { PreviousSetPreview } from '@/lib/previousRecordPreview';
-import { createTrainingRecord } from '@/lib/trainingRecords';
+import { createTrainingRecord, updateTrainingRecord } from '@/lib/trainingRecords';
 
 function createRecord(exercise: ExerciseOption): ExerciseRecord {
   return {
@@ -32,14 +33,36 @@ function formatLocalDate(date: Date) {
 }
 
 export default function TrainingScreen() {
+  const router = useRouter();
+  const { editId } = useLocalSearchParams<{ editId?: string }>();
   const { getToken } = useAuth();
   const { draft } = useTrainingDraft();
-  const { addRecord, records } = useTrainingHistory();
+  const { addRecord, records, updateRecord } = useTrainingHistory();
+  const editingRecord = useMemo(
+    () => editId ? records.find((record) => record.id === editId) ?? null : null,
+    [editId, records],
+  );
   const defaultExercises = ['bench-press', 'incline-dumbbell-press', 'side-raise']
     .map((id) => exerciseCatalog.find((exercise) => exercise.id === id))
     .filter((exercise): exercise is ExerciseOption => Boolean(exercise))
     .map(createRecord);
   const [exercises, setExercises] = useState<ExerciseRecord[]>(() => {
+    const recordToEdit = editId ? records.find((record) => record.id === editId) : null;
+    if (recordToEdit) {
+      return recordToEdit.exercises.flatMap((savedExercise) => {
+        const catalogExercise = exerciseCatalog.find((item) => item.id === savedExercise.exerciseId)
+          ?? exerciseCatalog.find((item) => item.name === savedExercise.name);
+        if (!catalogExercise) return [];
+        return [{
+          ...catalogExercise,
+          sets: savedExercise.sets.map((set, index) => ({
+            id: `${catalogExercise.id}-edit-set-${index + 1}`,
+            weightKg: set.weightKg ?? '',
+            reps: set.reps ?? '',
+          })),
+        }];
+      });
+    }
     if (!draft) return defaultExercises;
 
     return draft.exercises.flatMap((draftExercise) => {
@@ -60,14 +83,14 @@ export default function TrainingScreen() {
     });
   });
   const [pickerVisible, setPickerVisible] = useState(false);
-  const [trainingMinutes, setTrainingMinutes] = useState('');
-  const [condition, setCondition] = useState<number | null>(null);
-  const [memo, setMemo] = useState('');
+  const [trainingMinutes, setTrainingMinutes] = useState(() => editingRecord?.trainingMinutes ? String(editingRecord.trainingMinutes) : '');
+  const [condition, setCondition] = useState<number | null>(() => editingRecord?.condition ?? null);
+  const [memo, setMemo] = useState(() => editingRecord?.memo ?? '');
   const [errorMessage, setErrorMessage] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const savingLock = useRef(false);
-  const trainingDate = formatLocalDate(new Date());
+  const trainingDate = editingRecord?.performedOn ?? formatLocalDate(new Date());
 
   function addExercise(exercise: ExerciseOption) {
     setExercises((current) => [...current, createRecord(exercise)]);
@@ -147,7 +170,7 @@ export default function TrainingScreen() {
     setIsSaving(true);
     try {
       const payload = {
-        performedAt: new Date().toISOString(),
+        performedAt: editingRecord?.performedAt ?? new Date().toISOString(),
         durationMinutes: duration,
         conditionScore: condition,
         memo: memo.trim() || null,
@@ -175,13 +198,16 @@ export default function TrainingScreen() {
             if (!token) {
               throw new ApiError('ログインを確認できませんでした。もう一度ログインしてください。', 401);
             }
-            return createTrainingRecord(token, payload);
+            return editingRecord
+              ? updateTrainingRecord(token, editingRecord.id, payload)
+              : createTrainingRecord(token, payload);
           })();
 
-      addRecord({
+      const savedRecord = {
         id: response.trainingSessionId,
-        performedOn: trainingDate,
-        menuId: draft?.menuId ?? null,
+        performedAt: payload.performedAt,
+        performedOn: editingRecord?.performedOn ?? trainingDate,
+        menuId: editingRecord?.menuId ?? draft?.menuId ?? null,
         exercises: exercises.map((exercise) => ({
           exerciseId: exercise.id,
           name: exercise.name,
@@ -193,8 +219,14 @@ export default function TrainingScreen() {
         trainingMinutes: duration,
         condition,
         memo: memo.trim() || null,
-      });
+      };
+      if (editingRecord) {
+        updateRecord(savedRecord);
+      } else {
+        addRecord(savedRecord);
+      }
       setSuccessMessage(`${response.message} カレンダーへ反映しました。`);
+      if (editingRecord) router.back();
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : '記録の保存に失敗しました。');
     } finally {
@@ -211,7 +243,7 @@ export default function TrainingScreen() {
           <View style={styles.header}>
             <View>
               <Text style={styles.eyebrow}>TRAINING LOG</Text>
-              <Text style={styles.title}>トレーニング記録</Text>
+              <Text style={styles.title}>{editingRecord ? '記録を編集' : 'トレーニング記録'}</Text>
             </View>
             <View style={styles.dateBadge}>
               <Text style={styles.dateLabel}>DATE</Text>
@@ -288,7 +320,7 @@ export default function TrainingScreen() {
           {successMessage ? <Text style={styles.success}>{successMessage}</Text> : null}
 
           <Pressable accessibilityLabel="トレーニング記録を保存" accessibilityState={{ disabled: isSaving, busy: isSaving }} disabled={isSaving} onPress={saveRecord} style={[styles.saveButton, isSaving && styles.disabledButton]}>
-            {isSaving ? <ActivityIndicator color="#050A0F" /> : <Text style={styles.saveButtonText}>記録を保存</Text>}
+            {isSaving ? <ActivityIndicator color="#050A0F" /> : <Text style={styles.saveButtonText}>{editingRecord ? '変更を保存' : '記録を保存'}</Text>}
           </Pressable>
           <Text style={styles.previewNote}>保存した記録は履歴とカレンダーへ反映されます。</Text>
         </ScrollView>

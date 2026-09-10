@@ -18,6 +18,7 @@ import {
 import { getDb } from "@/db";
 import { users } from "@/db/schema";
 import { deleteAccountSchema } from "@/app/lib/validation/apiSchemas";
+import { logServerError } from "@/app/lib/observability/serverLog";
 
 // DELETE通信を受け取り、本人確認と削除確認文字を検査する
 export async function DELETE(
@@ -92,8 +93,8 @@ export async function DELETE(
       );
     } catch (clerkError) {
       // Clerkだけ失敗した場合は再実行できることを利用者へ伝える
-      console.error(
-        "Neon削除後にClerkアカウント削除が失敗しました。",
+      logServerError(
+        "clerk_account_delete_failed",
         clerkError,
       );
 
@@ -116,10 +117,7 @@ export async function DELETE(
     });
   } catch (error) {
     // 詳細を利用者へ見せずサーバーログへ残す
-    console.error(
-      "アカウント削除の処理に失敗しました。",
-      error,
-    );
+    logServerError("account_delete_failed", error);
 
     return Response.json(
       {

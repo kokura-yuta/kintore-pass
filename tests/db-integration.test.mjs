@@ -76,9 +76,22 @@ test("Neonの制約・更新・削除・cascadeを実DBで確認する", async (
       insert into user_profiles (
         user_id,
         height_cm,
-        weight_kg
-      ) values (${userId}, 170, 65)
+        weight_kg,
+        training_style
+      ) values (${userId}, 170, 65, 'split')
     `;
+
+    const savedProfile = await sql`
+      select
+        height_cm,
+        weight_kg,
+        training_style
+      from user_profiles
+      where user_id = ${userId}
+    `;
+    assert.equal(savedProfile[0].height_cm, 170);
+    assert.equal(savedProfile[0].weight_kg, 65);
+    assert.equal(savedProfile[0].training_style, "split");
 
     await sql`
       insert into weight_records (

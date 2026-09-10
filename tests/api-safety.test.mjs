@@ -284,6 +284,22 @@ test("プロフィールは身長・体重だけ必須で任意項目は省略�
     profileSchema.safeParse({ heightCm: 170 }).success,
     false,
   );
+  assert.equal(
+    profileSchema.safeParse({
+      heightCm: 170,
+      weightKg: 65,
+      trainingStyle: "split",
+    }).success,
+    true,
+  );
+  assert.equal(
+    profileSchema.safeParse({
+      heightCm: 170,
+      weightKg: 65,
+      trainingStyle: "unknown",
+    }).success,
+    false,
+  );
 });
 
 test("体重記録の保存・更新範囲を検査する", () => {
