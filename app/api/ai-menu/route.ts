@@ -425,6 +425,8 @@ export async function POST(
         aiContext.latestBodyAnalysis,
       recentTrainingSessions:
         aiContext.recentTrainingSessions,
+      recentFoodRecords:
+        aiContext.recentFoodRecords,
       recentAiMenus:
         aiContext.recentAiMenus,
       todayCondition:

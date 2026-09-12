@@ -5,6 +5,8 @@ import {
   chatRequestSchema,
   deleteAccountSchema,
   deleteTrainingRecordSchema,
+  foodRecordCreateSchema,
+  foodRecordUpdateSchema,
   goalInputSchema,
   markAiMenuPerformedSchema,
   profileSchema,
@@ -329,6 +331,43 @@ test("体重記録の保存・更新範囲を検査する", () => {
   );
 });
 
+test("食事記録の区分・文字数・栄養値を検査する", () => {
+  const validFoodRecord = {
+    recordedDate: "2026-09-11",
+    mealType: "昼食",
+    name: "鶏むね肉とご飯",
+    calories: 650,
+    proteinGrams: 42.5,
+  };
+
+  assert.equal(
+    foodRecordCreateSchema.safeParse(validFoodRecord).success,
+    true,
+  );
+  assert.equal(
+    foodRecordCreateSchema.safeParse({
+      ...validFoodRecord,
+      mealType: "夜食",
+    }).success,
+    false,
+  );
+  assert.equal(
+    foodRecordCreateSchema.safeParse({
+      ...validFoodRecord,
+      calories: 10001,
+    }).success,
+    false,
+  );
+  assert.equal(
+    foodRecordUpdateSchema.safeParse({
+      ...validFoodRecord,
+      recordId:
+        "66666666-6666-4666-8666-666666666666",
+    }).success,
+    true,
+  );
+});
+
 test("アカウント削除は確認文字DELETEが完全一致した場合だけ許可する", () => {
   assert.equal(
     deleteAccountSchema.safeParse({
@@ -422,7 +461,7 @@ test("OpenAIのAIメニュー回答が決めたJSON形式か検査する", () =>
   );
 });
 
-test("AIチャットToolは本人データ取得用の5種類だけを公開する", () => {
+test("AIチャットToolは本人データ取得用の6種類だけを公開する", () => {
   assert.deepEqual(
     chatTools.map((tool) => tool.name),
     [
@@ -431,6 +470,7 @@ test("AIチャットToolは本人データ取得用の5種類だけを公開す�
       "get_recent_training_records",
       "get_latest_ai_menu",
       "get_weight_history",
+      "get_recent_food_records",
     ],
   );
 

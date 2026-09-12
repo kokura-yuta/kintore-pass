@@ -172,6 +172,73 @@ export const weightRecords = pgTable(
   ],
 );
 
+// ユーザーが食べたもの・カロリー・たんぱく質を日付ごとに保存するテーブル
+export const foodRecords = pgTable(
+  "food_records",
+  {
+    // 1件の食事記録を重複なく識別するID
+    id: uuid("id")
+      .defaultRandom()
+      .primaryKey(),
+
+    // どのユーザーの食事かをusersテーブルと結び付ける
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, {
+        onDelete: "cascade",
+      }),
+
+    // 食べた日をYYYY-MM-DD形式で保存する
+    recordedDate: date("recorded_date", {
+      mode: "string",
+    }).notNull(),
+
+    // 朝食・昼食・夕食・間食のどれかを保存する
+    mealType: text("meal_type").notNull(),
+
+    // 利用者が入力した料理・食品名を保存する
+    name: text("name").notNull(),
+
+    // カロリーとたんぱく質を0以上の数値で保存する
+    calories: real("calories").notNull(),
+    proteinGrams: real("protein_grams")
+      .notNull()
+      .default(0),
+
+    createdAt: timestamp("created_at", {
+      withTimezone: true,
+    })
+      .notNull()
+      .defaultNow(),
+
+    updatedAt: timestamp("updated_at", {
+      withTimezone: true,
+    })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    // 本人の日付別一覧を速く取得するための索引
+    index("food_records_user_date_created_idx").on(
+      table.userId,
+      table.recordedDate,
+      table.createdAt,
+    ),
+    check(
+      "food_records_meal_type_check",
+      sql`${table.mealType} in ('朝食', '昼食', '夕食', '間食')`,
+    ),
+    check(
+      "food_records_calories_check",
+      sql`${table.calories} >= 0 and ${table.calories} <= 10000`,
+    ),
+    check(
+      "food_records_protein_check",
+      sql`${table.proteinGrams} >= 0 and ${table.proteinGrams} <= 1000`,
+    ),
+  ],
+);
+
 // 1回分のトレーニング日時・時間・調子・メモをユーザーごとに保存するテーブル
 export const trainingSessions = pgTable(
   "training_sessions",

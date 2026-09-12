@@ -1,5 +1,8 @@
-import { useState } from 'react';
+import { useAuth } from '@clerk/expo';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
+  Alert,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -12,31 +15,88 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { BottomNavigation } from '@/components/BottomNavigation';
-
-type MealType = '朝食' | '昼食' | '夕食' | '間食';
-
-type FoodEntry = {
-  id: string;
-  mealType: MealType;
-  name: string;
-  calories: number;
-  proteinGrams: number;
-};
+import { isApiBypassEnabled } from '@/lib/api';
+import {
+  createFoodRecord,
+  deleteFoodRecord,
+  fetchFoodRecords,
+  type FoodRecord,
+  type MealType,
+} from '@/lib/foodRecords';
 
 const mealTypes: MealType[] = ['朝食', '昼食', '夕食', '間食'];
 
+// 端末の現在日付をAPIで使うYYYY-MM-DD形式へ変換する
+function getToday() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 export default function FoodScreen() {
-  const [entries, setEntries] = useState<FoodEntry[]>([]);
+  const { getToken } = useAuth({ treatPendingAsSignedOut: false });
+  const [entries, setEntries] = useState<FoodRecord[]>([]);
   const [mealType, setMealType] = useState<MealType>('朝食');
   const [name, setName] = useState('');
   const [calories, setCalories] = useState('');
   const [protein, setProtein] = useState('');
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+  const [isLoading, setIsLoading] = useState(!isApiBypassEnabled);
+  const [isSaving, setIsSaving] = useState(false);
+  const [deletingRecordId, setDeletingRecordId] = useState<string | null>(null);
+  const getTokenRef = useRef(getToken);
+  const savingLock = useRef(false);
+  const recordedDate = getToday();
 
   const totalCalories = entries.reduce((total, entry) => total + entry.calories, 0);
   const totalProtein = entries.reduce((total, entry) => total + entry.proteinGrams, 0);
 
-  function addEntry() {
+  // 再描画後も最新のClerkトークン取得関数を利用する
+  useEffect(() => {
+    getTokenRef.current = getToken;
+  }, [getToken]);
+
+  // 画面を開いたときに今日の食事をバックエンドから読み込む
+  const loadEntries = useCallback(async () => {
+    if (isApiBypassEnabled) {
+      setIsLoading(false);
+      return;
+    }
+
+    setIsLoading(true);
+    setError('');
+
+    try {
+      const token = await getTokenRef.current();
+
+      if (!token) {
+        throw new Error('ログイン状態を確認できませんでした。');
+      }
+
+      const response = await fetchFoodRecords(token, recordedDate);
+      setEntries(response.records);
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : '食事記録を読み込めませんでした。');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [recordedDate]);
+
+  useEffect(() => {
+    const timerId = setTimeout(() => {
+      void loadEntries();
+    }, 0);
+
+    return () => clearTimeout(timerId);
+  }, [loadEntries]);
+
+  // 入力内容を検査し、本人の食事記録として保存する
+  async function addEntry() {
+    if (savingLock.current) return;
+
     const normalizedName = name.trim();
     const parsedCalories = Number(calories);
     const parsedProtein = protein.trim() ? Number(protein) : 0;
@@ -54,20 +114,81 @@ export default function FoodScreen() {
       return;
     }
 
-    setEntries((current) => [
-      ...current,
-      {
-        id: `${Date.now()}-${current.length}`,
+    setError('');
+    setSuccess('');
+    savingLock.current = true;
+    setIsSaving(true);
+
+    try {
+      const input = {
+        recordedDate,
         mealType,
         name: normalizedName,
         calories: parsedCalories,
         proteinGrams: parsedProtein,
+      };
+
+      let savedRecord: FoodRecord;
+
+      if (isApiBypassEnabled) {
+        savedRecord = {
+          id: `food-${Date.now()}`,
+          ...input,
+        };
+      } else {
+        const token = await getTokenRef.current();
+
+        if (!token) {
+          throw new Error('ログイン状態を確認できませんでした。');
+        }
+
+        savedRecord = await createFoodRecord(token, input);
+      }
+
+      setEntries((current) => [...current, savedRecord]);
+      setName('');
+      setCalories('');
+      setProtein('');
+      setSuccess('食事を記録しました。');
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : '食事記録を保存できませんでした。');
+    } finally {
+      savingLock.current = false;
+      setIsSaving(false);
+    }
+  }
+
+  // 削除確認後、本人の食事記録をNeonと画面の両方から削除する
+  function confirmDelete(record: FoodRecord) {
+    Alert.alert('食事記録を削除', `${record.name}を削除しますか？`, [
+      { text: 'キャンセル', style: 'cancel' },
+      {
+        text: '削除する',
+        style: 'destructive',
+        onPress: () => {
+          void (async () => {
+            setDeletingRecordId(record.id);
+            setError('');
+
+            try {
+              if (!isApiBypassEnabled) {
+                const token = await getTokenRef.current();
+
+                if (!token) throw new Error('ログイン状態を確認できませんでした。');
+                await deleteFoodRecord(token, record.id);
+              }
+
+              setEntries((current) => current.filter((entry) => entry.id !== record.id));
+              setSuccess('食事記録を削除しました。');
+            } catch (deleteError) {
+              setError(deleteError instanceof Error ? deleteError.message : '食事記録を削除できませんでした。');
+            } finally {
+              setDeletingRecordId(null);
+            }
+          })();
+        },
       },
     ]);
-    setName('');
-    setCalories('');
-    setProtein('');
-    setError('');
   }
 
   return (
@@ -144,17 +265,23 @@ export default function FoodScreen() {
               </View>
 
               {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
-              <Pressable accessibilityRole="button" onPress={addEntry} style={styles.addButton}>
-                <Text style={styles.addButtonText}>この食事を追加</Text>
+              {success ? <Text style={styles.success}>{success}</Text> : null}
+              <Pressable accessibilityRole="button" disabled={isSaving} onPress={() => { void addEntry(); }} style={[styles.addButton, isSaving && styles.disabledButton]}>
+                {isSaving ? <ActivityIndicator color="#050A0F" /> : <Text style={styles.addButtonText}>この食事を追加</Text>}
               </Pressable>
-              <Text style={styles.previewNote}>現在はフロント確認用です。サーバー保存はAPI接続後に対応します。</Text>
+              <Text style={styles.previewNote}>保存した内容はログイン中の本人の記録としてNeonに残ります。</Text>
             </View>
 
             <View style={styles.listHeading}>
               <Text style={styles.sectionTitle}>今日の食事</Text>
               <Text style={styles.count}>{entries.length}件</Text>
             </View>
-            {entries.length === 0 ? (
+            {isLoading ? (
+              <View style={styles.emptyCard}>
+                <ActivityIndicator color="#00D4FF" />
+                <Text style={styles.emptyText}>食事記録を読み込んでいます。</Text>
+              </View>
+            ) : entries.length === 0 ? (
               <View style={styles.emptyCard}>
                 <Text style={styles.emptyTitle}>まだ食事記録がありません</Text>
                 <Text style={styles.emptyText}>食べたものを追加すると、今日の合計を確認できます。</Text>
@@ -170,6 +297,9 @@ export default function FoodScreen() {
                     <View style={styles.entryNumbers}>
                       <Text style={styles.entryCalories}>{entry.calories.toLocaleString()} kcal</Text>
                       <Text style={styles.entryProtein}>P {entry.proteinGrams.toFixed(1)} g</Text>
+                      <Pressable accessibilityLabel={`${entry.name}を削除`} disabled={deletingRecordId === entry.id} onPress={() => confirmDelete(entry)}>
+                        <Text style={styles.deleteText}>{deletingRecordId === entry.id ? '削除中' : '削除'}</Text>
+                      </Pressable>
                     </View>
                   </View>
                 ))}
@@ -213,7 +343,9 @@ const styles = StyleSheet.create({
   numberInput: { flex: 1, minWidth: 0, paddingHorizontal: 13, color: '#F4F6F3', fontSize: 14 },
   inputUnit: { paddingRight: 12, color: '#70838E', fontSize: 10, fontWeight: '700' },
   error: { marginTop: 12, color: '#FF8D98', fontSize: 11 },
+  success: { marginTop: 12, color: '#73E7FF', fontSize: 11 },
   addButton: { minHeight: 52, alignItems: 'center', justifyContent: 'center', marginTop: 16, borderRadius: 14, backgroundColor: '#00D4FF' },
+  disabledButton: { opacity: 0.55 },
   addButtonText: { color: '#050A0F', fontSize: 13, fontWeight: '700' },
   previewNote: { marginTop: 10, color: '#60727D', fontSize: 9, lineHeight: 14, textAlign: 'center' },
   listHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 22, marginBottom: 10 },
@@ -229,4 +361,5 @@ const styles = StyleSheet.create({
   entryNumbers: { alignItems: 'flex-end' },
   entryCalories: { color: '#F4F6F3', fontSize: 12, fontWeight: '700' },
   entryProtein: { marginTop: 5, color: '#80929C', fontSize: 9, fontWeight: '700' },
+  deleteText: { marginTop: 7, color: '#FF8D98', fontSize: 9, fontWeight: '700' },
 });

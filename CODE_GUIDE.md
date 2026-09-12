@@ -13645,3 +13645,97 @@ npm run test:all
 ### 公開ログで再確認したこと
 
 バージョン5公開後のWorkerログでは、`GET /api/health`がHTTP 200で終了し、アプリ側のリクエストIDと処理時間が記録されていました。秘密鍵、DB接続URL、Bearerトークン、身体画像、質問本文はログへ出していません。
+
+## 食事管理の保存とAI連携
+
+### 何をする機能か
+
+食事画面で入力した食事区分・食事名・カロリー・たんぱく質を、ログイン中の本人の記録としてNeonへ保存します。画面を閉じたりアプリを再起動したりしても、同じアカウントなら保存済みデータを取得できます。
+
+```text
+mobile/src/app/food.tsx
+  ↓ 画面の入力をまとめる
+mobile/src/lib/foodRecords.ts
+  ↓ Clerkトークンを付けてHTTP通信
+app/api/food-records/route.ts
+  ↓ 本人確認・入力検査
+db/schema.ts の food_records
+  ↓
+Neon PostgreSQL
+```
+
+### ファイルごとの役割
+
+- `mobile/src/app/food.tsx`：利用者が触る画面、入力State、一覧、合計、保存・削除ボタンを担当する
+- `mobile/src/lib/foodRecords.ts`：画面とバックエンドの間でGET・POST・PATCH・DELETE通信を行う
+- `app/api/food-records/route.ts`：Clerkで本人を確認し、Neonへ安全に読み書きする
+- `app/lib/validation/apiSchemas.ts`：食事区分、文字数、カロリー、たんぱく質の許容範囲を決める
+- `db/schema.ts`：Neonに作る`food_records`テーブルの列・関連・制約を決める
+- `drizzle-postgres/0010_ancient_ozymandias.sql`：決めたテーブルを実際のNeonへ作るマイグレーション
+
+### 画面側で使う基本の文法
+
+```ts
+const { getToken } = useAuth();
+```
+
+`useAuth()`はClerkのログイン状態を利用するReact Hookです。`getToken`を呼ぶと、バックエンドへ「誰が操作しているか」を安全に伝える短時間の認証トークンを取得できます。
+
+```ts
+const records = await fetchFoodRecords(getToken, today);
+```
+
+`await`は通信が終わるまで次の行を待ちます。取得が完了すると、`records`へNeonから返された当日の食事一覧が入ります。
+
+```ts
+setEntries(records);
+```
+
+取得した一覧をReactのStateへ保存します。Stateが変わると画面が再描画され、保存済みの食事が表示されます。
+
+```ts
+entries.reduce((total, item) => total + item.calories, 0)
+```
+
+`.reduce()`は配列を1つの値へまとめる処理です。ここでは`0`から始め、各食事のカロリーを順番に足して当日の合計を作ります。
+
+### APIの4つの処理
+
+- `GET /api/food-records?date=YYYY-MM-DD`：指定日の本人の記録を読む
+- `POST /api/food-records`：新しい記録を保存する
+- `PATCH /api/food-records`：本人の既存記録を変更する
+- `DELETE /api/food-records?recordId=...`：本人の記録を1件削除する
+
+GETは「受け取る」、POSTは「新しく保存する」、PATCHは「一部を直す」、DELETEは「削除する」という役割です。
+
+### なぜ毎回本人確認をするのか
+
+一度ログインしても、API通信はそれぞれ独立したお願いとして届きます。バックエンドは毎回Clerkトークンを確認し、取得した`clerkUserId`とNeonの`users.clerk_user_id`を照合します。
+
+さらに変更・削除では、次の2条件を同時に指定します。
+
+```ts
+and(
+  eq(foodRecords.id, recordId),
+  eq(foodRecords.userId, userId),
+)
+```
+
+1行目は対象の食事記録ID、2行目はログイン中の本人IDです。両方が一致しない限り変更・削除できないため、他人が記録IDを知っても操作できません。
+
+### ZodとDB制約を両方使う理由
+
+ZodはAPI入口で不正な入力をHTTP 400として分かりやすく拒否します。DB制約は、API以外の経路や将来のコードミスがあってもNeonへ不正値を保存させない最後の防御です。
+
+- 食事区分：朝食・昼食・夕食・間食だけ
+- 食事名：1〜100文字
+- カロリー：0〜10000
+- たんぱく質：0〜1000g
+
+### AIへ渡す流れ
+
+`getUserAiContext.ts`は本人の最近7日間の食事をNeonから取得し、`recentFoodRecords`へまとめます。AIメニューはこのデータを最初から受け取り、最近の食事をトレーニング量と一般的な栄養助言の参考にします。
+
+AIチャットは毎回すべてを読むのではなく、食事について質問されたときに`get_recent_food_records` Toolを選びます。`runChatTool.ts`が本人のデータだけを取得してOpenAIへ返します。この構成により、不要なデータ送信とAPI料金を抑えられます。
+
+AIは食事履歴だけから病気や栄養不足を診断せず、治療・投薬・極端な食事制限を指示しないルールにしています。

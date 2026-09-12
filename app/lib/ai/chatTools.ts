@@ -95,4 +95,21 @@ export const chatTools = [
     // 定義していない入力をAIから受け取らない
     strict: true,
   },
+  {
+    type: "function",
+
+    name: "get_recent_food_records",
+
+    description:
+      "ログイン中の利用者の最近7日間の食事記録を取得する。食事内容、カロリー、たんぱく質、日ごとの合計を確認し、筋力トレーニング・増量・減量に関する一般的な助言を行うときに使用する。",
+
+    parameters: {
+      type: "object",
+      properties: {},
+      required: [],
+      additionalProperties: false,
+    },
+
+    strict: true,
+  },
 ] as const;

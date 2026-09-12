@@ -202,6 +202,80 @@ async function run() {
     200,
   );
 
+  const foodCreate = await api("/api/food-records", {
+    token: userA.token,
+    method: "POST",
+    body: {
+      recordedDate: today,
+      mealType: "昼食",
+      name: "鶏むね肉とご飯",
+      calories: 650,
+      proteinGrams: 42.5,
+    },
+  });
+  await expectStatus("food create", foodCreate, 201);
+  const foodRecordId = foodCreate.body.record.id;
+
+  await expectStatus(
+    "other user cannot update food",
+    await api("/api/food-records", {
+      token: userB.token,
+      method: "PATCH",
+      body: {
+        recordId: foodRecordId,
+        recordedDate: today,
+        mealType: "昼食",
+        name: "変更してはいけない食事",
+        calories: 999,
+        proteinGrams: 1,
+      },
+    }),
+    404,
+  );
+
+  await expectStatus(
+    "food update",
+    await api("/api/food-records", {
+      token: userA.token,
+      method: "PATCH",
+      body: {
+        recordId: foodRecordId,
+        recordedDate: today,
+        mealType: "夕食",
+        name: "鮭とご飯",
+        calories: 700,
+        proteinGrams: 38,
+      },
+    }),
+    200,
+  );
+
+  await expectStatus(
+    "food list",
+    await api(`/api/food-records?date=${today}`, {
+      token: userA.token,
+    }),
+    200,
+  );
+
+  await expectStatus(
+    "other user cannot delete food",
+    await api(`/api/food-records?recordId=${foodRecordId}`, {
+      token: userB.token,
+      method: "DELETE",
+    }),
+    404,
+  );
+
+  await expectStatus(
+    "food delete",
+    await api(`/api/food-records?recordId=${foodRecordId}`, {
+      token: userA.token,
+      method: "DELETE",
+    }),
+    200,
+  );
+
   const trainingBody = {
     performedAt: new Date(Date.now() - 60_000).toISOString(),
     durationMinutes: 45,

@@ -32,6 +32,7 @@ test("Neonの制約・更新・削除・cascadeを実DBで確認する", async (
   const userId = randomUUID();
   const otherUserId = randomUUID();
   const weightRecordId = randomUUID();
+  const foodRecordId = randomUUID();
   const trainingSessionId = randomUUID();
   const trainingExerciseId = randomUUID();
   const bodyAnalysisId = randomUUID();
@@ -139,6 +140,63 @@ test("Neonの制約・更新・削除・cascadeを実DBで確認する", async (
       returning id
     `;
     assert.equal(otherUserUpdate.length, 0);
+
+    await sql`
+      insert into food_records (
+        id,
+        user_id,
+        recorded_date,
+        meal_type,
+        name,
+        calories,
+        protein_grams
+      ) values (
+        ${foodRecordId},
+        ${userId},
+        '2026-09-01',
+        '昼食',
+        '鶏むね肉とご飯',
+        650,
+        42.5
+      )
+    `;
+
+    const savedFoods = await sql`
+      select name, calories, protein_grams
+      from food_records
+      where id = ${foodRecordId}
+        and user_id = ${userId}
+    `;
+    assert.equal(savedFoods[0].name, "鶏むね肉とご飯");
+    assert.equal(savedFoods[0].calories, 650);
+    assert.equal(savedFoods[0].protein_grams, 42.5);
+
+    const otherUserFoodUpdate = await sql`
+      update food_records
+      set calories = 999
+      where id = ${foodRecordId}
+        and user_id = ${otherUserId}
+      returning id
+    `;
+    assert.equal(otherUserFoodUpdate.length, 0);
+
+    await expectDatabaseError(() => sql`
+      insert into food_records (
+        user_id,
+        recorded_date,
+        meal_type,
+        name,
+        calories,
+        protein_grams
+      ) values (
+        ${userId},
+        '2026-09-01',
+        '夜食',
+        '許可されない区分',
+        100,
+        1
+      )
+    `);
 
     await expectDatabaseError(() => sql`
       insert into training_sessions (
@@ -477,6 +535,7 @@ test("Neonの制約・更新・削除・cascadeを実DBで確認する", async (
       select
         (select count(*) from user_profiles where user_id = ${userId})::int
           + (select count(*) from weight_records where user_id = ${userId})::int
+          + (select count(*) from food_records where user_id = ${userId})::int
           + (select count(*) from body_analyses where user_id = ${userId})::int
           + (select count(*) from ai_generated_menus where user_id = ${userId})::int
           + (select count(*) from chat_conversations where user_id = ${userId})::int

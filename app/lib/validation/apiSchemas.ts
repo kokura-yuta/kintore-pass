@@ -165,6 +165,23 @@ export const weightRecordUpdateSchema = z.object({
   weightKg: z.number().finite().min(20).max(500),
 });
 
+// 食事画面から届く食事区分・名前・栄養値の共通検査
+const foodRecordFieldsSchema = z.object({
+  recordedDate: calendarDateSchema,
+  mealType: z.enum(["朝食", "昼食", "夕食", "間食"]),
+  name: z.string().trim().min(1).max(100),
+  calories: z.number().finite().min(0).max(10000),
+  proteinGrams: z.number().finite().min(0).max(1000),
+});
+
+export const foodRecordCreateSchema =
+  foodRecordFieldsSchema;
+
+export const foodRecordUpdateSchema =
+  foodRecordFieldsSchema.extend({
+    recordId: uuidSchema,
+  });
+
 export const deleteAccountSchema = z.object({
   confirmation: z.literal("DELETE"),
 });
