@@ -13818,3 +13818,106 @@ npm run test:food-ai-account-live
 ```
 
 2026年9月13日の実行では全18項目が合格しました。テスト終了後は`finally`によって一時ユーザーだけを削除し、通常利用者のデータには触れていません。公開APIはSitesバージョン7へ反映し、TypeScript API、Neon、RenderのヘルスチェックがすべてHTTP 200になっています。
+
+## 2026年9月13日：身体分析を最初から最後まで確認するテスト
+
+対象ファイル：`tests/body-analysis-live-e2e.mjs`
+
+このファイルは、身体分析の一部分だけではなく、次の受け渡し全体を確認します。
+
+```text
+一時Clerkユーザーを作る
+↓
+初回登録・理想体型・身体情報を保存する
+↓
+合成した正面・横・背面画像をTypeScript APIへ送る
+↓
+TypeScript APIがPythonへ画像と身体情報を渡す
+↓
+PythonがOpenAIから分析JSONを受け取る
+↓
+TypeScript APIが分析本体と部位別結果をNeonへ保存する
+↓
+GET通信で同じ分析履歴を取得する
+↓
+テスト用ユーザーと関連データを削除する
+```
+
+### `freshToken`は何をしているか
+
+```javascript
+const freshToken = async () =>
+  (await clerk.sessions.getToken(session.id)).jwt;
+```
+
+`const freshToken`は、最新のClerk認証トークンを取得する関数を定義しています。
+
+`async`は、通信結果を待つ処理が入る関数であることを表します。
+
+`await clerk.sessions.getToken(session.id)`は、Clerkへ現在のセッション用トークンを問い合わせ、返るまで待ちます。
+
+`.jwt`は、Clerkから返ったデータの中からAPI認証に使うJWT文字列だけを取り出します。
+
+画像分析やAIメニュー生成には時間がかかるため、最初に取得したJWTが途中で期限切れになる場合があります。そのため、長い処理の後も同じ文字列を使い続けず、次のAPI通信直前に新しいJWTを取得します。これはスマホアプリが通信前に`getToken()`を呼ぶ動きと同じ考え方です。
+
+### 画像3枚を`FormData`へ入れる理由
+
+```javascript
+const formData = new FormData();
+
+formData.append(
+  "front_image",
+  await imageBlob("tmp/body-analysis-test/front.png"),
+  "front.png",
+);
+```
+
+`new FormData()`は、文字だけでなく画像ファイルもHTTP通信で送れる入れ物を作ります。
+
+`append()`は、その入れ物へ1項目を追加します。
+
+`"front_image"`はTypeScript側の`requestFormData.get("front_image")`と対応する名前です。送る側と受け取る側で同じ名前にする必要があります。
+
+`imageBlob()`はローカルの合成画像を読み込み、`image/png`形式のファイルデータへ変換します。
+
+`"front.png"`は、送信するファイル名です。
+
+同じ形式で`side_image`と`back_image`も追加するため、TypeScript APIは正面・横・背面の3枚を区別できます。
+
+### Neonへ本当に保存されたことの確認
+
+```javascript
+const savedRows = await sql`
+  select
+    (select count(*)::int from body_analyses where id = ${analysisBody.bodyAnalysisId}) as analyses,
+    (select count(*)::int from body_analysis_areas where analysis_id = ${analysisBody.bodyAnalysisId}) as areas
+`;
+```
+
+`body_analyses`では、分析のまとめが1件保存されたか確認します。
+
+`body_analysis_areas`では、肩・胸・背中などの部位別結果が保存された数を確認します。
+
+`bodyAnalysisId`を条件にすることで、別の利用者や過去の分析ではなく、今実行した分析だけを確認できます。
+
+### `try`と`finally`を使う理由
+
+テスト途中で失敗しても一時ユーザーがClerkやNeonへ残らないよう、削除処理を`finally`へ置いています。
+
+`try`の途中でエラーが発生しても、`finally`は最後に必ず実行されます。そのため、通常利用者のデータには触れず、このテスト自身が作ったユーザーだけを片付けられます。
+
+### 実行方法
+
+TypeScript APIを起動した状態で、別ターミナルから次を実行します。
+
+```bash
+npm run test:body-analysis-live
+```
+
+2026年9月13日の確認では、PythonとOpenAIから正常な分析JSONが返り、分析本体、部位別結果、履歴GET、Neon保存のすべてが合格しました。
+
+## iPhone相当の画面確認と実機確認の違い
+
+390×844のブラウザ確認では、スマートフォン幅でレイアウトが横にはみ出さないことを検査できます。
+
+ただし、ブラウザ確認だけではiPhoneのカメラ権限、写真アプリの選択画面、Appleログイン、アプリを完全終了した後の動作までは再現できません。この4点は、Expo GoまたはiOS開発ビルドを実際のiPhoneへ入れて確認します。

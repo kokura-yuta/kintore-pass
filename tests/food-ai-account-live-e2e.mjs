@@ -88,7 +88,7 @@ async function run() {
     userId: clerkUserId,
   });
   const tokenResponse = await clerk.sessions.getToken(session.id);
-  const token = tokenResponse.jwt;
+  let token = tokenResponse.jwt;
 
   expectStatus(
     "一時ユーザーをNeonへ登録",
@@ -194,6 +194,10 @@ async function run() {
   assert.ok(menu.body.menu?.exercises?.length > 0);
   assert.ok(menu.body.menu?.advice?.length > 0);
   pass("AIメニューの形式と保存結果が正常");
+
+  // OpenAIの回答待ちで短命なテスト用JWTが失効する場合があるため、
+  // アプリ本体のgetToken()と同じように次の通信前に更新する
+  token = (await clerk.sessions.getToken(session.id)).jwt;
 
   expectStatus(
     "食事を削除",
