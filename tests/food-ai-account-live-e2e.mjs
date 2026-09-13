@@ -27,7 +27,11 @@ const clerk = createClerkClient({
     process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY,
   secretKey: process.env.CLERK_SECRET_KEY,
 });
-const sql = neon(process.env.DATABASE_URL);
+// 公開APIテスト時は、そのAPIと同じDB URLを安全に別指定できる
+const sql = neon(
+  process.env.AUTHENTICATED_TEST_DATABASE_URL ??
+    process.env.DATABASE_URL,
+);
 
 let clerkUserId = null;
 let databaseUserId = null;
