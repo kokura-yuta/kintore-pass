@@ -13739,3 +13739,80 @@ ZodはAPI入口で不正な入力をHTTP 400として分かりやすく拒否し
 AIチャットは毎回すべてを読むのではなく、食事について質問されたときに`get_recent_food_records` Toolを選びます。`runChatTool.ts`が本人のデータだけを取得してOpenAIへ返します。この構成により、不要なデータ送信とAPI料金を抑えられます。
 
 AIは食事履歴だけから病気や栄養不足を診断せず、治療・投薬・極端な食事制限を指示しないルールにしています。
+
+## 食事・AI・アカウント削除の実通信テスト
+
+対象ファイルは`tests/food-ai-account-live-e2e.mjs`です。使用言語はJavaScriptです。
+
+このファイルは、個別のコードが存在するだけでなく、Clerk、TypeScript API、Neon、OpenAIが実際につながるかを一時テストユーザーで確かめます。本物の利用者データは使いません。
+
+```text
+一時Clerkユーザーを作る
+↓
+bootstrapでNeonへ本人を登録
+↓
+食事をPOST保存
+↓
+別のGET通信で再取得
+↓
+AIチャットへ食事について質問
+↓
+AIメニューを生成
+↓
+食事をDELETEしてNeonから消えたか確認
+↓
+古い本人確認状態ではアカウント削除が403になるか確認
+↓
+テスト用のNeon関連データとClerkアカウントを削除
+```
+
+### なぜ別のGET通信で取り直すのか
+
+保存直後の画面Stateにデータが残るだけでは、本当にNeonへ保存できた証明になりません。POSTとは別のGET通信を行い、同じ食事名・777kcal・たんぱく質55gが返ることを確認しています。これは「アプリを再起動しても残るか」のバックエンド側の確認に相当します。
+
+### AIチャットが食事を使ったと判断する方法
+
+テストごとに重複しない食事名を作り、AIへ保存済み食事を尋ねます。回答に固有の食事名、777、55が含まれることを`assert.match()`で確認します。たまたま一般知識で答えたのではなく、`get_recent_food_records` Toolから本人のNeonデータを取得したと判断できます。
+
+```javascript
+assert.match(chat.body.reply, new RegExp(uniqueFoodName));
+assert.match(chat.body.reply, /777/);
+assert.match(chat.body.reply, /55/);
+```
+
+`assert.match()`は、実際の文字列に期待する文字が含まれるかを検査するJavaScriptのテスト文法です。条件を満たさない場合は、その場でテストを失敗させます。
+
+### AIメニューへ食事が渡る場所
+
+`app/api/ai-menu/route.ts`の`aiInput`へ`recentFoodRecords`を入れています。そのため、AIメニューはプロフィール、身体分析、最近のトレーニングと同時に、最近7日間の食事も受け取ります。テストではメニューが決められたJSON形式で返り、種目と助言がNeonへ保存されることまで確認します。
+
+### アカウント削除画面の役割
+
+対象は`mobile/src/app/my-page.tsx`と`mobile/src/lib/account.ts`です。使用言語はTypeScriptとReact Nativeです。
+
+```typescript
+const deleteAccountWithReverification = useReverification(
+  async () => {
+    const token = await getTokenRef.current();
+    return deleteAccount(token);
+  },
+);
+```
+
+`useReverification()`は、Clerkの本人再確認が必要な通信を包むHookです。APIが再確認用の403を返すと、Clerkが本人確認画面を表示します。確認が成功すると、包んでいた`deleteAccount(token)`を自動でもう一度実行します。
+
+`getTokenRef.current()`は、現在のClerkトークン取得関数を参照します。再確認後は新しい本人確認状態を含むトークンが必要なので、処理を実行する時点の関数からトークンを取得します。
+
+削除ボタンは`deleteConfirmation !== 'DELETE'`の間は無効です。これにより、ボタンへ偶然触れただけでは削除通信を送れません。さらに確認ダイアログ、Clerk再確認、バックエンドの確認文字検査という複数段階で誤操作を防ぎます。
+
+### なぜ自動作成セッションでは403になるのか
+
+テストコードが管理APIで作るセッションは、利用者がメールコードなどを入力して本人確認したセッションではありません。そのため`reverification: "strict"`を満たさず、削除APIは意図どおり403を返します。
+
+これは失敗ではなく安全機能の確認です。実画面では`useReverification()`が確認画面を表示し、利用者が確認を終えたあとに削除APIを再送します。自動テストでは、古いセッションで削除できないことに加え、テスト用Neonユーザー削除による関連データのcascadeとClerkテストアカウント削除を個別に実通信で確認しています。
+
+実行コマンドは次です。このテストはOpenAIをチャット1回・メニュー1回使用します。
+
+```bash
+npm run test:food-ai-account-live
+```

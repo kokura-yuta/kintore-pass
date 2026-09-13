@@ -1,13 +1,14 @@
-import { useAuth, useClerk, useUser } from '@clerk/expo';
+import { useAuth, useClerk, useReverification, useUser } from '@clerk/expo';
 import { type Href, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { BottomNavigation } from '@/components/BottomNavigation';
 import { ProfileNumberField } from '@/components/ProfileNumberField';
 import { type ProfileDraft, type TrainingLocation, type TrainingStyle, useOnboarding } from '@/contexts/OnboardingContext';
 import { isApiBypassEnabled } from '@/lib/api';
+import { deleteAccount } from '@/lib/account';
 import { getGoalBodyLabel } from '@/lib/initialAnalysisPreview';
 import {
   fetchUserProfile,
@@ -46,9 +47,24 @@ export default function MyPageScreen() {
   const [profileError, setProfileError] = useState('');
   const [savedMessage, setSavedMessage] = useState('');
   const [isSigningOut, setIsSigningOut] = useState(false);
+  const [deleteConfirmation, setDeleteConfirmation] = useState('');
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
   const [accountError, setAccountError] = useState('');
   const getTokenRef = useRef(getToken);
   const savingLock = useRef(false);
+
+  // 削除APIが本人再確認を要求した場合、Clerkの確認画面を表示して成功後に同じ処理を再実行する
+  const deleteAccountWithReverification = useReverification(
+    async () => {
+      const token = await getTokenRef.current();
+
+      if (!token) {
+        throw new Error('ログイン状態を確認できませんでした。');
+      }
+
+      return deleteAccount(token);
+    },
+  );
 
   // Clerkの最新トークン取得関数を、再描画しても同じRefから呼べるようにする
   useEffect(() => {
@@ -191,6 +207,47 @@ export default function MyPageScreen() {
     ]);
   }
 
+  // DELETEが正しく入力された場合だけ本人再確認付きの削除処理を開始する
+  async function performAccountDeletion() {
+    if (deleteConfirmation !== 'DELETE' || isDeletingAccount) return;
+
+    setIsDeletingAccount(true);
+    setAccountError('');
+
+    try {
+      const response = await deleteAccountWithReverification();
+
+      // 本人確認画面を閉じた場合は削除せず元の画面へ戻す
+      if (!response) return;
+
+      await signOut().catch(() => undefined);
+      router.replace('/sign-in');
+    } catch (error) {
+      setAccountError(
+        error instanceof Error
+          ? error.message
+          : 'アカウントを削除できませんでした。',
+      );
+    } finally {
+      setIsDeletingAccount(false);
+    }
+  }
+
+  // 取り消せない操作のため、削除APIを呼ぶ前にもう一度確認する
+  function confirmAccountDeletion() {
+    const message = 'Clerkアカウントと、保存したプロフィール・記録・分析・AIデータ・食事記録をすべて削除します。この操作は取り消せません。';
+
+    if (Platform.OS === 'web') {
+      if (globalThis.confirm(message)) void performAccountDeletion();
+      return;
+    }
+
+    Alert.alert('アカウントを削除しますか？', message, [
+      { text: 'キャンセル', style: 'cancel' },
+      { text: '削除する', style: 'destructive', onPress: () => void performAccountDeletion() },
+    ]);
+  }
+
   return (
     <View style={styles.screen}>
       <SafeAreaView edges={['top']} style={styles.safeArea}>
@@ -275,6 +332,34 @@ export default function MyPageScreen() {
             <Pressable disabled={isSigningOut} onPress={confirmSignOut} style={[styles.signOutButton, isSigningOut && styles.disabledButton]}>
               {isSigningOut ? <ActivityIndicator color="#FF8D98" /> : <Text style={styles.signOutText}>ログアウト</Text>}
             </Pressable>
+
+            <View style={styles.deleteAccountCard}>
+              <Text style={styles.deleteAccountTitle}>アカウントと全データの削除</Text>
+              <Text style={styles.deleteAccountDescription}>削除する場合は、下へ半角大文字でDELETEと入力してください。本人確認後、保存した全データを削除します。</Text>
+              <TextInput
+                accessibilityLabel="アカウント削除の確認文字"
+                autoCapitalize="characters"
+                editable={!isDeletingAccount}
+                maxLength={6}
+                onChangeText={(value) => {
+                  setDeleteConfirmation(value);
+                  setAccountError('');
+                }}
+                placeholder="DELETE"
+                placeholderTextColor="#6D5558"
+                style={styles.deleteConfirmationInput}
+                value={deleteConfirmation}
+              />
+              <Pressable
+                accessibilityRole="button"
+                accessibilityState={{ disabled: deleteConfirmation !== 'DELETE' || isDeletingAccount }}
+                disabled={deleteConfirmation !== 'DELETE' || isDeletingAccount}
+                onPress={confirmAccountDeletion}
+                style={[styles.deleteAccountButton, (deleteConfirmation !== 'DELETE' || isDeletingAccount) && styles.disabledButton]}
+              >
+                {isDeletingAccount ? <ActivityIndicator color="#FF8D98" /> : <Text style={styles.deleteAccountButtonText}>アカウントを削除</Text>}
+              </Pressable>
+            </View>
           </ScrollView>
         </KeyboardAvoidingView>
       </SafeAreaView>
@@ -333,4 +418,10 @@ const styles = StyleSheet.create({
   accountError: { marginTop: 14, color: '#FF7676', fontSize: 11, lineHeight: 17, textAlign: 'center' },
   signOutButton: { minHeight: 50, alignItems: 'center', justifyContent: 'center', marginTop: 14, borderWidth: 1, borderColor: '#6B3138', borderRadius: 14 },
   signOutText: { color: '#FF8D98', fontSize: 13, fontWeight: '700' },
+  deleteAccountCard: { marginTop: 28, padding: 16, borderWidth: 1, borderColor: '#6B3138', borderRadius: 17, backgroundColor: '#1A1013' },
+  deleteAccountTitle: { color: '#FF8D98', fontSize: 15, fontWeight: '700' },
+  deleteAccountDescription: { marginTop: 8, color: '#B89A9E', fontSize: 10, lineHeight: 17 },
+  deleteConfirmationInput: { minHeight: 48, marginTop: 14, paddingHorizontal: 13, borderWidth: 1, borderColor: '#6B3138', borderRadius: 12, color: '#F4F6F3', backgroundColor: '#090709', fontSize: 13, letterSpacing: 1.5 },
+  deleteAccountButton: { minHeight: 50, alignItems: 'center', justifyContent: 'center', marginTop: 11, borderWidth: 1, borderColor: '#FF6673', borderRadius: 13 },
+  deleteAccountButtonText: { color: '#FF8D98', fontSize: 13, fontWeight: '700' },
 });

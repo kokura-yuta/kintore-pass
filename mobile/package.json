@@ -46,7 +46,7 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "test:api": "node --test scripts/api-request.test.mjs scripts/weight-records.test.mjs scripts/training-records.test.mjs scripts/food-records.test.mjs",
+    "test:api": "node --test scripts/api-request.test.mjs scripts/weight-records.test.mjs scripts/training-records.test.mjs scripts/food-records.test.mjs scripts/account.test.mjs",
     "lint": "expo lint"
   },
   "private": true

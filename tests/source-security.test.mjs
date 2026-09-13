@@ -171,3 +171,46 @@ test("Clerkの開発用キーと本番用キーを値を見せず判定する", 
     "mixed",
   );
 });
+
+test("アカウント削除は本人再確認と確認文字を必須にする", async () => {
+  const accountRoute = await readFile(
+    path.join(
+      projectRoot,
+      "app/api/users/account/route.ts",
+    ),
+    "utf8",
+  );
+  const accountScreen = await readFile(
+    path.join(
+      projectRoot,
+      "mobile/src/app/my-page.tsx",
+    ),
+    "utf8",
+  );
+
+  assert.match(
+    accountRoute,
+    /reverification:\s*["']strict["']/,
+  );
+  assert.match(
+    accountRoute,
+    /deleteAccountSchema\.safeParse/,
+  );
+  assert.match(accountRoute, /users\.clerkUserId/);
+  assert.match(accountScreen, /useReverification/);
+  assert.match(accountScreen, /deleteConfirmation\s*!==\s*["']DELETE["']/);
+});
+
+test("AIチャットへ食事Toolの使用条件を明示する", async () => {
+  const prompt = await readFile(
+    path.join(
+      projectRoot,
+      "app/lib/ai/systemPrompt.js",
+    ),
+    "utf8",
+  );
+
+  assert.match(prompt, /get_recent_food_records/);
+  assert.match(prompt, /摂取カロリー/);
+  assert.match(prompt, /たんぱく質/);
+});

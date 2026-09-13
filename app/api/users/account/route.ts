@@ -6,7 +6,7 @@ import { eq } from "drizzle-orm";
 // 最近本人確認していない場合にClerk用の403エラーを返す
 import {
   reverificationErrorResponse,
-} from "@clerk/backend/internal";
+} from "@clerk/shared/authorization-errors";
 
 // 詳しい本人確認とClerkアカウント削除を使う
 import {
