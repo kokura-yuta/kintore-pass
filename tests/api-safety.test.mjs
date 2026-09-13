@@ -31,6 +31,12 @@ import { validateJson } from "../app/lib/validation/jsonValidation.ts";
 import { systemPrompt } from "../app/lib/ai/systemPrompt.js";
 import { menuPrompt } from "../app/lib/ai/menuPrompt.ts";
 import { decideModeration } from "../app/lib/ai/moderationDecision.ts";
+import {
+  decideBodyAnalysisAccess,
+  premiumBodyAnalysisMonthlyLimit,
+  premiumMonthlyPriceYen,
+  premiumRequiredResponse,
+} from "../app/lib/subscriptions/policy.ts";
 
 const validTrainingRecord = {
   performedAt: "2026-08-30T03:00:00.000Z",
@@ -491,4 +497,53 @@ test("AIチャットのTool回数と回答文字数に上限がある", () => {
   );
   assert.equal(limited.length, maxChatAnswerCharacters);
   assert.match(limited, /…$/);
+});
+
+test("月額1000円の有料機能と初回無料の身体分析を判定する", async () => {
+  assert.equal(premiumMonthlyPriceYen, 1000);
+  assert.equal(premiumBodyAnalysisMonthlyLimit, 4);
+
+  assert.deepEqual(
+    decideBodyAnalysisAccess({
+      totalCompleted: 0,
+      completedThisMonth: 0,
+      isPremium: false,
+    }),
+    { allowed: true, firstAnalysisFree: true },
+  );
+
+  assert.deepEqual(
+    decideBodyAnalysisAccess({
+      totalCompleted: 1,
+      completedThisMonth: 1,
+      isPremium: false,
+    }),
+    { allowed: false, reason: "premium_required" },
+  );
+
+  assert.equal(
+    decideBodyAnalysisAccess({
+      totalCompleted: 3,
+      completedThisMonth: 3,
+      isPremium: true,
+    }).allowed,
+    true,
+  );
+
+  assert.deepEqual(
+    decideBodyAnalysisAccess({
+      totalCompleted: 4,
+      completedThisMonth: 4,
+      isPremium: true,
+    }),
+    { allowed: false, reason: "monthly_limit" },
+  );
+
+  const calorieResponse =
+    premiumRequiredResponse("calorie_tracking");
+  assert.equal(calorieResponse.status, 402);
+  assert.equal(
+    (await calorieResponse.json()).code,
+    "PREMIUM_REQUIRED",
+  );
 });

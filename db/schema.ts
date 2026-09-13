@@ -60,6 +60,79 @@ export const users = pgTable("users", {
     .defaultNow(),
 });
 
+// App Storeで購入した月額プランの現在状態をユーザーごとに保存するテーブル
+// 購入情報はフロントの自己申告を信用せず、Appleの署名検証後だけ更新する
+export const userSubscriptions = pgTable(
+  "user_subscriptions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+
+    userId: uuid("user_id")
+      .notNull()
+      .unique()
+      .references(() => users.id, {
+        onDelete: "cascade",
+      }),
+
+    provider: text("provider")
+      .notNull()
+      .default("apple"),
+
+    productId: text("product_id").notNull(),
+
+    originalTransactionId: text(
+      "original_transaction_id",
+    ).unique(),
+
+    status: text("status")
+      .notNull()
+      .default("inactive"),
+
+    environment: text("environment")
+      .notNull()
+      .default("sandbox"),
+
+    expiresAt: timestamp("expires_at", {
+      withTimezone: true,
+    }),
+
+    lastVerifiedAt: timestamp(
+      "last_verified_at",
+      { withTimezone: true },
+    ),
+
+    createdAt: timestamp("created_at", {
+      withTimezone: true,
+    })
+      .notNull()
+      .defaultNow(),
+
+    updatedAt: timestamp("updated_at", {
+      withTimezone: true,
+    })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("user_subscriptions_status_expiry_idx").on(
+      table.status,
+      table.expiresAt,
+    ),
+    check(
+      "user_subscriptions_provider_check",
+      sql`${table.provider} in ('apple')`,
+    ),
+    check(
+      "user_subscriptions_status_check",
+      sql`${table.status} in ('inactive', 'active', 'grace_period', 'expired', 'revoked')`,
+    ),
+    check(
+      "user_subscriptions_environment_check",
+      sql`${table.environment} in ('sandbox', 'production')`,
+    ),
+  ],
+);
+
 // 身長・体重・運動条件などをusersテーブルの各ユーザーと1対1で管理するテーブル
 export const userProfiles = pgTable(
   "user_profiles",

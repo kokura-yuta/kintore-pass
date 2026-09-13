@@ -59,18 +59,18 @@ const japanTimeOffsetMilliseconds =
 const parsedDailyChatLimit =
   Number.parseInt(
     process.env.AI_CHAT_DAILY_LIMIT ??
-      "100",
+      "30",
     10,
   );
 
-// 不正な設定値だった場合は開発用の初期値100を使用する
+// 不正な設定値だった場合も1日30回を使用する
 const dailyChatLimit =
   Number.isInteger(
     parsedDailyChatLimit,
   ) &&
   parsedDailyChatLimit > 0
     ? parsedDailyChatLimit
-    : 100;
+    : 30;
 
 // AIへの連続送信を止める秒数を環境変数から読み取る
 const parsedRequestCooldownSeconds =

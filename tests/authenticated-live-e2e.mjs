@@ -119,6 +119,31 @@ async function run() {
     createdDatabaseUserIds.push(databaseUsers[0].id);
   }
 
+  // 食事APIの本人分離テスト用に、両方の一時ユーザーへ期限付き有料状態を設定する
+  for (const [index, databaseUserId] of createdDatabaseUserIds.entries()) {
+    await sql`
+      insert into user_subscriptions (
+        user_id,
+        provider,
+        product_id,
+        original_transaction_id,
+        status,
+        environment,
+        expires_at,
+        last_verified_at
+      ) values (
+        ${databaseUserId},
+        'apple',
+        'musclepas.premium.monthly',
+        ${`authenticated-e2e-${index}-${crypto.randomUUID()}`},
+        'active',
+        'sandbox',
+        now() + interval '1 day',
+        now()
+      )
+    `;
+  }
+
   await expectStatus(
     "goal setup",
     await api("/api/users/goal", {
@@ -498,7 +523,7 @@ async function run() {
       'user',
       'daily limit test',
       now() - interval '10 seconds'
-    from generate_series(1, 100)
+    from generate_series(1, 30)
   `;
 
   await expectStatus(
@@ -523,14 +548,15 @@ async function run() {
       summary,
       analyzed_at,
       created_at
-    ) values (
-      ${crypto.randomUUID()},
+    )
+    select
+      gen_random_uuid(),
       ${userAId},
       'completed',
-      'daily limit test',
-      now(),
+      'monthly limit test',
+      now() - (generated.number || ' minutes')::interval,
       now()
-    )
+    from generate_series(1, 4) as generated(number)
   `;
 
   const bodyAnalysisResponse = await fetch(
@@ -544,7 +570,7 @@ async function run() {
     },
   );
   await expectStatus(
-    "body analysis daily limit",
+    "body analysis monthly limit",
     {
       status: bodyAnalysisResponse.status,
       body: await bodyAnalysisResponse.json(),

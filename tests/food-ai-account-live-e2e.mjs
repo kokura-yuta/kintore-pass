@@ -108,6 +108,54 @@ async function run() {
   assert.equal(databaseUsers.length, 1);
   databaseUserId = databaseUsers[0].id;
 
+  // 無料ユーザーはカロリー・食事管理を利用できないことを先に確認する
+  expectStatus(
+    "無料ユーザーの食事保存を拒否",
+    await api("/api/food-records", {
+      token,
+      method: "POST",
+      body: {
+        recordedDate: today,
+        mealType: "昼食",
+        name: uniqueFoodName,
+        calories: 777,
+        proteinGrams: 55,
+      },
+    }),
+    402,
+  );
+
+  // Apple検証後を再現し、この一時ユーザーだけに期限付きの有料状態を設定する
+  await sql`
+    insert into user_subscriptions (
+      user_id,
+      provider,
+      product_id,
+      original_transaction_id,
+      status,
+      environment,
+      expires_at,
+      last_verified_at
+    ) values (
+      ${databaseUserId},
+      'apple',
+      'musclepas.premium.monthly',
+      ${`test-${suffix}`},
+      'active',
+      'sandbox',
+      now() + interval '1 day',
+      now()
+    )
+  `;
+
+  const subscription = await api("/api/subscription", {
+    token,
+  });
+  expectStatus("有料状態を取得", subscription, 200);
+  assert.equal(subscription.body.plan, "premium");
+  assert.equal(subscription.body.price.amount, 1000);
+  pass("月額1,000円の有料利用権が有効");
+
   expectStatus(
     "理想体型を保存",
     await api("/api/users/goal", {

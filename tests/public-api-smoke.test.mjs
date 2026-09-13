@@ -51,6 +51,7 @@ test("未ログイン利用者から本人データAPIを保護する", async ()
     ["/api/food-records", { method: "DELETE" }],
     ["/api/body-analysis"],
     ["/api/body-analysis", { method: "POST" }],
+    ["/api/subscription"],
     ["/api/ai-menu"],
     ["/api/ai-menu", { method: "POST" }],
     ["/api/ai-menu/history"],
