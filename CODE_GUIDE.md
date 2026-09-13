@@ -13816,3 +13816,5 @@ const deleteAccountWithReverification = useReverification(
 ```bash
 npm run test:food-ai-account-live
 ```
+
+2026年9月13日の実行では全18項目が合格しました。テスト終了後は`finally`によって一時ユーザーだけを削除し、通常利用者のデータには触れていません。公開APIはSitesバージョン7へ反映し、TypeScript API、Neon、RenderのヘルスチェックがすべてHTTP 200になっています。
