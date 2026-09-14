@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -17,6 +18,7 @@ type MealType = '朝食' | '昼食' | '夕食' | '間食';
 
 type FoodEntry = {
   id: string;
+  date: string;
   mealType: MealType;
   name: string;
   calories: number;
@@ -24,25 +26,67 @@ type FoodEntry = {
 };
 
 const mealTypes: MealType[] = ['朝食', '昼食', '夕食', '間食'];
+const today = () => {
+  const date = new Date();
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+};
+
+function isValidDate(value: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const [year, month, day] = value.split('-').map(Number);
+  const date = new Date(year, month - 1, day);
+  return year >= 2000 && date.getFullYear() === year && date.getMonth() + 1 === month && date.getDate() === day;
+}
 
 export default function FoodScreen() {
+  const scrollRef = useRef<ScrollView>(null);
   const [entries, setEntries] = useState<FoodEntry[]>([]);
+  const [entryDate, setEntryDate] = useState(today);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [mealType, setMealType] = useState<MealType>('朝食');
   const [name, setName] = useState('');
   const [calories, setCalories] = useState('');
   const [protein, setProtein] = useState('');
   const [error, setError] = useState('');
 
-  const totalCalories = entries.reduce((total, entry) => total + entry.calories, 0);
-  const totalProtein = entries.reduce((total, entry) => total + entry.proteinGrams, 0);
+  const todayEntries = entries.filter((entry) => entry.date === today());
+  const totalCalories = todayEntries.reduce((total, entry) => total + entry.calories, 0);
+  const totalProtein = todayEntries.reduce((total, entry) => total + entry.proteinGrams, 0);
+  const historyDates = [...new Set(entries.map((entry) => entry.date))].sort((a, b) => b.localeCompare(a));
 
-  function addEntry() {
+  function resetForm() {
+    setEditingId(null);
+    setEntryDate(today());
+    setMealType('朝食');
+    setName('');
+    setCalories('');
+    setProtein('');
+    setError('');
+  }
+
+  function editEntry(entry: FoodEntry) {
+    setEditingId(entry.id);
+    setEntryDate(entry.date);
+    setMealType(entry.mealType);
+    setName(entry.name);
+    setCalories(String(entry.calories));
+    setProtein(String(entry.proteinGrams));
+    setError('');
+    scrollRef.current?.scrollTo({ y: 0, animated: true });
+  }
+
+  function saveEntry() {
     const normalizedName = name.trim();
     const parsedCalories = Number(calories);
     const parsedProtein = protein.trim() ? Number(protein) : 0;
 
     if (!normalizedName) {
       setError('食事名を入力してください。');
+      return;
+    }
+    if (!isValidDate(entryDate)) {
+      setError('日付をYYYY-MM-DD形式で正しく入力してください。');
       return;
     }
     if (!calories.trim() || !Number.isFinite(parsedCalories) || parsedCalories < 0) {
@@ -54,27 +98,25 @@ export default function FoodScreen() {
       return;
     }
 
-    setEntries((current) => [
-      ...current,
-      {
-        id: `${Date.now()}-${current.length}`,
+    setEntries((current) => {
+      const entry = {
+        id: editingId ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        date: entryDate,
         mealType,
         name: normalizedName,
         calories: parsedCalories,
         proteinGrams: parsedProtein,
-      },
-    ]);
-    setName('');
-    setCalories('');
-    setProtein('');
-    setError('');
+      };
+      return editingId ? current.map((item) => item.id === editingId ? entry : item) : [...current, entry];
+    });
+    resetForm();
   }
 
   return (
     <View style={styles.screen}>
       <SafeAreaView edges={['top']} style={styles.safeArea}>
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.safeArea}>
-          <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+          <ScrollView ref={scrollRef} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
             <View style={styles.header}>
               <View>
                 <Text style={styles.eyebrow}>NUTRITION</Text>
@@ -99,7 +141,9 @@ export default function FoodScreen() {
             </View>
 
             <View style={styles.formCard}>
-              <Text style={styles.sectionTitle}>食事を追加</Text>
+              <Text style={styles.sectionTitle}>{editingId ? '食事を編集' : '食事を追加'}</Text>
+              <Text style={styles.formLabel}>記録日</Text>
+              <TextInput accessibilityLabel="記録日" keyboardType="numbers-and-punctuation" maxLength={10} onChangeText={(value) => { setEntryDate(value); setError(''); }} placeholder="YYYY-MM-DD" placeholderTextColor="#556772" style={styles.input} value={entryDate} />
               <Text style={styles.formLabel}>食事区分</Text>
               <View style={styles.mealTypeRow}>
                 {mealTypes.map((item) => (
@@ -144,24 +188,25 @@ export default function FoodScreen() {
               </View>
 
               {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
-              <Pressable accessibilityRole="button" onPress={addEntry} style={styles.addButton}>
-                <Text style={styles.addButtonText}>この食事を追加</Text>
+              <Pressable accessibilityRole="button" onPress={saveEntry} style={styles.addButton}>
+                <Text style={styles.addButtonText}>{editingId ? '変更を保存' : 'この食事を追加'}</Text>
               </Pressable>
-              <Text style={styles.previewNote}>現在はフロント確認用です。サーバー保存はAPI接続後に対応します。</Text>
+              {editingId ? <Pressable accessibilityRole="button" onPress={resetForm} style={styles.cancelButton}><Text style={styles.cancelText}>編集をやめる</Text></Pressable> : null}
+              <Text style={styles.previewNote}>現在は画面内だけの仮記録です。画面を閉じると消えます。サーバー保存はAPI接続後に対応します。</Text>
             </View>
 
             <View style={styles.listHeading}>
               <Text style={styles.sectionTitle}>今日の食事</Text>
-              <Text style={styles.count}>{entries.length}件</Text>
+              <Text style={styles.count}>{todayEntries.length}件</Text>
             </View>
-            {entries.length === 0 ? (
+            {todayEntries.length === 0 ? (
               <View style={styles.emptyCard}>
                 <Text style={styles.emptyTitle}>まだ食事記録がありません</Text>
                 <Text style={styles.emptyText}>食べたものを追加すると、今日の合計を確認できます。</Text>
               </View>
             ) : (
               <View style={styles.entryList}>
-                {entries.map((entry) => (
+                {todayEntries.map((entry) => (
                   <View key={entry.id} style={styles.entryCard}>
                     <View style={styles.entryCopy}>
                       <Text style={styles.entryType}>{entry.mealType}</Text>
@@ -171,14 +216,31 @@ export default function FoodScreen() {
                       <Text style={styles.entryCalories}>{entry.calories.toLocaleString()} kcal</Text>
                       <Text style={styles.entryProtein}>P {entry.proteinGrams.toFixed(1)} g</Text>
                     </View>
+                    <View style={styles.entryActions}><Pressable accessibilityRole="button" onPress={() => editEntry(entry)}><Text style={styles.actionText}>編集</Text></Pressable><Pressable accessibilityRole="button" onPress={() => setDeletingId(entry.id)}><Text style={styles.deleteText}>削除</Text></Pressable></View>
                   </View>
                 ))}
               </View>
             )}
+            <View style={styles.listHeading}><Text style={styles.sectionTitle}>食事履歴</Text><Text style={styles.count}>{entries.length}件</Text></View>
+            {historyDates.length === 0 ? <View style={styles.emptyCard}><Text style={styles.emptyText}>履歴はまだありません。</Text></View> : historyDates.map((date) => (
+              <View key={date} style={styles.historyGroup}>
+                <Text style={styles.historyDate}>{date}{date === today() ? '（今日）' : ''}</Text>
+                {entries.filter((entry) => entry.date === date).map((entry) => (
+                  <View key={entry.id} style={styles.historyRow}>
+                    <Text style={styles.historyName}>{entry.mealType} · {entry.name}　{entry.calories.toLocaleString()} kcal</Text>
+                    <Pressable accessibilityLabel={`${entry.name}を編集`} accessibilityRole="button" onPress={() => editEntry(entry)}><Text style={styles.actionText}>編集</Text></Pressable>
+                    <Pressable accessibilityLabel={`${entry.name}を削除`} accessibilityRole="button" onPress={() => setDeletingId(entry.id)}><Text style={styles.deleteText}>削除</Text></Pressable>
+                  </View>
+                ))}
+              </View>
+            ))}
           </ScrollView>
         </KeyboardAvoidingView>
       </SafeAreaView>
       <BottomNavigation />
+      <Modal animationType="fade" onRequestClose={() => setDeletingId(null)} transparent visible={Boolean(deletingId)}>
+        <View style={styles.modalBackdrop}><View style={styles.confirmCard}><Text style={styles.confirmText}>この食事記録を削除しますか？</Text><View style={styles.confirmActions}><Pressable accessibilityRole="button" onPress={() => setDeletingId(null)}><Text style={styles.actionText}>キャンセル</Text></Pressable><Pressable accessibilityRole="button" onPress={() => { setEntries((current) => current.filter((entry) => entry.id !== deletingId)); if (editingId === deletingId) resetForm(); setDeletingId(null); }}><Text style={styles.deleteText}>削除する</Text></Pressable></View></View></View>
+      </Modal>
     </View>
   );
 }
@@ -229,4 +291,17 @@ const styles = StyleSheet.create({
   entryNumbers: { alignItems: 'flex-end' },
   entryCalories: { color: '#F4F6F3', fontSize: 12, fontWeight: '700' },
   entryProtein: { marginTop: 5, color: '#80929C', fontSize: 9, fontWeight: '700' },
+  cancelButton: { alignItems: 'center', marginTop: 14, padding: 10 },
+  cancelText: { color: '#73E7FF', fontSize: 12, fontWeight: '700' },
+  entryActions: { gap: 12, marginLeft: 12 },
+  actionText: { color: '#73E7FF', fontSize: 11, fontWeight: '700' },
+  deleteText: { color: '#FF8D98', fontSize: 11, fontWeight: '700' },
+  historyGroup: { marginBottom: 12, padding: 14, borderWidth: 1, borderColor: '#203441', borderRadius: 15, backgroundColor: '#091118' },
+  historyDate: { marginBottom: 10, color: '#73E7FF', fontSize: 11, fontWeight: '700' },
+  historyRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 8, borderTopWidth: 1, borderTopColor: '#203441' },
+  historyName: { flex: 1, color: '#F4F6F3', fontSize: 11 },
+  modalBackdrop: { flex: 1, justifyContent: 'center', padding: 24, backgroundColor: 'rgba(0,0,0,0.72)' },
+  confirmCard: { padding: 20, borderWidth: 1, borderColor: '#FF8D98', borderRadius: 14, backgroundColor: '#181115' },
+  confirmText: { color: '#F4F6F3', fontSize: 12 },
+  confirmActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 24, marginTop: 14 },
 });
