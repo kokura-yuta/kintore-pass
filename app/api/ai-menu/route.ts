@@ -39,9 +39,11 @@ import {
   users,
 } from "@/db/schema";
 import {
-  logOpenAiUsage,
   logServerError,
 } from "@/app/lib/observability/serverLog";
+import {
+  recordOpenAiUsage,
+} from "@/app/lib/ai/recordOpenAiUsage";
 
 // 1日と日本時間の時差をミリ秒で表す
 const millisecondsPerDay =
@@ -449,16 +451,22 @@ ${JSON.stringify(aiInput, null, 2)}`,
         },
         max_output_tokens:
           maxMenuOutputTokens,
+        reasoning: {
+          effort: "none",
+        },
+        store: false,
         safety_identifier:
           safetyIdentifier,
       });
 
     // メニュー内容や身体情報を残さず、料金確認に必要なトークン数だけをログへ記録する
-    logOpenAiUsage(
-      "menu",
-      aiResponse.usage,
+    await recordOpenAiUsage({
+      userId: aiContext.userId,
+      feature: "menu",
+      model: openAiMenuModel,
       requestId,
-    );
+      usage: aiResponse.usage,
+    });
 
     // 決めた形式として検証済みのOpenAI生成結果を取り出す
     const generatedMenu =

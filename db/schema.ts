@@ -661,6 +661,18 @@ export const chatConversations = pgTable(
       .notNull()
       .default("新しい相談"),
 
+    // 直近5往復より古い会話から、今後も必要な情報だけを短く保存する
+    summary: text("summary")
+      .notNull()
+      .default(""),
+
+    // 古いメッセージを同じ要約へ何度も追加しないための処理済み件数
+    summarizedMessageCount: integer(
+      "summarized_message_count",
+    )
+      .notNull()
+      .default(0),
+
     createdAt: timestamp("created_at", {
       withTimezone: true,
     })
@@ -708,6 +720,64 @@ export const chatMessages = pgTable(
     index("chat_messages_conversation_created_idx").on(
       table.conversationId,
       table.createdAt,
+    ),
+  ],
+);
+
+// OpenAI料金をユーザー・機能・月ごとに確認するための使用量テーブル
+export const openAiUsageRecords = pgTable(
+  "openai_usage_records",
+  {
+    id: uuid("id")
+      .defaultRandom()
+      .primaryKey(),
+
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, {
+        onDelete: "cascade",
+      }),
+
+    feature: text("feature").notNull(),
+
+    model: text("model").notNull(),
+
+    requestId: uuid("request_id").notNull(),
+
+    inputTokens: integer("input_tokens")
+      .notNull()
+      .default(0),
+
+    outputTokens: integer("output_tokens")
+      .notNull()
+      .default(0),
+
+    totalTokens: integer("total_tokens")
+      .notNull()
+      .default(0),
+
+    createdAt: timestamp("created_at", {
+      withTimezone: true,
+    })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("openai_usage_user_created_idx").on(
+      table.userId,
+      table.createdAt,
+    ),
+    index("openai_usage_feature_created_idx").on(
+      table.feature,
+      table.createdAt,
+    ),
+    check(
+      "openai_usage_feature_check",
+      sql`${table.feature} in ('chat', 'menu', 'body-analysis', 'summary')`,
+    ),
+    check(
+      "openai_usage_tokens_nonnegative_check",
+      sql`${table.inputTokens} >= 0 and ${table.outputTokens} >= 0 and ${table.totalTokens} >= 0`,
     ),
   ],
 );

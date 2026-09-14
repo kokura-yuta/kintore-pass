@@ -72,9 +72,17 @@ export function logServerError(
 
 // OpenAIの質問内容や回答本文を残さず、使用トークン数だけを記録する
 export function logOpenAiUsage(
-  feature: "chat" | "menu",
+  feature:
+    | "chat"
+    | "menu"
+    | "body-analysis"
+    | "summary",
   usage: OpenAiUsage | null | undefined,
   requestId?: string,
+  metadata?: {
+    userId?: string;
+    model?: string;
+  },
 ) {
   if (!usage) return;
 
@@ -84,6 +92,8 @@ export function logOpenAiUsage(
       event: "openai_usage",
       feature,
       requestId,
+      userId: metadata?.userId,
+      model: metadata?.model,
       inputTokens:
         usage.input_tokens ?? 0,
       outputTokens:

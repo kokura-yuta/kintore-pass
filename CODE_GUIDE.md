@@ -14093,3 +14093,121 @@ App Storeで実際に月額1,000円を購入するには、フロントのStoreK
 公開Sitesの`AI_CHAT_DAILY_LIMIT`も100から30へ変更し、課金・利用制限を含むバージョン8を公開しました。公開URLのTypeScript API、Neon、RenderはHTTP 200、本人データAPIは未ログイン通信をHTTP 401で拒否しました。
 
 本番Neonの特権接続文字列をローカルE2Eへ直接渡す方法は、秘密漏えいの危険があるため使用しません。公開環境は、公開ヘルスチェックと認証保護、本番DBの読み取り検査、開発DBでの認証付きE2Eを組み合わせて確認しています。
+
+## AIチャットの料金を抑える新しい構成
+
+### 全体の流れ
+
+```text
+フロントで500文字以内か確認
+↓
+バックエンドでもZodで500文字以内か確認
+↓
+本人の1日30回制限と二重送信を確認
+↓
+Neonから本人情報・古い会話要約・直近5往復を取得
+↓
+OpenAIへ「短い要約 + 直近5往復 + 今回の質問」を1回送信
+↓
+回答を最大400文字に整える
+↓
+回答とトークン使用量をNeonへ保存
+```
+
+500文字を超えた質問は、フロントの送信ボタンを無効にします。リクエストを直接作られた場合も、`app/lib/validation/apiSchemas.ts`の`chatRequestSchema`がHTTP 400で拒否するためOpenAI料金は発生しません。
+
+### フロントの500文字確認
+
+対象は`mobile/src/app/chat.tsx`です。
+
+```ts
+const MAX_MESSAGE_LENGTH = 500;
+```
+
+この定数は、質問欄で許可する最大文字数です。
+
+```ts
+const isTooLong = input.length > MAX_MESSAGE_LENGTH;
+```
+
+`input.length`は入力中の文字数です。500より大きければ`isTooLong`が`true`になります。
+
+```ts
+const canSend = Boolean(input.trim()) && !isTooLong && !isSending;
+```
+
+空欄ではない、500文字以内、送信中ではない、という3条件を全部満たす場合だけ送信できます。
+
+### バックエンドの500文字確認
+
+```ts
+message: z.string().trim().min(1).max(500)
+```
+
+`z.string()`は文字列だけを許可します。`trim()`は前後の空白を除きます。`min(1)`は空文字を拒否し、`max(500)`は500文字を超えた質問を拒否します。この検査はOpenAI呼び出しより前に行います。
+
+### 直近5往復と今回の質問
+
+`app/lib/ai/config.ts`の`recentChatMessageLimit = 10`は、利用者5件とAI5件の合計10メッセージを表します。
+
+質問を保存した後は最大11件を取得します。内訳は「直前の10メッセージ + 今回の質問」です。それより古いメッセージ本文は、そのままOpenAIへ送りません。
+
+### 古い会話の要約
+
+`app/lib/ai/chatSummary.ts`は、OpenAIを呼ばずに短い要約を作ります。追加のAI要約料金を発生させないためです。
+
+要約には、目標、身長・体重・体脂肪率、週の頻度、利用場所、苦手部位、最新身体分析、最近の種目、最新体重、食事記録、最新AIメニュー、古い重要相談を含めます。最大800文字で、`chat_conversations.summary`へ保存します。
+
+`summarized_message_count`は、何件目まで要約済みかを覚える数値です。これにより、同じ古い質問を毎回要約へ重複追加しません。
+
+### OpenAIへ実際に渡す内容
+
+`app/api/chat/route.ts`の`aiInput`は次の形です。
+
+```ts
+const aiInput = [
+  { role: "developer", content: conversationSummary },
+  ...conversationInput,
+];
+```
+
+最初に短い本人要約を渡し、その後に直近5往復と今回の質問を並べます。通常チャットではTool判断のための生成をなくしたため、有料の回答生成は基本1回です。安全確認用Moderationは別処理として残しています。
+
+### 回答とモデルの上限
+
+`OPENAI_CHAT_MODEL`は通常チャット、`OPENAI_MENU_MODEL`はAIメニュー、`OPENAI_BODY_ANALYSIS_MODEL`は画像分析のモデルです。別々に変更できるため、通常チャットとメニューには安価なモデルを使い、画像分析だけ必要に応じて高性能モデルを使えます。
+
+```text
+OPENAI_CHAT_MAX_OUTPUT_TOKENS=600
+AI_CHAT_MAX_ANSWER_CHARACTERS=400
+```
+
+600トークンはOpenAIが生成できる上限です。さらに`limitChatAnswer()`がDB保存と画面表示を最大400文字にします。system promptにも「通常400文字以内、短く答えられる質問は短く」と書いてあります。
+
+### ユーザー別の使用量保存
+
+`openai_usage_records`は次を保存します。
+
+- Neon内のユーザーID
+- chat・menuなどの機能名
+- 使用モデル
+- input tokens
+- output tokens
+- total tokens
+- 実行日時
+
+質問本文、回答本文、身体写真は使用量テーブルへ保存しません。`user_id + created_at`のインデックスがあるため、将来は「この利用者が今月使った合計トークン」を検索できます。
+
+### 1日30回制限
+
+バックエンドは日本時間の0時から翌日0時までに保存された本人の質問数を数えます。30回に達していればOpenAIより前でHTTP 429を返します。フロント表示だけに頼らないため、APIを直接呼ばれても31回目の料金は発生しません。
+
+### 覚えておく単語
+
+- `max_output_tokens`：OpenAIが1回に生成できる最大トークン数
+- `summary`：古い長文から今後も必要な情報だけを残した短い文章
+- `offset()`：検索結果の先頭から指定件数を飛ばす
+- `limit()`：取得する最大件数を決める
+- `ResponseInput`：Responses APIへ渡せる会話データのTypeScript型
+- `store: false`：このAPI応答をOpenAI側の保存対象にしない指定
+- `reasoning.effort: "none"`：通常チャットで追加の推論トークンを使わない指定

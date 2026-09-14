@@ -3,6 +3,7 @@ import { getClerkUserId } from "@/app/lib/auth/clerk-auth";
 import { bodyAnalysisResultSchema } from "@/app/lib/ai/bodyAnalysisSchema";
 import { createSafetyIdentifier } from "@/app/lib/ai/createSafetyIdentifier";
 import { createRequestFingerprint } from "@/app/lib/idempotency/createRequestFingerprint";
+import { recordOpenAiUsage } from "@/app/lib/ai/recordOpenAiUsage";
 import { logServerError } from "@/app/lib/observability/serverLog";
 import {
   and,
@@ -680,6 +681,48 @@ export async function POST(request: Request) {
 
     const analysisResult =
       parsedAnalysisResult.data;
+
+    // Pythonが返したOpenAI使用量を、本人と結び付けてNeonへ保存する
+    const readUsageHeader = (name: string) => {
+      const value = Number.parseInt(
+        pythonResponse.headers.get(name) ?? "0",
+        10,
+      );
+
+      return Number.isInteger(value) && value >= 0
+        ? value
+        : 0;
+    };
+
+    const bodyAnalysisTotalTokens =
+      pythonResponse.headers.get(
+        "X-OpenAI-Total-Tokens",
+      );
+
+    await recordOpenAiUsage({
+      userId: user.id,
+      feature: "body-analysis",
+      model:
+        pythonResponse.headers.get(
+          "X-OpenAI-Model",
+        ) ??
+        process.env.OPENAI_BODY_ANALYSIS_MODEL ??
+        "unknown",
+      requestId,
+      usage: bodyAnalysisTotalTokens
+        ? {
+            input_tokens: readUsageHeader(
+              "X-OpenAI-Input-Tokens",
+            ),
+            output_tokens: readUsageHeader(
+              "X-OpenAI-Output-Tokens",
+            ),
+            total_tokens: readUsageHeader(
+              "X-OpenAI-Total-Tokens",
+            ),
+          }
+        : undefined,
+    });
 
     // 分析本体と全部位を保存前に結び付けるUUIDを作る
     const bodyAnalysisId =
