@@ -1,6 +1,10 @@
 /** Cloudflare Worker entry point for the vinext-starter template. */
 import { handleImageOptimization, DEFAULT_DEVICE_SIZES, DEFAULT_IMAGE_SIZES } from "vinext/server/image-optimization";
 import handler from "vinext/server/app-router-entry";
+import {
+  logServerError,
+  resolveRequestId,
+} from "../app/lib/observability/serverLog";
 
 interface Env {
   ASSETS: {
@@ -48,7 +52,7 @@ function addCorsHeaders(response: Response, request: Request, env: Env): Respons
   const headers = new Headers(response.headers);
   headers.set("Access-Control-Allow-Origin", origin);
   headers.set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS");
-  headers.set("Access-Control-Allow-Headers", "Authorization, Content-Type");
+  headers.set("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Request-ID");
   headers.set("Access-Control-Max-Age", "86400");
   headers.append("Vary", "Origin");
 
@@ -68,10 +72,66 @@ function addCorsHeaders(response: Response, request: Request, env: Env): Respons
 const worker = {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
+    const isApiRequest =
+      url.pathname.startsWith("/api/");
+    const requestId = isApiRequest
+      ? resolveRequestId(request)
+      : null;
+    const requestStartedAt = Date.now();
+
+    // API内部にも同じIDを渡し、入口から返却まで1件の通信として追跡できるようにする
+    const requestWithId = requestId
+      ? new Request(request, {
+          headers: new Headers(request.headers),
+        })
+      : request;
+
+    if (requestId) {
+      requestWithId.headers.set(
+        "x-request-id",
+        requestId,
+      );
+    }
+
+    const finishApiResponse = (
+      response: Response,
+    ) => {
+      if (!requestId) return response;
+
+      const headers = new Headers(
+        response.headers,
+      );
+      headers.set("x-request-id", requestId);
+
+      console.info(
+        JSON.stringify({
+          level: "info",
+          event: "api_request",
+          requestId,
+          method: request.method,
+          pathname: url.pathname,
+          status: response.status,
+          durationMs:
+            Date.now() - requestStartedAt,
+        }),
+      );
+
+      return addCorsHeaders(
+        new Response(response.body, {
+          status: response.status,
+          statusText: response.statusText,
+          headers,
+        }),
+        request,
+        env,
+      );
+    };
 
     // ブラウザが本通信の前に送るCORS確認へ応答する
     if (request.method === "OPTIONS" && url.pathname.startsWith("/api/")) {
-      return addCorsHeaders(new Response(null, { status: 204 }), request, env);
+      return finishApiResponse(
+        new Response(null, { status: 204 }),
+      );
     }
 
     if (url.pathname === "/_vinext/image") {
@@ -85,10 +145,38 @@ const worker = {
       }, allowedWidths);
     }
 
-    const response = await handler.fetch(request, env, ctx);
-    return url.pathname.startsWith("/api/")
-      ? addCorsHeaders(response, request, env)
-      : response;
+    try {
+      const response = await handler.fetch(
+        requestWithId,
+        env,
+        ctx,
+      );
+
+      return isApiRequest
+        ? finishApiResponse(response)
+        : response;
+    } catch (error) {
+      if (!isApiRequest || !requestId) {
+        throw error;
+      }
+
+      logServerError(
+        "unhandled_api_error",
+        error,
+        requestId,
+      );
+
+      return finishApiResponse(
+        Response.json(
+          {
+            error:
+              "サーバーで一時的なエラーが発生しました。",
+            requestId,
+          },
+          { status: 500 },
+        ),
+      );
+    }
   },
 };
 

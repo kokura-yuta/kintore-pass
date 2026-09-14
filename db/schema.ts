@@ -60,6 +60,79 @@ export const users = pgTable("users", {
     .defaultNow(),
 });
 
+// App Storeで購入した月額プランの現在状態をユーザーごとに保存するテーブル
+// 購入情報はフロントの自己申告を信用せず、Appleの署名検証後だけ更新する
+export const userSubscriptions = pgTable(
+  "user_subscriptions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+
+    userId: uuid("user_id")
+      .notNull()
+      .unique()
+      .references(() => users.id, {
+        onDelete: "cascade",
+      }),
+
+    provider: text("provider")
+      .notNull()
+      .default("apple"),
+
+    productId: text("product_id").notNull(),
+
+    originalTransactionId: text(
+      "original_transaction_id",
+    ).unique(),
+
+    status: text("status")
+      .notNull()
+      .default("inactive"),
+
+    environment: text("environment")
+      .notNull()
+      .default("sandbox"),
+
+    expiresAt: timestamp("expires_at", {
+      withTimezone: true,
+    }),
+
+    lastVerifiedAt: timestamp(
+      "last_verified_at",
+      { withTimezone: true },
+    ),
+
+    createdAt: timestamp("created_at", {
+      withTimezone: true,
+    })
+      .notNull()
+      .defaultNow(),
+
+    updatedAt: timestamp("updated_at", {
+      withTimezone: true,
+    })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("user_subscriptions_status_expiry_idx").on(
+      table.status,
+      table.expiresAt,
+    ),
+    check(
+      "user_subscriptions_provider_check",
+      sql`${table.provider} in ('apple')`,
+    ),
+    check(
+      "user_subscriptions_status_check",
+      sql`${table.status} in ('inactive', 'active', 'grace_period', 'expired', 'revoked')`,
+    ),
+    check(
+      "user_subscriptions_environment_check",
+      sql`${table.environment} in ('sandbox', 'production')`,
+    ),
+  ],
+);
+
 // 身長・体重・運動条件などをusersテーブルの各ユーザーと1対1で管理するテーブル
 export const userProfiles = pgTable(
   "user_profiles",
@@ -100,6 +173,11 @@ export const userProfiles = pgTable(
     // トレーニング場所と苦手部位を任意入力で保存する項目
     trainingLocation: text(
       "training_location",
+    ),
+
+    // 全身・部位別・AIおまかせのどの形式でメニューを作るか保存する
+    trainingStyle: text(
+      "training_style",
     ),
 
     weakBodyParts: text(
@@ -163,6 +241,73 @@ export const weightRecords = pgTable(
     ).on(
       table.userId,
       table.recordedDate,
+    ),
+  ],
+);
+
+// ユーザーが食べたもの・カロリー・たんぱく質を日付ごとに保存するテーブル
+export const foodRecords = pgTable(
+  "food_records",
+  {
+    // 1件の食事記録を重複なく識別するID
+    id: uuid("id")
+      .defaultRandom()
+      .primaryKey(),
+
+    // どのユーザーの食事かをusersテーブルと結び付ける
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, {
+        onDelete: "cascade",
+      }),
+
+    // 食べた日をYYYY-MM-DD形式で保存する
+    recordedDate: date("recorded_date", {
+      mode: "string",
+    }).notNull(),
+
+    // 朝食・昼食・夕食・間食のどれかを保存する
+    mealType: text("meal_type").notNull(),
+
+    // 利用者が入力した料理・食品名を保存する
+    name: text("name").notNull(),
+
+    // カロリーとたんぱく質を0以上の数値で保存する
+    calories: real("calories").notNull(),
+    proteinGrams: real("protein_grams")
+      .notNull()
+      .default(0),
+
+    createdAt: timestamp("created_at", {
+      withTimezone: true,
+    })
+      .notNull()
+      .defaultNow(),
+
+    updatedAt: timestamp("updated_at", {
+      withTimezone: true,
+    })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    // 本人の日付別一覧を速く取得するための索引
+    index("food_records_user_date_created_idx").on(
+      table.userId,
+      table.recordedDate,
+      table.createdAt,
+    ),
+    check(
+      "food_records_meal_type_check",
+      sql`${table.mealType} in ('朝食', '昼食', '夕食', '間食')`,
+    ),
+    check(
+      "food_records_calories_check",
+      sql`${table.calories} >= 0 and ${table.calories} <= 10000`,
+    ),
+    check(
+      "food_records_protein_check",
+      sql`${table.proteinGrams} >= 0 and ${table.proteinGrams} <= 1000`,
     ),
   ],
 );

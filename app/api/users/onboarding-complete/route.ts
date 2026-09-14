@@ -7,6 +7,7 @@ import {
 
 // Clerk認証とNeon接続を使えるようにする
 import { getClerkUserId } from "@/app/lib/auth/clerk-auth";
+import { logServerError } from "@/app/lib/observability/serverLog";
 import { getDb } from "@/db";
 
 // 初回設定の確認に必要なテーブルを読み込む
@@ -167,10 +168,7 @@ export async function POST(
     });
   } catch (error) {
     // 詳しいエラーを利用者へ見せず、開発者用ログへ記録する
-    console.error(
-      "初回設定の完了処理に失敗しました。",
-      error,
-    );
+    logServerError("onboarding_complete_failed", error);
 
     // フロントエンドへ安全な共通エラーを返す
     return Response.json(

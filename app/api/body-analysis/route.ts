@@ -3,13 +3,21 @@ import { getClerkUserId } from "@/app/lib/auth/clerk-auth";
 import { bodyAnalysisResultSchema } from "@/app/lib/ai/bodyAnalysisSchema";
 import { createSafetyIdentifier } from "@/app/lib/ai/createSafetyIdentifier";
 import { createRequestFingerprint } from "@/app/lib/idempotency/createRequestFingerprint";
+import { logServerError } from "@/app/lib/observability/serverLog";
 import {
   and,
+  count,
   desc,
   eq,
   gte,
   lt,
 } from "drizzle-orm";
+import {
+  decideBodyAnalysisAccess,
+  getPremiumAccess,
+  premiumBodyAnalysisMonthlyLimit,
+  premiumRequiredResponse,
+} from "@/app/lib/subscriptions/entitlements";
 import { getDb } from "@/db";
 import {
   aiRequestGuards,
@@ -79,32 +87,36 @@ const maxImageSizeBytes =
 const maxTotalImageSizeBytes =
   24 * 1024 * 1024;
 
-const millisecondsPerDay =
-  24 * 60 * 60 * 1000;
-
 const japanTimeOffsetMilliseconds =
   9 * 60 * 60 * 1000;
 
-// 日本時間の今日0時と翌日0時をUTCのDateへ変換する
-function getJapanDayRange(now: Date) {
+// 日本時間の今月1日と翌月1日をUTCのDateへ変換する
+function getJapanMonthRange(now: Date) {
   const japanNow = new Date(
     now.getTime() +
       japanTimeOffsetMilliseconds,
   );
 
-  const japanDayStartAsUtc = Date.UTC(
+  const japanMonthStartAsUtc = Date.UTC(
     japanNow.getUTCFullYear(),
     japanNow.getUTCMonth(),
-    japanNow.getUTCDate(),
+    1,
+  );
+
+  const nextJapanMonthStartAsUtc = Date.UTC(
+    japanNow.getUTCFullYear(),
+    japanNow.getUTCMonth() + 1,
+    1,
   );
 
   const start = new Date(
-    japanDayStartAsUtc -
+    japanMonthStartAsUtc -
       japanTimeOffsetMilliseconds,
   );
 
   const end = new Date(
-    start.getTime() + millisecondsPerDay,
+    nextJapanMonthStartAsUtc -
+      japanTimeOffsetMilliseconds,
   );
 
   return { start, end };
@@ -211,8 +223,8 @@ export async function GET(request: Request) {
       analyses: analysesWithAreas,
     });
   } catch (error) {
-    console.error(
-      "身体分析履歴の取得に失敗しました。",
+    logServerError(
+      "body_analysis_history_failed",
       error,
     );
 
@@ -299,27 +311,77 @@ export async function POST(request: Request) {
       );
     }
 
-    // 日本時間の同じ日に完了済みの分析があればOpenAIを呼ばずに終了する
+    // 初回無料か、有料会員の今月4回以内かをOpenAI通信前に確認する
     const now = new Date();
     const { start, end } =
-      getJapanDayRange(now);
+      getJapanMonthRange(now);
 
-    const todayAnalyses = await db
-      .select({
-        id: bodyAnalyses.id,
-      })
-      .from(bodyAnalyses)
-      .where(
-        and(
-          eq(bodyAnalyses.userId, user.id),
-          eq(bodyAnalyses.status, "completed"),
-          gte(bodyAnalyses.analyzedAt, start),
-          lt(bodyAnalyses.analyzedAt, end),
-        ),
-      )
-      .limit(1);
+    const [totalAnalysisResults, monthlyAnalysisResults] =
+      await Promise.all([
+        db
+          .select({
+            usageCount: count(bodyAnalyses.id),
+          })
+          .from(bodyAnalyses)
+          .where(
+            and(
+              eq(bodyAnalyses.userId, user.id),
+              eq(bodyAnalyses.status, "completed"),
+            ),
+          ),
+        db
+          .select({
+            usageCount: count(bodyAnalyses.id),
+          })
+          .from(bodyAnalyses)
+          .where(
+            and(
+              eq(bodyAnalyses.userId, user.id),
+              eq(bodyAnalyses.status, "completed"),
+              gte(bodyAnalyses.analyzedAt, start),
+              lt(bodyAnalyses.analyzedAt, end),
+            ),
+          ),
+      ]);
 
-    if (todayAnalyses.length > 0) {
+    const totalAnalysisCount = Number(
+      totalAnalysisResults[0]?.usageCount ?? 0,
+    );
+    const monthlyAnalysisCount = Number(
+      monthlyAnalysisResults[0]?.usageCount ?? 0,
+    );
+    const isFirstFreeAnalysis =
+      totalAnalysisCount === 0;
+
+    const premiumAccess =
+      isFirstFreeAnalysis
+        ? null
+        : await getPremiumAccess(user.id, now);
+
+    const accessDecision =
+      decideBodyAnalysisAccess({
+        totalCompleted: totalAnalysisCount,
+        completedThisMonth:
+          monthlyAnalysisCount,
+        isPremium:
+          premiumAccess?.isPremium ?? false,
+      });
+
+    if (
+      !accessDecision.allowed &&
+      accessDecision.reason ===
+        "premium_required"
+    ) {
+      return premiumRequiredResponse(
+        "body_analysis",
+      );
+    }
+
+    if (
+      !accessDecision.allowed &&
+      accessDecision.reason ===
+        "monthly_limit"
+    ) {
       const retryAfterSeconds = Math.max(
         1,
         Math.ceil(
@@ -331,7 +393,11 @@ export async function POST(request: Request) {
       return Response.json(
         {
           error:
-            "身体分析は1日1回までです。明日もう一度お試しください。",
+            "今月の身体分析上限4回に達しました。",
+          code: "BODY_ANALYSIS_MONTHLY_LIMIT_REACHED",
+          limit: premiumBodyAnalysisMonthlyLimit,
+          used: monthlyAnalysisCount,
+          remaining: 0,
           nextAvailableAt: end.toISOString(),
         },
         {
@@ -344,6 +410,12 @@ export async function POST(request: Request) {
         },
       );
     }
+
+    /*
+     * 同時送信では両方が同じ月内使用数を見るため、同じslotの受付IDになる。
+     * DBの一意制約で1件だけを通し、月4回を同時通信で超えないようにする。
+     */
+    const analysisSlot = monthlyAnalysisCount;
 
     // フロントから送られた正面・横・背面画像を取り出す
     const requestFormData = await request.formData();
@@ -430,18 +502,19 @@ export async function POST(request: Request) {
       );
     }
 
-    // 本人と日本の日付から、1日につき1つだけの分析受付UUIDを作る
+    // 本人・日本時間の月・今回の利用枠から重複しない分析受付UUIDを作る
     const requestId =
       await createRequestFingerprint(
         JSON.stringify({
           userId: user.id,
-          japanDate:
+          japanMonth:
             start.toISOString(),
+          analysisSlot,
           requestType: "body-analysis",
         }),
       );
 
-    // 同じ日の同じ分析要求は最初の1件だけ受け付ける
+    // 同じ月の同じ利用枠は最初の1件だけ受け付ける
     const insertedGuards = await db
       .insert(aiRequestGuards)
       .values({
@@ -481,6 +554,17 @@ export async function POST(request: Request) {
       "safety_identifier",
       safetyIdentifier,
     );
+
+    // TypeScript APIとPython分析ログを同じ通信IDで追えるようにする
+    const apiRequestId =
+      request.headers.get("x-request-id");
+
+    if (apiRequestId) {
+      pythonFormData.append(
+        "request_id",
+        apiRequestId,
+      );
+    }
 
     pythonFormData.append(
       "front_image",
@@ -644,6 +728,19 @@ export async function POST(request: Request) {
       {
         bodyAnalysisId,
         analysis: analysisResult,
+        usage: {
+          firstAnalysisFree:
+            isFirstFreeAnalysis,
+          limit:
+            premiumBodyAnalysisMonthlyLimit,
+          used: monthlyAnalysisCount + 1,
+          remaining: Math.max(
+            0,
+            premiumBodyAnalysisMonthlyLimit -
+              (monthlyAnalysisCount + 1),
+          ),
+          resetsAt: end.toISOString(),
+        },
       },
       { status: 201 },
     );
@@ -660,8 +757,8 @@ export async function POST(request: Request) {
             ),
           );
       } catch (cleanupError) {
-        console.error(
-          "身体分析の二重送信管理を解除できませんでした。",
+        logServerError(
+          "body_analysis_guard_cleanup_failed",
           cleanupError,
         );
       }
@@ -671,8 +768,8 @@ export async function POST(request: Request) {
       error instanceof
       PythonAnalysisTimeoutError
     ) {
-      console.error(
-        "Python身体分析APIタイムアウト:",
+      logServerError(
+        "body_analysis_python_timeout",
         error,
       );
 
@@ -691,8 +788,8 @@ export async function POST(request: Request) {
       error instanceof
       PythonAnalysisUnavailableError
     ) {
-      console.error(
-        "Python身体分析APIへ接続できません:",
+      logServerError(
+        "body_analysis_python_unavailable",
         error,
       );
 
@@ -708,8 +805,8 @@ export async function POST(request: Request) {
     if (
       error instanceof PythonAnalysisApiError
     ) {
-      console.error(
-        "Python身体分析APIエラー:",
+      logServerError(
+        "body_analysis_python_failed",
         error,
       );
 
@@ -733,10 +830,7 @@ export async function POST(request: Request) {
       );
     }
 
-    console.error(
-      "身体分析に失敗しました。",
-      error,
-    );
+    logServerError("body_analysis_failed", error);
 
     return Response.json(
       {

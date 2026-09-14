@@ -7345,7 +7345,9 @@ OpenAIへ渡せる画像データURL
 - `Base64`：画像などのバイナリデータを文字列で表現する形式
 - データURL：ファイル内容とファイル形式を1本の文字列にまとめた形式
 
-## 身体分析を1ユーザー1日1回に制限する
+## 旧仕様：身体分析を1ユーザー1日1回に制限する
+
+この節は以前の仕組みを理解するための記録です。現在の仕様は、このファイル末尾の「月額プランと現在の利用制限」が正解です。
 
 ### なぜTypeScriptバックエンドで判定するのか
 
@@ -10433,13 +10435,13 @@ deleteConversation()で画面から削除
 
 ## AIチャットの1日利用上限
 
-開発中は`.env.local`の`AI_CHAT_DAILY_LIMIT=100`により、1人が1日に送信できるAIチャットの上限を100回にします。
+`.env.local`の`AI_CHAT_DAILY_LIMIT=30`により、1人が1日に送信できるAIチャットの上限を30回にします。
 
 `AI_CHAT_DAILY_LIMIT`はOpenAIが決めた無料回数ではなく、このアプリが使いすぎを防ぐために決める設定値です。OpenAI APIの料金は21回目や101回目から始まるのではなく、1回目から使用したトークン量に応じて残高から消費されます。
 
-`process.env.AI_CHAT_DAILY_LIMIT`は`.env.local`の文字列を読み取り、`Number.parseInt(..., 10)`はその文字列を10進数の整数へ変換します。設定がない場合や不正な値の場合は、開発用の初期値`100`を使用します。
+`process.env.AI_CHAT_DAILY_LIMIT`は`.env.local`の文字列を読み取り、`Number.parseInt(..., 10)`はその文字列を10進数の整数へ変換します。設定がない場合や不正な値の場合も初期値`30`を使用します。
 
-本番公開時はコードを変更せず、公開先の環境変数だけを`30`や`50`などへ変更できます。
+本番公開時も公開先の環境変数を`30`にします。回数を変更するときは、コードではなく環境変数を変更します。
 
 AIメニュー生成はAIチャットと分けて、`.env.local`の`AI_MENU_DAILY_LIMIT=3`で1人1日3回に制限します。AIチャットの質問回数を使い切ってもAIメニュー回数は減らず、その逆も同じです。
 
@@ -11548,7 +11550,9 @@ await crypto.subtle.digest(
 
 保存途中で失敗した場合は受付記録を削除するため、同じ内容をもう一度送れます。
 
-### 身体分析の重複判定と1日1回
+### 旧仕様：身体分析の重複判定と1日1回
+
+この説明は変更前の記録です。現在は「本人ID・日本時間の年月・月内利用枠」からUUIDを作り、有料会員の月4回制限を同時通信ですり抜けないようにします。
 
 身体分析では、本人IDと日本時間の日付からUUIDを作ります。
 
@@ -12343,14 +12347,20 @@ Neonの`weight_records`は0件ですが、`mobile/src/app/weight-history.tsx`は
 
 ### 何のために作ったか
 
-今後は機能を変更した後、1つずつ手作業で確認しなくても、次の7層をまとめて検査できるようにしました。
+今後は機能を変更した後、1つずつ手作業で確認しなくても、次の10層をまとめて検査できるようにしました。
 
 ```text
 TypeScriptの入力ルール
 ↓
+ソースコードの秘密情報チェック
+↓
 Pythonの画像・OpenAIエラー処理
 ↓
+ExpoのAPI通信処理
+↓
 Expo側のTypeScript
+↓
+Expo側のLint
 ↓
 Lintによるコード品質
 ↓
@@ -12373,13 +12383,16 @@ npm run test:all
 `package.json`の`test:all`は、複数のテスト用コマンドを`&&`で順番につないでいます。
 
 ```json
-"test:all": "npm run test:unit && npm run test:python && npm run test:mobile-types && npm run lint && npm run build && npm run test:db && npm run test:public"
+"test:all": "npm run test:unit && npm run test:source-security && npm run test:python && npm run test:mobile-api && npm run test:mobile-types && npm --prefix mobile run lint && npm run lint && npm run build && npm run test:db && npm run test:public"
 ```
 
 - `&&`：左側が成功したときだけ右側へ進む
 - `test:unit`：APIの入力形式とAI安全ルールを確認する
+- `test:source-security`：端末用コードとログに秘密情報が混ざっていないか確認する
 - `test:python`：Python画像検査とOpenAI障害処理を確認する
+- `test:mobile-api`：ExpoからAPIへ送る通信処理8件を確認する
 - `test:mobile-types`：Expo側のTypeScriptに型エラーがないか確認する
+- `npm --prefix mobile run lint`：`mobile`フォルダのExpo用Lintを実行する
 - `lint`：未使用変数や危険なReactコードなどを確認する
 - `build`：公開用バックエンドを最後まで組み立てられるか確認する
 - `test:db`：開発用Neonへ一時データを保存してDB制約を確認する
@@ -12484,6 +12497,197 @@ await expectDatabaseError(() =>
 
 ここでは保存用JSONを送らず認証も付けないため、既存のユーザーデータは変更されません。
 
+### `mobile/scripts/api-request.test.mjs`の役割
+
+フロントエンド担当が作ったAPI通信処理を、実際のサーバーや利用者データを使わずに確認します。
+
+- ログイン用Bearerトークンを通信へ付ける
+- フロント専用オプションを`fetch()`へ誤って渡さない
+- サーバーから応答がない場合にタイムアウトする
+- 応答本文の読み込みが止まった場合にも終了する
+- 画像送信時に`Content-Type`を手動指定せず、ブラウザへ任せる
+- HTTP 401を別のエラーへ変えずに維持する
+- オフライン相当の失敗を分かりやすいメッセージへ変える
+- 送信前・送信中のキャンセルを反映する
+
+`fetch()`そのものはテスト用の偽物へ置き換えるため、Neon・OpenAIの料金や保存データには影響しません。
+
+フロント通信テストだけを実行する場合は、次のどちらかを使います。
+
+```bash
+cd /Users/yuuta/Desktop/musslepas
+npm run test:mobile-api
+```
+
+```bash
+cd /Users/yuuta/Desktop/musslepas/mobile
+npm run test:api
+```
+
+- `node --test`：Node.js標準のテスト機能を起動する
+- `scripts/api-request.test.mjs`：フロントのAPI通信だけを確認するテストファイル
+- `npm --prefix mobile`：プロジェクト直下から`mobile`のコマンドを実行する指定
+
+### `tests/source-security.test.mjs`の役割
+
+公開前に人の目だけで探すと見落としやすい秘密情報を、ソースコードから自動で検査します。
+
+- 利用者の端末へ配る`mobile/src`と`mobile/app.json`を検査する
+- `CLERK_SECRET_KEY`・`DATABASE_URL`・`OPENAI_API_KEY`をフロントへ入れない
+- PostgreSQL接続URLやOpenAI Secret Keyらしい文字列をフロントへ入れない
+- `.env*`が`.gitignore`に含まれ、Gitへ誤登録されないことを確認する
+- サーバーの`console.log()`・`console.error()`へ画像や認証情報の変数を直接渡さない
+
+```javascript
+assert.doesNotMatch(source, forbiddenPattern);
+```
+
+- `source`：検査対象ファイルの中身
+- `forbiddenPattern`：入ってはいけない文字列の規則
+- `doesNotMatch()`：禁止文字列に一致しないことを確認する
+
+この検査は文字列を探す静的テストです。実際の公開ログに秘密情報が出ていないかは、公開環境のログでも最後に確認します。
+
+### 2026年9月7日の再テスト結果
+
+- API・安全ルール：17件合格
+- ソースコード秘密情報：3件合格
+- Python画像・OpenAI障害：12件合格
+- Expo API通信：8件合格
+- Expo TypeScript：合格
+- Expo Lint：合格
+- バックエンドLint：エラー0件、既存の画像最適化警告2件
+- バックエンド本番ビルド：合格
+- 開発用Neon：保存・更新・削除・制約・ロールバック・cascade・ユーザー分離が合格
+- 公開API：ヘルスチェックと未ログイン保護が合格
+
+さらにExpo Webを開発用バイパスで起動し、トレーニング記録画面で保存したあと、画面内ナビゲーションでマイページからカレンダーへ進みました。カレンダーには当日の記録1件と、ベンチプレス・インクラインダンベルプレス・サイドレイズの3種目が表示されました。
+
+開発用バイパスではNeonへ送らず、React Contextの画面内データを確認します。画面をURLから再読み込みするとこの仮データは消えます。本番の保存継続性は、ClerkへログインしてAPI経由でNeonへ保存する別のE2Eテストで確認します。
+
+テスト後は`EXPO_PUBLIC_ENABLE_API_BYPASS=false`へ戻しており、通常の認証が必要な状態です。
+
+### 2026年9月8日の認証付き保存テスト
+
+Clerkへログインした通常モードで、トレーニング記録画面から次の内容を保存しました。
+
+- ベンチプレス：40kg × 10回を3セット
+- インクラインダンベルプレス：12kg × 10回を3セット
+- サイドレイズ：5kg × 12回を3セット
+- トレーニング時間：45分
+- メモ：Neon保存・再読み込み確認用テスト
+
+保存直後に成功メッセージが表示され、ブラウザを再読み込みした後も各種目の「前回」欄へ同じ重量・回数が戻りました。さらにカレンダーには、2026年9月8日の記録1件として3種目・45分・メモが表示されました。
+
+この確認で、データの流れが次のようにつながっていると分かります。
+
+```text
+トレーニング記録画面
+  ↓ POSTで保存
+TypeScriptバックエンド
+  ↓ 本人のusers.idと結び付ける
+Neon PostgreSQL
+  ↓ 再読み込み後にGETで取得
+トレーニング画面の「前回」欄・カレンダー
+```
+
+`useState`だけの一時保存ならブラウザ再読み込みで消えます。今回は再読み込み後にも戻ったため、Clerkで特定した本人の記録がNeonへ保存され、取得APIから読み直せていることを確認できました。
+
+### 2026年9月8日の全体テストで分かったこと
+
+自動テストでは、API安全ルール17件、秘密情報検査3件、Pythonテスト12件、Expo通信テスト8件、TypeScript、Lint、ビルド、Neon実DB、公開APIが合格しました。
+
+ログイン済み画面では、次の実データ取得に成功しました。
+
+- bootstrapからホームへの移動
+- ホームの目標体型とAIメニュー
+- AIメニュー画面の保存済みメニュー
+- AIチャット画面の保存済み会話と回答
+- トレーニング記録の保存、再読み込み後の復元、カレンダー表示
+
+一方で、次の未完成点も画面テストで確認しました。
+
+- 分析履歴画面が`GET /api/body-analysis`を繰り返し、読み込み中のままになる
+- マイページはプロフィールAPIへ接続済み。画面表示時にGETし、保存時にPATCHする
+- 体重履歴は確認用の固定データで、体重APIへまだ接続していない
+- 食事管理は画面内の仮保存で、サーバー保存APIがない
+- トレーニング記録の編集・削除APIはあるが、操作するフロントUIがまだない
+
+分析履歴ではAPIがHTTP 200を返しているため、Neonやバックエンドの取得失敗ではありません。`useFocusEffect()`から呼ぶ`loadHistory`が再描画のたびに作り直され、再取得が続いている可能性を優先して調べます。
+
+#### 分析履歴の連続GETを止める修正
+
+`useFocusEffect()`は画面が選択されたときに処理を実行します。Expo公式仕様では、渡す処理を`useCallback()`で安定させ、必要以上に実行されないようにする必要があります。
+
+Clerkの`getToken`が再描画時に別の関数として渡されると、以前の`loadHistory`は`[getToken]`を依存配列に持っていたため、`loadHistory`まで作り直されることがありました。その結果、`useFocusEffect()`が再実行されてGETが続いていました。
+
+```typescript
+const getTokenRef = useRef(getToken);
+
+useEffect(() => {
+  getTokenRef.current = getToken;
+}, [getToken]);
+```
+
+- `useRef(getToken)`：現在の`getToken`を入れておく、再描画しても同じ箱を作る
+- `.current`：Refという箱に入っている現在値を読み書きする場所
+- `useEffect(..., [getToken])`：Clerkの関数が変わったときだけ箱の中身を最新版へ交換する
+
+履歴取得側では`getTokenRef.current()`を呼び、`loadHistory`の依存配列を`[]`にしました。これにより、本人確認には最新のClerk関数を使いながら、画面フォーカス中に履歴取得関数を何度も作り直さなくなります。
+
+修正後にログイン済みの分析履歴画面を開くと、最初は「分析履歴を読み込み中」と表示され、その後「分析履歴はまだありません」へ切り替わりました。開発環境の初回表示ではGETが2回記録されましたが、その後5秒待っても新しいGETは発生していません。Reactの開発時確認で初回処理が複数回動く場合はありますが、以前のように通信が終わらず繰り返される状態は解消しています。
+
+```text
+分析履歴画面へ移動
+  ↓
+useFocusEffectがloadHistoryを呼ぶ
+  ↓
+Clerkの最新トークンをgetTokenRef.current()で取得
+  ↓
+GET /api/body-analysis
+  ↓
+Neonの分析履歴を画面へ表示
+  ↓
+再描画されてもloadHistoryは作り直されないため、GETは繰り返されない
+```
+
+スマートフォン幅の表示確認ではChromeを390×844pxに設定し、ホーム、トレーニング、チャット、マイページ、カレンダー、身体分析の6画面を確認しました。全画面で`scrollWidth`と`clientWidth`が390pxで一致し、意図しない横スクロールは発生していません。
+
+### AI機能の実通信テスト
+
+AIチャットへ「今日保存した記録をもとに次回の改善点」を質問しました。AIは最近のトレーニング記録Toolを実行し、ベンチプレス40kg×10回×3セット、インクラインダンベルプレス12kg×10回×3セット、サイドレイズ5kg×12回×3セット、45分というNeonの値を回答へ反映しました。
+
+```text
+チャット画面の質問
+  ↓
+POST /api/chat
+  ↓
+OpenAIが必要なToolを選ぶ
+  ↓
+最近の記録ToolがNeonを検索
+  ↓
+Tool結果をOpenAIへ戻す
+  ↓
+記録に基づく回答を画面へ返してNeonへ保存
+```
+
+ブラウザ再読み込み後にも質問と回答が表示されたため、会話の長期保存も確認できました。
+
+AIメニューでは再生成を実行し、当日の胸・肩の記録と以前の脚メニューを参考に、ハックスクワットなど別構成の脚メニューが生成されました。こちらも再読み込み後に復元できました。
+
+安全確認用の質問では、肩に鋭い痛みとしびれがある条件を送信しました。AIはトレーニングの即時中止、症状が続く場合の医療相談、救急症状の案内を返し、無理な運動継続を勧めませんでした。
+
+### Python身体分析の実OpenAIテスト
+
+人物を模した合成画像の正面・横・背面3枚と架空の身体情報をPythonの`POST /analyze`へ送りました。Pythonは画像検査、Data URL変換、OpenAI送信を行い、HTTP 200で次の項目を含むJSONを返しました。
+
+- 全体の要約
+- 理想体型との差
+- 肩・胸・背中・腕・腹部・脚・姿勢の7項目
+- 各項目のスコア、優先度、観察内容、改善案
+
+これによりPythonからOpenAIまでの分析処理は実通信でも動くと確認できました。Chrome画面からの3枚選択だけは、ChatGPT Chrome拡張機能にファイルURLへのアクセス権限がないため未確認です。
+
 ### 2026年9月2日の実行結果
 
 - API・安全ルール：17件合格
@@ -12495,6 +12699,129 @@ await expectDatabaseError(() =>
 - バックエンド本番ビルド：合格
 
 まだ別に必要なのは、2つの本物のClerkログインセッションを使うユーザー分離と、ログイン済み画面から保存・更新・削除ボタンを押すE2Eテストです。
+
+## マイページとプロフィールAPIの接続
+
+### 今回何をできるようにしたか
+
+マイページを開くと、ログイン中の本人に保存されているプロフィールをNeonから取得します。保存ボタンを押すと、フォームの内容をプロフィールAPIへ送り、同じ本人のデータを更新します。
+
+```text
+マイページを開く
+  ↓
+Clerkから本人確認用トークンを取得
+  ↓ GET /api/users/profile
+TypeScriptバックエンドがClerkユーザーIDを確認
+  ↓
+Neonのuser_profilesから本人の1件を検索
+  ↓
+数値を入力欄用の文字列へ変換して表示
+
+保存ボタンを押す
+  ↓
+入力欄の文字列を数値またはnullへ変換
+  ↓ PATCH /api/users/profile
+バックエンドがZodで入力を検査
+  ↓
+Neonの本人プロフィールを追加または更新
+  ↓
+保存結果を画面とOnboardingContextへ戻す
+```
+
+### `mobile/src/app/my-page.tsx`の役割
+
+このファイルは、利用者が実際にプロフィールを見たり変更したりするReact Native・TypeScriptの画面です。
+
+```typescript
+const { getToken } = useAuth({
+  treatPendingAsSignedOut: false,
+});
+```
+
+- `useAuth()`：Clerkのログイン状態と認証機能を利用する
+- `getToken`：バックエンドへ「ログイン中の本人からの通信」と伝えるトークンを取得する関数
+- `treatPendingAsSignedOut: false`：Clerkの確認途中を、すぐ未ログイン扱いにしない
+
+```typescript
+const getTokenRef = useRef(getToken);
+```
+
+- `useRef()`：再描画されても同じ箱を使う
+- `getTokenRef.current`：箱に入っている最新の`getToken`を表す
+- 目的：認証関数が更新されてもプロフィール取得関数を何度も作り直さない
+
+```typescript
+const response = await fetchUserProfile(token);
+```
+
+- `fetchUserProfile()`：`GET /api/users/profile`を呼ぶ
+- `await`：バックエンドとNeonから結果が返るまで次へ進まず待つ
+- `response.profile`：本人の保存済みプロフィール。未作成なら`null`
+
+```typescript
+const restoredProfile =
+  userProfileToDraft(response.profile);
+setForm(restoredProfile);
+setProfile(restoredProfile);
+```
+
+- `userProfileToDraft()`：Neonの数値を入力フォームで扱う文字列へ変換する
+- `setForm()`：現在表示しているマイページの入力欄へ反映する
+- `setProfile()`：ホームやAIメニューなど、ほかの画面も使うContextへ反映する
+
+```typescript
+const response = await saveUserProfile(
+  token,
+  form,
+);
+```
+
+- `saveUserProfile()`：`PATCH /api/users/profile`を呼ぶ
+- `token`：誰のプロフィールを更新するか安全に判断するための認証情報
+- `form`：身長・体重など、画面に現在入力されている内容
+- `PATCH`：すでにある本人のプロフィールを更新する目的で使うHTTPメソッド
+
+`savingLock.current`は、保存ボタンを素早く2回押して同じ保存通信が重なることを防ぎます。`isSaving`はボタンを無効化し、画面に読み込み表示を出すためのStateです。
+
+### `mobile/src/lib/profiles.ts`の役割
+
+このファイルは画面そのものではなく、プロフィール画面とバックエンドAPIの間でデータ形式を変換するTypeScriptの通信担当です。
+
+- `fetchUserProfile()`：プロフィールをGETする
+- `saveUserProfile()`：プロフィールをPATCHする
+- `profileDraftToApiInput()`：`"177"`のような入力文字列を`177`という数値へ変える
+- `userProfileToDraft()`：Neonの`177`という数値を入力欄用の`"177"`へ戻す
+- 空の任意項目：空文字ではなく`null`へ統一してバックエンドへ送る
+
+### バックエンドとNeon側の変更
+
+`app/api/users/profile/route.ts`は、Clerkトークンから本人を特定し、GETでは本人のプロフィールを返し、PATCHでは本人のプロフィールだけを保存します。
+
+`db/schema.ts`の`trainingStyle`は、次の3種類をNeonの`user_profiles.training_style`列へ保存する項目です。
+
+- `full-body`：全身
+- `split`：部位別
+- `ai`：AIにおまかせ
+
+```sql
+ALTER TABLE "user_profiles"
+ADD COLUMN "training_style" text;
+```
+
+このSQLは`drizzle-postgres/0009_mute_roulette.sql`にあります。既存のプロフィールを消さず、新しい保存欄だけを追加します。
+
+`profileSchema`では、上の3種類または`null`だけを許可します。`unknown`など予定外の値はHTTP 400になるため、DBへ不正な形式が入りにくくなります。
+
+### 確認結果
+
+- API入力テスト17件：合格
+- Expo TypeScript：合格
+- Expo Lint：合格
+- Neonマイグレーション：適用成功
+- 一時テストユーザーの身長・体重・`trainingStyle`保存と再取得：合格
+- ログイン済みマイページでNeonの身長177cm・体重66kgを表示：確認済み
+
+実ユーザーのプロフィール内容を変更する保存ボタン操作は行っていません。コードと一時テストユーザーでは保存・復元まで確認できています。
 
 ### Lintを通すために直したReactコード
 
@@ -12513,3 +12840,1256 @@ const [form, setForm] = useState(loadInitialForm);
 これにより「初期表示→Effect実行→もう一度State変更」という余分な再描画を減らします。
 
 `eslint.config.mjs`では`mobile/**`をルートのNext.js用Lintから外しました。`mobile`は独立したExpoプロジェクトなので、Next.js専用ルールではなく`npm run test:mobile-types`でTypeScriptを検査します。
+
+## 体重履歴画面とNeonの接続
+
+### 全体のデータの流れ
+
+```text
+体重履歴画面を開く
+  ↓ GET /api/weight-records
+バックエンドがClerkトークンから本人を確認
+  ↓
+Neonのweight_recordsから本人の記録だけを取得
+  ↓
+日付・体重をグラフと履歴へ表示
+
+新しい日付を保存 → POST
+同じ日付または編集中の記録を保存 → PATCH
+削除ボタンを押して確認する → DELETE
+```
+
+### `mobile/src/lib/weightRecords.ts`の役割
+
+このTypeScriptファイルは、体重履歴画面とバックエンドAPIの間を担当します。画面の見た目は持たず、通信先・HTTPメソッド・JSON形式をまとめています。
+
+- `fetchWeightRecords()`：本人の履歴をGETする
+- `createWeightRecord()`：日付と体重をPOSTして新規保存する
+- `updateWeightRecord()`：記録IDと新しい体重をPATCHする
+- `deleteWeightRecord()`：URLへ記録IDを付けてDELETEする
+- `toWeightRecord()`：APIの`recordedDate`を画面用の`recordedOn`へ変換する
+
+```typescript
+const response = await apiRequest<WeightRecordsResponse>(
+  '/api/weight-records',
+  {
+    method: 'GET',
+    token,
+  },
+);
+```
+
+- `apiRequest<WeightRecordsResponse>`：返ってくるJSONのTypeScript型を指定する
+- `'/api/weight-records'`：体重APIの住所
+- `method: 'GET'`：保存済み情報を取得する
+- `token`：ログイン中の本人だとバックエンドへ伝える
+- `await`：履歴が返るまで待つ
+
+### `mobile/src/app/weight-history.tsx`の役割
+
+このファイルは体重入力、グラフ、履歴、編集・削除ボタンを表示するReact Native・TypeScript画面です。
+
+```typescript
+const sameDateRecord = records.find(
+  (record) => record.recordedOn === recordedOn,
+);
+```
+
+- `.find()`：条件に一致する最初の1件を探す
+- `record`：現在確認している履歴1件
+- `record.recordedOn === recordedOn`：保存しようとしている日付と同じか比較する
+- 一致する記録があれば新規POSTではなくPATCHへ切り替える
+
+```typescript
+const savedRecord = updateTargetId
+  ? await updateWeightRecord(...)
+  : await createWeightRecord(...);
+```
+
+- `条件 ? A : B`：条件が正しければA、違えばBを実行する三項演算子
+- `updateTargetId`がある：すでに存在する記録なのでPATCH
+- `updateTargetId`がない：新しい日付なのでPOST
+
+`savingLock.current`は、保存ボタンを連続で押して同じ通信が重なることを防ぎます。`isSaving`は保存中の表示とボタン無効化に使います。
+
+削除処理はすぐ実行せず、Webでは`confirm()`、iPhone・Androidでは`Alert.alert()`で確認します。削除APIも記録IDだけではなく、バックエンドで本人のユーザーIDを条件に含めるため、他人の記録は削除できません。
+
+### 固定データを残している理由
+
+通常モードでは固定データを使わず、Neonの実データだけを表示します。`EXPO_PUBLIC_ENABLE_API_BYPASS=true`の開発用モードだけは、バックエンドを起動できないときの見た目確認用として`WeightHistoryContext`の仮データを使います。
+
+### 自動テスト
+
+`mobile/scripts/weight-records.test.mjs`は実ユーザーのデータを変更せず、疑似APIで次を確認します。
+
+- GETした`recordedDate`が画面用の`recordedOn`になる
+- POSTへ日付と体重のJSONを送る
+- PATCHへ記録IDと変更後の体重を送る
+- DELETEのURLへ対象記録IDを付ける
+
+共通API通信8件と体重通信4件の合計12件、Expo TypeScript、Expo Lintが合格しました。さらに一時テストユーザーを使うNeon実DBテストで、保存・取得・更新・削除・同日重複防止が成功しています。
+
+2026年9月9日に`npm run test:all`も実行し、API安全17件、秘密情報3件、Python 12件、Expo通信12件、TypeScript、Expo Lint、バックエンドビルド、Neon実DB、公開APIがすべて合格しました。バックエンドLintには以前からある`<img>`最適化警告が2件ありますが、エラーは0件です。
+
+## トレーニング記録の編集・削除を画面へ接続
+
+目的は、カレンダーに表示された過去の記録を、ログイン中の本人が直したり削除したりできるようにすることです。
+
+```text
+カレンダーで「編集」を押す
+  ↓
+記録IDをtraining.tsxへ渡す
+  ↓
+履歴Contextから同じIDの記録を探して入力欄へ復元
+  ↓
+変更後の内容をPATCHでバックエンドへ送る
+  ↓
+本人のNeonデータと画面内の履歴を更新
+```
+
+### `mobile/src/lib/trainingRecords.ts`の追加部分
+
+```typescript
+export function updateTrainingRecord(
+  token: string,
+  trainingSessionId: string,
+  input: CreateTrainingRecordInput,
+) {
+```
+
+- `updateTrainingRecord`：保存済みトレーニングを変更する関数名
+- `token`：ログイン中の本人を確認するためのClerkトークン
+- `trainingSessionId`：どの記録を変更するか示すID
+- `input`：変更後の日時、種目、セット、時間、調子、メモ
+- `PATCH`：すでに存在するデータを変更するHTTPメソッド
+
+`deleteTrainingRecord()`は記録IDをDELETEのJSONへ入れます。バックエンドはそのIDだけで削除せず、Clerkから分かった本人のNeonユーザーIDも条件に入れます。そのため、別ユーザーの記録IDを送っても削除できません。
+
+### `calendar.tsx`から`training.tsx`へIDを渡す部分
+
+```typescript
+router.push({
+  pathname: '/training',
+  params: { editId: record.id },
+});
+```
+
+- `router.push()`：別画面へ移動する
+- `pathname`：移動先の記録画面
+- `params`：移動先へ一緒に渡す値
+- `editId`：編集対象だと分かるように付けた名前
+- `record.id`：カレンダーで選んだ記録のID
+
+### 記録画面で編集対象を探す部分
+
+```typescript
+const editingRecord = useMemo(
+  () => editId
+    ? records.find((record) => record.id === editId) ?? null
+    : null,
+  [editId, records],
+);
+```
+
+- `editId ? A : B`：IDがあるときだけAを実行し、なければBを使う
+- `.find()`：配列の中からIDが一致する最初の1件を探す
+- `?? null`：検索結果が`undefined`なら、記録なしを表す`null`へ変える
+- `useMemo()`：`editId`か`records`が変わったときだけ検索結果を計算し直す
+- 編集対象がある場合はPATCH、ない場合は今までどおりPOSTで新規保存する
+
+### 履歴Contextも変更する理由
+
+Neonの更新だけ成功しても、画面が持っている古い配列は自動では変わりません。`updateRecord()`は同じIDの要素を新しい記録へ差し替え、`removeRecord()`は削除したIDを配列から除きます。これにより、再読み込みを待たずカレンダー表示へ変更が反映されます。
+
+削除前はWebで`confirm()`、iPhone・Androidで`Alert.alert()`を表示します。これは削除ボタンの押し間違いで履歴を失うことを防ぐためです。
+
+`mobile/scripts/training-records.test.mjs`では、実ユーザーの記録を変更せず、PATCHへ変更内容と記録IDが入ること、DELETEへ削除対象IDが入ることを疑似通信で確認します。
+
+実画面テストでは開発用の一時データを使い、記録保存、カレンダーへの表示、編集画面への3種目の復元、変更保存後にカレンダーへ戻るところまで確認しました。テスト終了後は`EXPO_PUBLIC_ENABLE_API_BYPASS=false`へ戻しています。そのため、通常利用時は一時データではなくバックエンドAPIとNeonが使われます。
+
+## 接続テストで「どこが悪いか」を分ける考え方
+
+アプリで「インターネット接続を確認してください」と表示されても、必ずバックエンドが停止しているとは限りません。今回は次の順番で別々に確認しました。
+
+```text
+Expo画面
+  ↓ Clerkから本人確認用トークンを取得
+TypeScript APIへ通信
+  ↓
+Neonから本人のデータを取得・保存
+
+身体分析の場合だけ
+TypeScript API → RenderのPython API → OpenAI
+```
+
+- ローカルAPIの`GET /api/health`：HTTP 200
+- Expo Webのアクセス元`http://localhost:8081`：CORS許可ヘッダーあり
+- 公開API：ヘルスチェック成功、未ログイン通信を正しく拒否
+- Neon：保存・更新・削除・cascade・別ユーザー分離が成功
+- Render・OpenAI：合成画像3枚から7部位の分析JSONを取得
+
+この結果から、バックエンド・Neon・Render・OpenAIの接続経路は動いています。
+
+### `ERR_BLOCKED_BY_CLIENT`とは
+
+Chromeで公開APIとClerkのURLを直接開いたところ、両方が`ERR_BLOCKED_BY_CLIENT`になりました。これはサーバーが返したHTTPエラーではなく、Chromeの拡張機能・セキュリティ設定・通信保護機能などが、通信をサーバーへ送る前に止めた状態です。
+
+Clerkが止められると、`getToken()`で本人確認用トークンを受け取れません。そのため、`fetchBootstrap(token)`まで進まず、ローカルAPIへ切り替えても画面には同じ通信エラーが出ます。
+
+```typescript
+const token = await getToken();
+```
+
+- `getToken()`：Clerkからログイン中の本人を証明する文字列を取得する
+- ここで失敗：バックエンドAPI通信はまだ始まっていない
+- 取得成功後：`fetchBootstrap(token)`がTypeScript APIを呼ぶ
+
+今回のコード変更が原因ではないため、`mobile/.env.local`は通常の公開API URLへ戻しています。Chrome側の遮断を解除した後に、ログイン済み画面からPATCH・DELETEを最終確認します。
+
+### 2026年9月9日の全テスト結果
+
+`npm run test:all`で、API安全17件、秘密情報3件、Python 12件、モバイルAPI通信14件、TypeScript型検査、Expo Lint、バックエンドLint、ビルド、Neon実DB、公開APIが合格しました。バックエンドLintには以前からある画像最適化の警告が2件ありますが、エラーは0件です。
+
+`npx expo install --check`は、現在使っているExpo SDKと各Expoパッケージの版が合っているか調べるコマンドです。SDK 57内の推奨パッチ版へ4パッケージを揃え、再検査で`Dependencies are up to date`を確認しました。これはReact画面の機能変更ではなく、同じSDK内で不具合修正版を揃える保守作業です。
+
+`npm audit --omit=dev`は、本番依存に既知の脆弱性報告があるか調べます。今回はcriticalは0件で、moderate 28件・high 7件がExpo、Metro、Clerk、Markdown表示などの間接依存から報告されました。現在のSDK 57に合う自動修正版がない項目を含むため、`npm audit fix --force`は使っていません。`--force`はExpo Routerなどを互換性のない古い版へ変更する可能性があり、画面を壊す危険があるためです。AI質問は2000文字、AI回答も最大文字数を制限しており、長文処理による負荷リスクも小さくしています。今後のExpo SDK更新時に再監査します。
+## 追加：ログ・監視・本番認証の基本（2026-09-10）
+
+### 今回の目的
+
+APIで問題が起きたときに「どの通信が失敗したか」を追えるようにしながら、身体写真・身体情報・質問文・認証トークン・秘密鍵をログへ残さないようにしました。
+
+関係する主なファイルは次のとおりです。
+
+- `worker/index.ts`：すべてのAPI通信が最初と最後に通る入口
+- `app/lib/observability/serverLog.ts`：安全なログの共通ルール
+- `app/lib/config/runtimeStatus.ts`：Clerkが開発用か本番用かを秘密値なしで判定
+- `app/api/health/route.ts`：公開バックエンドの起動状態と認証環境を返す
+- `app/api/chat/route.ts`：AIチャットのトークン使用量を記録
+- `app/api/ai-menu/route.ts`：AIメニューのトークン使用量を記録
+- `python-analysis/app/main.py`：身体分析のトークン使用量を記録
+
+### リクエストIDとは
+
+リクエストIDは、API通信1回につける受付番号です。
+
+```text
+スマホからAPIへ送信
+↓
+X-Request-IDを確認
+↓
+IDがなければUUIDを作成
+↓
+同じIDをレスポンスとサーバーログへ入れる
+```
+
+エラー画面や通信結果にあるIDとサーバーログのIDを照合すると、複数人が同時に利用していても対象の通信を探しやすくなります。
+
+`resolveRequestId(request)`は、`request.headers`から`x-request-id`を読みます。安全な文字と長さならそのIDを使い、不正または未設定なら`crypto.randomUUID()`で新しいUUIDを作ります。
+
+`new Request(request, { headers: new Headers(request.headers) })`は、元の通信内容を保ったまま、変更可能なヘッダーを持つ新しいRequestを作る書き方です。
+
+`headers.set("x-request-id", requestId)`は、ヘッダーへ受付番号を設定します。
+
+身体分析ではTypeScriptが同じIDを`request_id`としてPythonへ渡します。そのため「スマホ → TypeScript API → Python → OpenAI」という長い処理も、同じ受付番号を手がかりに追跡できます。
+
+`Date.now() - requestStartedAt`は、処理終了時刻から開始時刻を引き、APIにかかった時間をミリ秒で求めます。
+
+### 安全なエラーログ
+
+`logServerError(event, error, requestId)`は、APIごとにバラバラだった`console.error(..., error)`を安全な共通形式へ変える関数です。
+
+記録するのは、エラーが起きた処理名・リクエストID・エラーの種類・安全なエラーコードだけです。
+
+`error.message`と`error.stack`は記録しません。ここにはDB接続情報や外部サービスの詳しい応答が混ざる可能性があるためです。
+
+`error && typeof error === "object"`は、受け取った値がnullではないオブジェクトかを確認しています。JavaScriptの`catch`で受け取る値は必ずError型とは限らないため、最初に安全確認が必要です。
+
+`errorData?.name`の`?.`は、`errorData`がnullならそこで確認を止めるオプショナルチェーンです。
+
+`requestId?: string`の`?`は、この引数を渡しても渡さなくてもよいというTypeScriptの書き方です。
+
+### OpenAIの使用量ログ
+
+`logOpenAiUsage()`は、OpenAIが返す`input_tokens`・`output_tokens`・`total_tokens`だけを記録します。
+
+- `input_tokens`：OpenAIへ送った文章や情報の量
+- `output_tokens`：OpenAIが生成した回答の量
+- `total_tokens`：入力と出力を合わせた使用量
+
+質問文・AI回答・身体情報・画像そのものはログへ入れません。これにより利用量を追いながら、利用者の内容をログへ複製しない構成になります。
+
+AIチャットはToolを使うとOpenAIを複数回呼ぶ場合があるため、最初の回答とTool実行後の回答をそれぞれ記録します。AIメニューとPython身体分析も同じ形式でトークン数だけを記録します。
+
+### 1日の利用回数制限との違い
+
+使用量ログは「実際にどれくらい使ったかを後から確認する仕組み」です。
+
+`AI_CHAT_DAILY_LIMIT=30`と`AI_MENU_DAILY_LIMIT=3`は「1人が1日に何回まで使えるかをAPIが止める仕組み」です。
+
+ログだけでは使いすぎを止められず、利用回数制限だけでは実際のトークン量や料金傾向を確認できません。そのため両方が必要です。
+
+### Clerkの開発用と本番用
+
+Clerkのキーは、開発用が`pk_test_`・`sk_test_`、本番用が`pk_live_`・`sk_live_`で始まります。
+
+`getAuthenticationMode()`はキー本体を返さず、2本の組み合わせだけを次の4種類へ分類します。
+
+- `development`：公開キーと秘密キーが両方とも開発用
+- `production`：両方とも本番用
+- `mixed`：開発用と本番用が混ざっている
+- `missing`：必要なキーが不足している
+
+`GET /api/health`の`authenticationMode`を見れば、秘密鍵を画面やログへ表示せずに設定状態を確認できます。
+
+現在のローカル確認結果は`development`です。本番用Clerkインスタンスを作成した後、公開先の環境変数だけを`pk_live_`・`sk_live_`へ入れ替えます。キーをコードやGitへ直接書いてはいけません。
+
+## セキュリティの詳しい説明
+
+### セキュリティは1か所だけで守らない
+
+このアプリでは、1つの確認だけを信用せず、次の順番で何段階にも確認します。この考え方を「多層防御」と呼びます。
+
+```text
+スマホから通信
+↓
+Clerkのトークンでログイン確認
+↓
+Neon検索に本人のユーザーIDを必ず入れる
+↓
+Zodで入力内容を検査
+↓
+DB制約で不正値と重複をもう一度防ぐ
+↓
+安全なデータだけを保存・取得
+↓
+秘密情報を除いたログだけを残す
+```
+
+どこか1段階の実装を間違えても、次の段階で被害を防ぎやすくするための構成です。ただし、セキュリティに「絶対安全」はないため、公開後も依存パッケージ・ログ・利用状況を定期的に確認します。
+
+### 認証と認可の違い
+
+認証は「誰がログインしているか」を確認する処理です。認可は「その人がこのデータを操作してよいか」を確認する処理です。
+
+```typescript
+const clerkUserId =
+  await getClerkUserId(request);
+
+if (!clerkUserId) {
+  return Response.json(
+    { error: "ログインが必要です。" },
+    { status: 401 },
+  );
+}
+```
+
+`getClerkUserId(request)`は、スマホが送ったClerkのセッショントークンをClerk側で検証し、ログイン中のユーザーIDを取得します。
+
+`await`は、Clerkの確認が終わるまで次の行を待つという意味です。
+
+`if (!clerkUserId)`は、ユーザーIDを取得できなかった場合です。このときはNeonを操作する前にHTTP 401を返します。
+
+ただし、ログイン済みというだけでは、どのデータでも操作してよいことにはなりません。そのため、Neonを検索・更新・削除するときにも本人条件を入れます。
+
+```typescript
+.where(
+  and(
+    eq(trainingSessions.id, recordId),
+    eq(trainingSessions.userId, userId),
+  ),
+)
+```
+
+`and(A, B)`は、AとBの両方を満たす行だけを対象にします。
+
+`eq(trainingSessions.id, recordId)`は、操作したい記録IDが一致するかを確認します。
+
+`eq(trainingSessions.userId, userId)`は、その記録の持ち主がログイン中の本人かを確認します。
+
+記録IDだけで検索すると、他人のIDを推測または取得した人に操作される危険があります。記録IDと本人IDの両方を条件にすることで、他人の記録は検索結果に出ない構成になります。
+
+### Clerk IDとNeonユーザーを結び付ける理由
+
+Clerkはログインを管理し、Neonはプロフィール・体重・記録・分析結果などを保存します。
+
+```text
+ClerkのuserId
+↓ users.clerk_user_idを検索
+Neon内部のusers.idを取得
+↓
+本人のプロフィール・記録・分析だけを操作
+```
+
+Clerkから得たIDをフロントの入力値として信用するのではなく、検証済みトークンからバックエンド自身が取得することが重要です。フロントから送られた`userId`だけを信用すると、利用者が値を書き換えて他人になりすませる可能性があります。
+
+### 入力値をZodで検査する理由
+
+フロント画面に入力制限があっても、APIへは画面を使わず直接通信できます。そのため、バックエンドでも必ず検査します。
+
+```typescript
+const parsedBody =
+  profileSchema.safeParse(rawBody);
+
+if (!parsedBody.success) {
+  return Response.json(
+    { error: "入力内容が正しくありません。" },
+    { status: 400 },
+  );
+}
+```
+
+`profileSchema`は、プロフィールとして許可する項目・型・範囲を定めた設計図です。
+
+`.safeParse(rawBody)`は、受け取ったJSONを設計図と比較します。検査失敗時にアプリ全体を停止させず、`success: false`として扱える方法です。
+
+`parsedBody.success`が`true`になった後は、`parsedBody.data`に検査済みデータが入ります。それ以降の保存処理では、未検査の`rawBody`ではなく`parsedBody.data`を使います。
+
+現在は主に次を検査しています。
+
+- UUIDが正しい形式か
+- 身長・体重・体脂肪率が決めた範囲内か
+- 日付が正しく、未来すぎないか
+- メモやチャットが長すぎないか
+- 種目数とセット数が多すぎないか
+- 理想体型や部位が許可した選択肢か
+- AIが返したJSONが決めた形式か
+
+### DB制約は最後の安全網
+
+Zodを通った後も、Neon PostgreSQL側に一意制約・外部キー・範囲制約を置いています。
+
+```typescript
+userId: uuid("user_id")
+  .notNull()
+  .references(() => users.id, {
+    onDelete: "cascade",
+  })
+```
+
+`uuid("user_id")`は、この列にUUIDを保存する指定です。
+
+`.notNull()`は、ユーザーIDが空のデータを禁止します。
+
+`.references(() => users.id)`は、`users`テーブルに実在するユーザーIDだけを許可する外部キーです。
+
+`onDelete: "cascade"`は、本人の`users`行を削除したとき、その人に属する子データも連動して削除する設定です。
+
+一意制約は、同じユーザー・同じ日付の体重や、同じリクエストIDなどの重複をDB側で拒否します。APIの確認を同時通信がすり抜けた場合にも、DBが最後に止めます。
+
+### 二重送信を防ぐ理由
+
+利用者が送信ボタンを連打した場合や、通信結果が見えず再送した場合、同じ記録やAI処理が2回実行される可能性があります。
+
+`ai_request_guards`は「このユーザーの、この機能の、このrequestIdは受付済み」という情報を保存するテーブルです。
+
+```text
+初めてのrequestId → 受付して処理する
+同じrequestIdを再送 → HTTP 409で拒否する
+処理そのものが失敗 → 受付記録を消して再試行可能にする
+```
+
+AI通信の二重実行を防ぐことは、履歴の重複だけでなくOpenAI料金の重複発生も抑えます。
+
+### 利用回数と連続送信の制限
+
+AIチャット・AIメニュー・身体分析は、ログイン中の本人が日本時間の同じ日に実行した回数をNeonから数えます。
+
+上限に達した場合はHTTP 429を返し、OpenAIを呼びません。`Retry-After`には次に試せるまでの秒数を入れます。
+
+また、AIチャットとAIメニューは短時間の連続送信を止めます。これにより、ボタン連打・画面の不具合・単純な自動攻撃による急な料金増加を抑えます。
+
+回数制限だけで本格的な攻撃を完全に防げるわけではありません。公開後に利用者数が増えた場合は、IP単位の制限やCloudflare側のRate Limitingも追加候補になります。
+
+### 秘密鍵と環境変数
+
+次の値はバックエンドだけが使用する秘密情報です。
+
+- `CLERK_SECRET_KEY`
+- `DATABASE_URL`
+- `OPENAI_API_KEY`
+
+これらは`.env.local`または公開先の秘密環境変数に保存し、GitHubへ送るコードには書きません。
+
+`NEXT_PUBLIC_`や`EXPO_PUBLIC_`が付く環境変数は、ブラウザやスマホへ配られる可能性があります。そのため、秘密鍵には絶対にこの接頭辞を付けません。
+
+ClerkのPublishable Keyは公開を前提にした識別用キーなのでフロントで使用できます。ClerkのSecret Keyはユーザー管理などの権限を持つため、バックエンド以外へ置いてはいけません。
+
+`.gitignore`の`.env*`は、`.env.local`などをGit管理から除外します。`.env.example`には本物の値を書かず、必要な環境変数名とダミー値だけを書きます。
+
+### CORSの役割と限界
+
+CORSは、ブラウザ版のフロントからバックエンドへ通信してよいアクセス元を制限します。
+
+```typescript
+headers.set(
+  "Access-Control-Allow-Origin",
+  origin,
+);
+```
+
+許可した`localhost`や本番フロントURLだけにCORSヘッダーを返します。
+
+ただし、CORSはブラウザのルールであり、本人確認の代わりにはなりません。スマホアプリや直接作ったHTTP通信はCORSの外側から送れるため、最終的にはClerk認証と本人ID条件で守ります。
+
+### 身体写真の安全対策
+
+身体写真は特に慎重に扱う情報です。現在の初期版では、写真そのものをNeonへ長期保存せず、分析結果のJSONだけを保存します。
+
+```text
+スマホから正面・横・背面画像を送る
+↓
+TypeScriptで枚数と通信容量を確認
+↓
+Pythonで形式・実データ・破損・画素数・容量を確認
+↓
+OpenAIへ分析依頼
+↓
+分析結果だけをNeonへ保存
+```
+
+PythonではJPEG・PNG・WebPだけを許可し、1枚8MB、3枚合計24MB、通信全体26MBの上限を設けています。
+
+ファイル名や`Content-Type`だけでは画像と断定できません。Pillowで実際に画像として開き、壊れた画像や極端に大きな画像も拒否します。
+
+Base64への変換はOpenAIへ画像を渡すための一時的な変換です。暗号化や匿名化そのものではありません。そのため、変換後の文字列をログやDBへ保存しません。
+
+将来、参考画像や身体写真を長期保存する場合は、公開URLへ直接置かず、本人だけが短時間アクセスできる署名付きURL・保存期限・削除機能が必要です。
+
+### AIへ直接ユーザーIDを渡さない
+
+`createSafetyIdentifier(clerkUserId)`は、ClerkのユーザーIDをそのままOpenAIへ送らず、外部から元のIDを読み取りにくい匿名IDへ変換します。
+
+`safety_identifier`は、OpenAI側で不正利用の傾向を区別するために使います。これは本人認証には使いません。本人認証は、OpenAIを呼ぶ前にClerkとバックエンドで完了させます。
+
+AIへ渡す情報は、回答に必要なプロフィール・記録・分析結果に絞ります。APIキー・メールアドレス・Clerk IDなどはAI入力へ含めません。
+
+### AIの医療・危険回答対策
+
+AIチャット・AIメニュー・身体分析の指示には、次の安全ルールを入れています。
+
+- 病気や怪我を診断しない
+- 薬や治療法を指示しない
+- 強い痛み・しびれ・胸痛・息苦しさなどがある場合は運動中止を案内する
+- 痛みを確認するために運動を続けさせない
+- 画像から分からない体脂肪率・年齢・人種・健康状態を作らない
+
+AIチャットではModerationも使用し、重大な危険入力を通常の筋トレ回答として処理しないようにします。
+
+AIの回答は必ず正しいとは限りません。プロンプトとModerationは危険を減らす対策であり、医師などの専門家による判断の代わりではありません。
+
+### Toolの安全対策
+
+AIチャットのToolは、OpenAIへDBの自由な操作権限を渡すものではありません。
+
+OpenAIが選べるのは、プロフィール・最新身体分析・最近の記録・最新AIメニュー・体重履歴など、あらかじめ定義した読取専用Toolです。
+
+Tool実行時にも`clerkUserId`から本人データを検索します。AIがユーザーIDを引数で自由指定する構成にはしていません。
+
+Toolの引数は`strict: true`と`additionalProperties: false`で、設計にない項目を受け取りません。さらに1回答で使えるTool回数にも上限を設け、無限ループや料金増加を防ぎます。
+
+### 安全なエラー応答
+
+利用者へ返すエラーには、DBのSQL・接続先・APIキー・外部サービスの詳しい本文を含めません。
+
+```typescript
+return Response.json(
+  {
+    error:
+      "AIチャットの処理に失敗しました。",
+  },
+  { status: 500 },
+);
+```
+
+詳しい内部エラーをそのまま返すと、攻撃者へ構成情報を教える可能性があります。そのため、利用者には安全な共通文を返し、開発者はリクエストIDと安全な分類ログで原因を追います。
+
+主なHTTP状態は次の意味です。
+
+- `400`：入力形式が正しくない
+- `401`：ログインを確認できない
+- `403`：本人再確認など追加権限が必要
+- `404`：本人が所有する対象データが見つからない
+- `409`：同じ操作を二重送信した
+- `413`：画像などが容量上限を超えた
+- `415`：許可していない画像形式
+- `429`：1日の利用上限または外部AIの利用制限
+- `500`：バックエンド設定または内部処理の失敗
+- `502`・`503`・`504`：Python・OpenAIなど外部通信の失敗、停止、タイムアウト
+
+### アカウント削除を慎重にする理由
+
+全データ削除は元に戻しにくい操作なので、通常のログイン確認だけでなくClerkの再本人確認と確認文字`DELETE`を要求します。
+
+削除対象のユーザーIDはフロントから受け取らず、認証済みトークンから取得した本人IDだけを使います。
+
+Neonの本人行を削除すると、`onDelete: "cascade"`によってプロフィール・体重・トレーニング・分析・AIメニュー・チャットなどの関連データも削除されます。
+
+ClerkとNeonは別サービスなので、完全に同じDBトランザクションにはできません。途中でClerk削除だけ失敗した場合は、成功したように見せず再実行可能なエラーを返します。
+
+### 自動テストで確認していること
+
+セキュリティは目視だけでなく、変更のたびに自動テストで再確認します。
+
+- 未ログインで本人APIへアクセスすると401になる
+- 別ユーザーIDでは取得・更新・削除が0件になる
+- 不正JSON・範囲外数値・長すぎる文章を拒否する
+- 同じIDや同じ日付の重複をDBが拒否する
+- 親と子の一括保存に失敗したとき、親だけ残らない
+- ユーザー削除時に関連データがcascadeで削除される
+- mobileコードにサーバー秘密鍵が含まれない
+- ログに写真・身体情報・トークン・APIキーを直接渡さない
+- OpenAI・Pythonのタイムアウトや障害を安全なHTTPエラーへ変換する
+- リクエストIDが安全な形式で生成・引継ぎされる
+
+### 本番公開前に残るセキュリティ確認
+
+コード側の基本対策は入っていますが、本番公開前には次も必要です。
+
+- Clerkを`pk_live_`・`sk_live_`の本番環境へ切り替える
+- 2つの実Clerkアカウントで他人のデータを操作できないことを画面から確認する
+- iPhone実機で認証・保存・更新・削除を確認する
+- 公開環境のログに秘密情報が出ていないことを確認する
+- OpenAIの予算アラートと公開先のログ監視を設定する
+- プライバシーポリシーと身体写真の利用目的・保存方針を表示する
+- 使用中の依存パッケージを定期的に更新・再監査する
+
+ここまで終わって初めて、コード上の対策だけでなく本番運用も含めたセキュリティ確認になります。
+
+## 追加：認証付き実APIテストと定期監視（2026-09-10）
+
+### 何のために追加したのか
+
+未ログイン通信が401になるだけでは、「ログインしたAさんがBさんの記録を変更できないか」までは確認できません。そこで`tests/authenticated-live-e2e.mjs`を追加し、ClerkとNeonへ実際に接続する2人分のテストを自動化しました。
+
+テストの間だけClerkへ2人の利用者を作り、それぞれ別のセッショントークンを発行します。終了時は`finally`でClerkとNeonのテストデータを削除するため、途中で失敗した場合も後片付けを試みます。
+
+### このテストで確認する流れ
+
+```text
+一時ClerkユーザーA・Bを作成
+↓
+各ユーザーのセッショントークンを発行
+↓
+bootstrapでNeonのusersへ登録
+↓
+Aの体重・記録・AIメニューを作る
+↓
+BのトークンではAのデータを変更・削除できないことを確認
+↓
+Aのトークンでは更新・削除できることを確認
+↓
+二重送信409と日次上限429を確認
+↓
+users削除時に関連データもcascadeで消えることを確認
+↓
+一時ユーザーを削除
+```
+
+実行コマンドは次の通りです。
+
+```bash
+npm run test:authenticated-live
+```
+
+### 覚えておきたいコード
+
+```javascript
+const session = await clerk.sessions.createSession({
+  userId: user.id,
+});
+
+const token = await clerk.sessions.getToken(session.id);
+```
+
+- `createSession()`：指定したテストユーザーをログイン中として扱うセッションを作る
+- `getToken()`：APIへ本人証明として送るJWTを取得する
+- `authorization: Bearer ...`：取得したトークンをHTTP通信へ付ける形
+- ユーザーAとBで別のトークンを使うことで、認証だけでなく認可も確認できる
+
+```javascript
+try {
+  await run();
+} finally {
+  // テストデータを削除する
+}
+```
+
+- `try`：通常のテストを実行する範囲
+- `finally`：成功・失敗に関係なく最後に実行される後片付け
+- 実データを使うテストでは、失敗時にも一時データを残しにくくするために重要
+
+### 確認できたHTTP状態
+
+- `200`：更新・削除・実施済み変更に成功
+- `201`：ユーザー、体重、トレーニング記録の作成に成功
+- `404`：別ユーザーの体重・記録・AIメニューを操作しようとして拒否
+- `409`：同じトレーニング記録の二重送信を拒否
+- `429`：AIチャット、AIメニュー、身体分析の日次上限を超えた通信を拒否
+
+### アカウント削除の再本人確認
+
+アカウント削除APIは、ログイン済みであるだけでは実行できません。Clerkの`reverification: "strict"`により、直近の本人再確認も必要です。バックエンドから自動作成したテストセッションでは403になり、削除が止まることを確認しました。
+
+これはエラーではなく、盗まれた古いセッションだけで全データを削除されないための安全機能です。最終的な削除ボタンのテストは、画面上で再本人確認を完了したセッションを使います。
+
+### 公開APIの定期監視
+
+`scripts/health-check.mjs`は、TypeScript APIとRender上のPython APIへ接続し、HTTP成功と`status: "ok"`を確認します。
+
+TypeScript側の`GET /api/health`は、起動しているだけでなくNeonへ`select 1`という非常に小さな読取も実行します。成功時は`dependencies.database`が`ok`になります。Neonへ接続できない場合はHTTP 503と`database: "unavailable"`を返しますが、接続URLやDBエラー本文は返しません。
+
+```typescript
+await getDb().execute(sql`select 1`);
+```
+
+- `getDb()`：Neonへ接続する共通入口を取得する
+- `execute()`：SQLを実行する
+- `select 1`：表の個人データを読まず、DBがSQLへ応答できるかだけを確認する軽い命令
+- HTTP 503：サーバーは動いているが、必要な依存先が一時的に利用できない状態
+
+```javascript
+const response = await fetch(target.url, {
+  signal: AbortSignal.timeout(30_000),
+});
+```
+
+- `fetch()`：公開URLへHTTP通信する
+- `AbortSignal.timeout(30_000)`：30秒応答がなければ停止し、監視を失敗扱いにする
+- `assert.equal()`：期待するHTTP状態やJSONでなければテストを失敗させる
+
+`.github/workflows/health-check.yml`は、このスクリプトをGitHub Actionsで毎時2回実行します。失敗はGitHub Actionsの実行履歴へ残り、GitHub側の通知設定に応じて通知されます。
+
+手元から同じ確認を行うコマンドは次の通りです。
+
+```bash
+npm run health:check
+```
+
+### Neonの復元確認
+
+Neonのブランチは、元のブランチのスキーマとデータをコピーした検証環境として使えます。開発DBから期限付きの確認用ブランチを作り、マイグレーション10件とusersデータが複製されることを確認しました。
+
+本番の表を直接変更せず復元後の状態を確認できるのがブランチの利点です。確認用ブランチは検査後に削除しました。
+
+### 公開ログの秘密情報点検
+
+公開Workerの直近91件を機械的に検索し、次の文字列がログへ出ていないことを確認しました。
+
+- OpenAIの秘密鍵
+- Clerkの秘密鍵
+- PostgreSQL接続URL
+- Bearerトークン
+- メールアドレス
+
+Authorizationヘッダーは`********`へ伏字化されていました。今後もデプロイ後に同じ点検を行います。
+
+## 追加：公開版バージョン5の最終確認（2026-09-11）
+
+### 今回何を確認したのか
+
+最新コードをCloudflare Sitesのバージョン5として公開しました。公開後は手元のコードだけを見るのではなく、実際の公開URLへ通信して次の順番を確認しています。
+
+```text
+監視スクリプト
+↓
+Cloudflare上のTypeScript API
+↓
+Neon PostgreSQL
+
+監視スクリプト
+↓
+Render上のPython身体分析API
+```
+
+TypeScript APIが起動していてもNeonへ接続できなければ、アプリの保存・取得機能は使えません。そのため`GET /api/health`の中でNeonへ`SELECT 1`を送り、データベースまで応答することを確認します。
+
+公開環境から返った主な結果は次の形です。
+
+```json
+{
+  "status": "ok",
+  "environment": "production",
+  "dependencies": {
+    "database": "ok"
+  }
+}
+```
+
+- `status: "ok"`：TypeScript APIのヘルス確認が完了した
+- `environment: "production"`：ローカルではなく公開環境で動いている
+- `dependencies.database: "ok"`：Neonへ実際に小さなSQLを送り、応答を受け取れた
+- HTTP 200：必要な処理が正常に完了した
+- HTTP 503：API自体は動いていても、Neonなど必要な接続先が利用できない
+
+### 全テストの読み方
+
+```bash
+npm run test:all
+```
+
+この1行は、複数のテストを決めた順番でまとめて実行します。
+
+- API単体テスト：入力値や安全ルールを確認する
+- ソースセキュリティテスト：秘密鍵や個人情報を端末・ログへ出していないか確認する
+- Pythonテスト：画像検査とOpenAI障害時のHTTP状態を確認する
+- mobileテスト：フロントからAPIへ送る内容とタイムアウトを確認する
+- TypeScript・Lint・Build：型、書き方、公開用ビルドを確認する
+- Neon実DBテスト：制約、更新、削除、cascadeを本物のDBで確認する
+- 公開APIテスト：公開URLが動き、未ログイン通信を拒否することを確認する
+
+外部通信が禁止された実行環境では、Neonのホスト名を見つけられず`ENOTFOUND`になる場合があります。これはアプリのコードエラーとは限りません。今回も通信許可を付けて同じ全テストを再実行し、最後まで合格することを確認しました。
+
+### 定期監視が動く場所
+
+`.github/workflows/health-check.yml`はGitHub Actions上で毎時2回起動し、`scripts/health-check.mjs`を実行します。Macのターミナルを開き続ける必要はありません。
+
+定期監視で失敗した場合はGitHub Actionsの履歴に失敗が残ります。通知を受け取るかどうかはGitHubアカウント側の通知設定で決まります。
+
+### 公開ログで再確認したこと
+
+バージョン5公開後のWorkerログでは、`GET /api/health`がHTTP 200で終了し、アプリ側のリクエストIDと処理時間が記録されていました。秘密鍵、DB接続URL、Bearerトークン、身体画像、質問本文はログへ出していません。
+
+## 食事管理の保存とAI連携
+
+### 何をする機能か
+
+食事画面で入力した食事区分・食事名・カロリー・たんぱく質を、ログイン中の本人の記録としてNeonへ保存します。画面を閉じたりアプリを再起動したりしても、同じアカウントなら保存済みデータを取得できます。
+
+```text
+mobile/src/app/food.tsx
+  ↓ 画面の入力をまとめる
+mobile/src/lib/foodRecords.ts
+  ↓ Clerkトークンを付けてHTTP通信
+app/api/food-records/route.ts
+  ↓ 本人確認・入力検査
+db/schema.ts の food_records
+  ↓
+Neon PostgreSQL
+```
+
+### ファイルごとの役割
+
+- `mobile/src/app/food.tsx`：利用者が触る画面、入力State、一覧、合計、保存・削除ボタンを担当する
+- `mobile/src/lib/foodRecords.ts`：画面とバックエンドの間でGET・POST・PATCH・DELETE通信を行う
+- `app/api/food-records/route.ts`：Clerkで本人を確認し、Neonへ安全に読み書きする
+- `app/lib/validation/apiSchemas.ts`：食事区分、文字数、カロリー、たんぱく質の許容範囲を決める
+- `db/schema.ts`：Neonに作る`food_records`テーブルの列・関連・制約を決める
+- `drizzle-postgres/0010_ancient_ozymandias.sql`：決めたテーブルを実際のNeonへ作るマイグレーション
+
+### 画面側で使う基本の文法
+
+```ts
+const { getToken } = useAuth();
+```
+
+`useAuth()`はClerkのログイン状態を利用するReact Hookです。`getToken`を呼ぶと、バックエンドへ「誰が操作しているか」を安全に伝える短時間の認証トークンを取得できます。
+
+```ts
+const records = await fetchFoodRecords(getToken, today);
+```
+
+`await`は通信が終わるまで次の行を待ちます。取得が完了すると、`records`へNeonから返された当日の食事一覧が入ります。
+
+```ts
+setEntries(records);
+```
+
+取得した一覧をReactのStateへ保存します。Stateが変わると画面が再描画され、保存済みの食事が表示されます。
+
+```ts
+entries.reduce((total, item) => total + item.calories, 0)
+```
+
+`.reduce()`は配列を1つの値へまとめる処理です。ここでは`0`から始め、各食事のカロリーを順番に足して当日の合計を作ります。
+
+### APIの4つの処理
+
+- `GET /api/food-records?date=YYYY-MM-DD`：指定日の本人の記録を読む
+- `POST /api/food-records`：新しい記録を保存する
+- `PATCH /api/food-records`：本人の既存記録を変更する
+- `DELETE /api/food-records?recordId=...`：本人の記録を1件削除する
+
+GETは「受け取る」、POSTは「新しく保存する」、PATCHは「一部を直す」、DELETEは「削除する」という役割です。
+
+### なぜ毎回本人確認をするのか
+
+一度ログインしても、API通信はそれぞれ独立したお願いとして届きます。バックエンドは毎回Clerkトークンを確認し、取得した`clerkUserId`とNeonの`users.clerk_user_id`を照合します。
+
+さらに変更・削除では、次の2条件を同時に指定します。
+
+```ts
+and(
+  eq(foodRecords.id, recordId),
+  eq(foodRecords.userId, userId),
+)
+```
+
+1行目は対象の食事記録ID、2行目はログイン中の本人IDです。両方が一致しない限り変更・削除できないため、他人が記録IDを知っても操作できません。
+
+### ZodとDB制約を両方使う理由
+
+ZodはAPI入口で不正な入力をHTTP 400として分かりやすく拒否します。DB制約は、API以外の経路や将来のコードミスがあってもNeonへ不正値を保存させない最後の防御です。
+
+- 食事区分：朝食・昼食・夕食・間食だけ
+- 食事名：1〜100文字
+- カロリー：0〜10000
+- たんぱく質：0〜1000g
+
+### AIへ渡す流れ
+
+`getUserAiContext.ts`は本人の最近7日間の食事をNeonから取得し、`recentFoodRecords`へまとめます。AIメニューはこのデータを最初から受け取り、最近の食事をトレーニング量と一般的な栄養助言の参考にします。
+
+AIチャットは毎回すべてを読むのではなく、食事について質問されたときに`get_recent_food_records` Toolを選びます。`runChatTool.ts`が本人のデータだけを取得してOpenAIへ返します。この構成により、不要なデータ送信とAPI料金を抑えられます。
+
+AIは食事履歴だけから病気や栄養不足を診断せず、治療・投薬・極端な食事制限を指示しないルールにしています。
+
+## 食事・AI・アカウント削除の実通信テスト
+
+対象ファイルは`tests/food-ai-account-live-e2e.mjs`です。使用言語はJavaScriptです。
+
+このファイルは、個別のコードが存在するだけでなく、Clerk、TypeScript API、Neon、OpenAIが実際につながるかを一時テストユーザーで確かめます。本物の利用者データは使いません。
+
+```text
+一時Clerkユーザーを作る
+↓
+bootstrapでNeonへ本人を登録
+↓
+食事をPOST保存
+↓
+別のGET通信で再取得
+↓
+AIチャットへ食事について質問
+↓
+AIメニューを生成
+↓
+食事をDELETEしてNeonから消えたか確認
+↓
+古い本人確認状態ではアカウント削除が403になるか確認
+↓
+テスト用のNeon関連データとClerkアカウントを削除
+```
+
+### なぜ別のGET通信で取り直すのか
+
+保存直後の画面Stateにデータが残るだけでは、本当にNeonへ保存できた証明になりません。POSTとは別のGET通信を行い、同じ食事名・777kcal・たんぱく質55gが返ることを確認しています。これは「アプリを再起動しても残るか」のバックエンド側の確認に相当します。
+
+### AIチャットが食事を使ったと判断する方法
+
+テストごとに重複しない食事名を作り、AIへ保存済み食事を尋ねます。回答に固有の食事名、777、55が含まれることを`assert.match()`で確認します。たまたま一般知識で答えたのではなく、`get_recent_food_records` Toolから本人のNeonデータを取得したと判断できます。
+
+```javascript
+assert.match(chat.body.reply, new RegExp(uniqueFoodName));
+assert.match(chat.body.reply, /777/);
+assert.match(chat.body.reply, /55/);
+```
+
+`assert.match()`は、実際の文字列に期待する文字が含まれるかを検査するJavaScriptのテスト文法です。条件を満たさない場合は、その場でテストを失敗させます。
+
+### AIメニューへ食事が渡る場所
+
+`app/api/ai-menu/route.ts`の`aiInput`へ`recentFoodRecords`を入れています。そのため、AIメニューはプロフィール、身体分析、最近のトレーニングと同時に、最近7日間の食事も受け取ります。テストではメニューが決められたJSON形式で返り、種目と助言がNeonへ保存されることまで確認します。
+
+### アカウント削除画面の役割
+
+対象は`mobile/src/app/my-page.tsx`と`mobile/src/lib/account.ts`です。使用言語はTypeScriptとReact Nativeです。
+
+```typescript
+const deleteAccountWithReverification = useReverification(
+  async () => {
+    const token = await getTokenRef.current();
+    return deleteAccount(token);
+  },
+);
+```
+
+`useReverification()`は、Clerkの本人再確認が必要な通信を包むHookです。APIが再確認用の403を返すと、Clerkが本人確認画面を表示します。確認が成功すると、包んでいた`deleteAccount(token)`を自動でもう一度実行します。
+
+`getTokenRef.current()`は、現在のClerkトークン取得関数を参照します。再確認後は新しい本人確認状態を含むトークンが必要なので、処理を実行する時点の関数からトークンを取得します。
+
+削除ボタンは`deleteConfirmation !== 'DELETE'`の間は無効です。これにより、ボタンへ偶然触れただけでは削除通信を送れません。さらに確認ダイアログ、Clerk再確認、バックエンドの確認文字検査という複数段階で誤操作を防ぎます。
+
+### なぜ自動作成セッションでは403になるのか
+
+テストコードが管理APIで作るセッションは、利用者がメールコードなどを入力して本人確認したセッションではありません。そのため`reverification: "strict"`を満たさず、削除APIは意図どおり403を返します。
+
+これは失敗ではなく安全機能の確認です。実画面では`useReverification()`が確認画面を表示し、利用者が確認を終えたあとに削除APIを再送します。自動テストでは、古いセッションで削除できないことに加え、テスト用Neonユーザー削除による関連データのcascadeとClerkテストアカウント削除を個別に実通信で確認しています。
+
+実行コマンドは次です。このテストはOpenAIをチャット1回・メニュー1回使用します。
+
+```bash
+npm run test:food-ai-account-live
+```
+
+2026年9月13日の実行では全18項目が合格しました。テスト終了後は`finally`によって一時ユーザーだけを削除し、通常利用者のデータには触れていません。公開APIはSitesバージョン7へ反映し、TypeScript API、Neon、RenderのヘルスチェックがすべてHTTP 200になっています。
+
+## 2026年9月13日：身体分析を最初から最後まで確認するテスト
+
+対象ファイル：`tests/body-analysis-live-e2e.mjs`
+
+このファイルは、身体分析の一部分だけではなく、次の受け渡し全体を確認します。
+
+```text
+一時Clerkユーザーを作る
+↓
+初回登録・理想体型・身体情報を保存する
+↓
+合成した正面・横・背面画像をTypeScript APIへ送る
+↓
+TypeScript APIがPythonへ画像と身体情報を渡す
+↓
+PythonがOpenAIから分析JSONを受け取る
+↓
+TypeScript APIが分析本体と部位別結果をNeonへ保存する
+↓
+GET通信で同じ分析履歴を取得する
+↓
+テスト用ユーザーと関連データを削除する
+```
+
+### `freshToken`は何をしているか
+
+```javascript
+const freshToken = async () =>
+  (await clerk.sessions.getToken(session.id)).jwt;
+```
+
+`const freshToken`は、最新のClerk認証トークンを取得する関数を定義しています。
+
+`async`は、通信結果を待つ処理が入る関数であることを表します。
+
+`await clerk.sessions.getToken(session.id)`は、Clerkへ現在のセッション用トークンを問い合わせ、返るまで待ちます。
+
+`.jwt`は、Clerkから返ったデータの中からAPI認証に使うJWT文字列だけを取り出します。
+
+画像分析やAIメニュー生成には時間がかかるため、最初に取得したJWTが途中で期限切れになる場合があります。そのため、長い処理の後も同じ文字列を使い続けず、次のAPI通信直前に新しいJWTを取得します。これはスマホアプリが通信前に`getToken()`を呼ぶ動きと同じ考え方です。
+
+### 画像3枚を`FormData`へ入れる理由
+
+```javascript
+const formData = new FormData();
+
+formData.append(
+  "front_image",
+  await imageBlob("tmp/body-analysis-test/front.png"),
+  "front.png",
+);
+```
+
+`new FormData()`は、文字だけでなく画像ファイルもHTTP通信で送れる入れ物を作ります。
+
+`append()`は、その入れ物へ1項目を追加します。
+
+`"front_image"`はTypeScript側の`requestFormData.get("front_image")`と対応する名前です。送る側と受け取る側で同じ名前にする必要があります。
+
+`imageBlob()`はローカルの合成画像を読み込み、`image/png`形式のファイルデータへ変換します。
+
+`"front.png"`は、送信するファイル名です。
+
+同じ形式で`side_image`と`back_image`も追加するため、TypeScript APIは正面・横・背面の3枚を区別できます。
+
+### Neonへ本当に保存されたことの確認
+
+```javascript
+const savedRows = await sql`
+  select
+    (select count(*)::int from body_analyses where id = ${analysisBody.bodyAnalysisId}) as analyses,
+    (select count(*)::int from body_analysis_areas where analysis_id = ${analysisBody.bodyAnalysisId}) as areas
+`;
+```
+
+`body_analyses`では、分析のまとめが1件保存されたか確認します。
+
+`body_analysis_areas`では、肩・胸・背中などの部位別結果が保存された数を確認します。
+
+`bodyAnalysisId`を条件にすることで、別の利用者や過去の分析ではなく、今実行した分析だけを確認できます。
+
+### `try`と`finally`を使う理由
+
+テスト途中で失敗しても一時ユーザーがClerkやNeonへ残らないよう、削除処理を`finally`へ置いています。
+
+`try`の途中でエラーが発生しても、`finally`は最後に必ず実行されます。そのため、通常利用者のデータには触れず、このテスト自身が作ったユーザーだけを片付けられます。
+
+### 実行方法
+
+TypeScript APIを起動した状態で、別ターミナルから次を実行します。
+
+```bash
+npm run test:body-analysis-live
+```
+
+2026年9月13日の確認では、PythonとOpenAIから正常な分析JSONが返り、分析本体、部位別結果、履歴GET、Neon保存のすべてが合格しました。
+
+## iPhone相当の画面確認と実機確認の違い
+
+390×844のブラウザ確認では、スマートフォン幅でレイアウトが横にはみ出さないことを検査できます。
+
+ただし、ブラウザ確認だけではiPhoneのカメラ権限、写真アプリの選択画面、Appleログイン、アプリを完全終了した後の動作までは再現できません。この4点は、Expo GoまたはiOS開発ビルドを実際のiPhoneへ入れて確認します。
+
+## 月額プランと現在の利用制限（2026年9月14日版）
+
+ここからが現在の正しい仕様です。これより前にある「AIチャット100回」「身体分析1日1回」という説明は、変更前の学習記録です。
+
+### 現在のルール
+
+```text
+AIチャット
+→ 全ユーザーが1日30回まで
+
+AIメニュー
+→ 全ユーザーが1日3回まで
+→ 最初の生成1回と再生成2回を合わせて3回
+
+食事・カロリー管理
+→ 月額1,000円の有料会員だけ利用可能
+
+身体分析
+→ 最初の1回だけ無料
+→ 2回目以降は月額1,000円の有料会員だけ利用可能
+→ 有料会員も日本時間の1か月に4回まで
+```
+
+利用回数の判定はフロントではなくバックエンドで行います。フロントのボタンを隠すだけでは、APIを直接呼ばれると制限を回避されるためです。
+
+### 関係するファイル
+
+```text
+db/schema.ts
+→ Appleで確認済みの課金状態を保存するテーブル
+
+app/lib/subscriptions/policy.ts
+→ 価格・無料条件・月4回というルールだけを管理
+
+app/lib/subscriptions/entitlements.ts
+→ Neonから本人の課金状態を取得し、有料会員か判定
+
+app/api/subscription/route.ts
+→ フロントへ現在のプランと利用可能機能を返す
+
+app/api/food-records/route.ts
+→ 食事の保存・取得・変更・削除前に有料会員か確認
+
+app/api/body-analysis/route.ts
+→ 初回無料・2回目以降の課金・月4回を確認
+
+app/api/chat/route.ts
+→ AIチャットを日本時間で1日30回に制限
+
+app/api/ai-menu/route.ts
+→ AIメニューを再生成込みで1日3回に制限
+```
+
+### `user_subscriptions`テーブルは何を保存するか
+
+`userSubscriptions`は、利用者がフロントで「購入した」と送った内容をそのまま信用する場所ではありません。Appleの署名付き取引情報をバックエンドで検証できた後、その結果だけを保存する場所です。
+
+`userId`は、課金状態をNeon内の本人へ結び付けます。
+
+`productId`は、購入されたApp Storeの商品を表します。想定商品は`musclepas.premium.monthly`です。
+
+`originalTransactionId`は、Appleのサブスクリプションを継続して追跡するための取引IDです。
+
+`status`は、現在使えるかを`active`、`grace_period`、`expired`、`revoked`などで表します。
+
+`expiresAt`は、有料期間が終わる日時です。`active`でも期限切れなら有料会員として扱いません。
+
+`environment`は、App Storeのテスト購入である`sandbox`と本番購入である`production`を区別します。
+
+### 有料会員の判定
+
+```ts
+const premiumAccess = await getPremiumAccess(user.id);
+```
+
+`await`は、Neonから課金状態が返るまで待つという意味です。
+
+`getPremiumAccess(user.id)`は、ログイン中の本人の課金情報だけを検索します。
+
+検索条件は、状態が`active`または`grace_period`で、`expiresAt`が現在時刻より未来であることです。
+
+条件を満たす行があれば`isPremium: true`、なければ`isPremium: false`を返します。
+
+### 食事・カロリー管理の判定
+
+`GET`・`POST`・`PATCH`・`DELETE`の全部で課金状態を確認します。
+
+読み取りだけ無料にすると、無料ユーザーも過去のカロリー機能を使い続けられるため、今回は一覧取得を含む全操作を有料対象にしています。
+
+無料ユーザーにはHTTP 402と`PREMIUM_REQUIRED`を返します。フロントはこのcodeを見て、月額1,000円プランの案内画面を表示できます。
+
+### 身体分析の初回無料と月4回
+
+最初にNeonから次の2つを数えます。
+
+```text
+本人が今まで完了した分析の総数
+本人が今月完了した分析の数
+```
+
+総数が0なら、課金状態に関係なく初回無料で通します。
+
+総数が1以上で無料会員なら、OpenAIへ画像を送る前にHTTP 402で止めます。この順番にすることで、利用できない分析のOpenAI料金は発生しません。
+
+有料会員でも今月の完了数が4以上なら、HTTP 429と翌月の利用可能日時を返します。
+
+同時に複数回送信された場合は「本人ID・日本時間の年月・現在の利用枠」から同じ受付IDを作り、Neonの一意制約で1件だけを通します。
+
+### AIチャット30回とAIメニュー3回
+
+AIチャットは`AI_CHAT_DAILY_LIMIT=30`、AIメニューは`AI_MENU_DAILY_LIMIT=3`を使います。
+
+どちらもOpenAIへ送る前に、本人が日本時間の今日すでに使用した回数をNeonで数えます。
+
+上限に達していればHTTP 429を返すため、上限を超えた分のOpenAI料金は発生しません。
+
+AIメニューでは新規生成と再生成を同じ`ai_generated_menus`へ保存して数えるため、1回生成して2回再生成すると合計3回です。
+
+### 利益を守る予算設計
+
+月額1,000円は売上であり、その全額が残るわけではありません。App Store手数料、OpenAI、Neon、Renderなどの費用を差し引いて利益を確認します。
+
+最初の運用目安は、1人あたりのOpenAI費用を月額売上の20%以内、つまり月200円以内に置きます。App Store手数料や税を考えると、実際の利益計算ではさらに余裕を持たせます。
+
+```text
+月の実売上
+－ App Store手数料
+－ OpenAI実費
+－ Neon・Renderなどの月額費用
+＝ 残る利益
+```
+
+現在の回数制限は「暴走を事前に止める仕組み」、使用トークンログは「実際の利用量を見る仕組み」です。
+
+OpenAI Platformではプロジェクト予算アラートを設定し、アプリ側では本文を保存せずトークン数だけをログへ記録します。運用開始後はOpenAI Costs APIの実費とApp Storeの実売上を月次で比較し、30回・3回・月4回の上限が利益に合うか調整します。
+
+重要なのは、予算アラートは通常「通知」であり、必ずAPI通信を停止する機能とは限らないことです。そのため、アプリ側の回数制限を残します。
+
+### まだ残っている課金作業
+
+現在完成しているのは、Neonの課金状態を使って機能を許可・拒否するバックエンドです。
+
+App Storeで実際に月額1,000円を購入するには、フロントのStoreKit購入・購入復元、Appleの署名付き取引情報の検証、App Store Server Notifications V2による更新・解約・返金の反映が必要です。
+
+このApple検証が完成するまでは、フロントから送られた`isPremium: true`のような自己申告だけで有料状態へ変更してはいけません。
+
+### 自動テスト結果
+
+2026年9月14日に次を確認しました。
+
+- AIチャットは日本時間の上限30回でHTTP 429になる
+- AIメニューは新規生成と再生成を合わせた上限3回でHTTP 429になる
+- 身体分析は有料会員でも月4回使用後にHTTP 429になる
+- 無料ユーザーの食事保存はHTTP 402になる
+- テスト用の有料状態では食事の保存・再取得・削除が成功する
+- `GET /api/subscription`は月額1,000円と`premium`を返す
+- AIチャットとAIメニューが保存済み食事を参照できる
+- 別ユーザーは他人の食事を変更・削除できない
+- テスト終了後、一時ClerkユーザーとNeon関連データが削除される
+
+本番Neonを直接変更する前に一時ブランチを作り、課金テーブルの外部キー、一意制約、状態チェック、期限検索インデックスも確認しました。
+
+承認後、本番Neonへ同じ課金テーブルを適用し、テーブル1件、制約15件、インデックス4件が存在することを再確認しました。一時ブランチは適用後に削除されています。
+
+公開Sitesの`AI_CHAT_DAILY_LIMIT`も100から30へ変更し、課金・利用制限を含むバージョン8を公開しました。公開URLのTypeScript API、Neon、RenderはHTTP 200、本人データAPIは未ログイン通信をHTTP 401で拒否しました。
+
+本番Neonの特権接続文字列をローカルE2Eへ直接渡す方法は、秘密漏えいの危険があるため使用しません。公開環境は、公開ヘルスチェックと認証保護、本番DBの読み取り検査、開発DBでの認証付きE2Eを組み合わせて確認しています。

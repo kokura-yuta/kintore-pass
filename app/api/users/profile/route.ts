@@ -10,6 +10,7 @@ import {
   users,
 } from "@/db/schema";
 import { profileSchema } from "@/app/lib/validation/apiSchemas";
+import { logServerError } from "@/app/lib/observability/serverLog";
 
 
 // GET通信を受け取り、ログイン中のユーザーの身体プロフィールを取得する場所
@@ -81,10 +82,7 @@ export async function GET(
     });
   } catch (error) {
     // 詳しい原因は利用者へ返さず、開発者向けサーバーログへ残す
-    console.error(
-      "身体プロフィールの取得に失敗しました。",
-      error,
-    );
+    logServerError("profile_get_failed", error);
 
     // フロントエンドへ安全なエラーとHTTP 500を返す
     return Response.json(
@@ -140,6 +138,7 @@ export async function PATCH(
     weeklyTrainingDays = null,
     availableMinutes = null,
     trainingLocation = null,
+    trainingStyle = null,
     weakBodyParts = null,
   } = body;
 
@@ -182,6 +181,7 @@ const matchedUsers = await db
     weeklyTrainingDays,
     availableMinutes,
     trainingLocation,
+    trainingStyle,
     weakBodyParts,
     updatedAt: new Date(),
   };

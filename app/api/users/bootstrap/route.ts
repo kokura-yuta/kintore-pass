@@ -12,6 +12,7 @@ import {
 } from "@/app/lib/auth/clerk-auth";
 import { getDb } from "@/db";
 import { users } from "@/db/schema";
+import { logServerError } from "@/app/lib/observability/serverLog";
 
 // POST通信を受け取り、ユーザー初期化処理を開始する場所
 export async function POST(
@@ -129,10 +130,7 @@ export async function POST(
     );
   } catch (error) {
     // 詳しい原因は利用者へ返さず、開発者が確認するサーバーログへ残す
-    console.error(
-      "ユーザー初期化に失敗しました。",
-      error,
-    );
+    logServerError("user_bootstrap_failed", error);
 
     // フロントエンドへ安全なメッセージとHTTP 500を返す
     return Response.json(

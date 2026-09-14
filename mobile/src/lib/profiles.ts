@@ -2,6 +2,7 @@
 import type {
   ProfileDraft,
   TrainingLocation,
+  TrainingStyle,
 } from '@/contexts/OnboardingContext';
 import { apiRequest } from '@/lib/api';
 
@@ -14,6 +15,7 @@ export type UserProfile = {
   weeklyTrainingDays: number | null;
   availableMinutes: number | null;
   trainingLocation: TrainingLocation | null;
+  trainingStyle: TrainingStyle | null;
   weakBodyParts: string[] | null;
 };
 
@@ -54,6 +56,8 @@ export function profileDraftToApiInput(
       profile.availableMinutes,
     trainingLocation:
       profile.trainingLocation,
+    trainingStyle:
+      profile.trainingStyle,
     weakBodyParts:
       profile.weakBodyParts,
   };
@@ -76,7 +80,8 @@ export function userProfileToDraft(
       profile.availableMinutes,
     trainingLocation:
       profile.trainingLocation,
-    trainingStyle: null,
+    trainingStyle:
+      profile.trainingStyle,
     weakBodyParts:
       profile.weakBodyParts ?? [],
   };

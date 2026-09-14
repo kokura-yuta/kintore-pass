@@ -10,6 +10,7 @@ import {
 import {
   getClerkUserId,
 } from "@/app/lib/auth/clerk-auth";
+import { logServerError } from "@/app/lib/observability/serverLog";
 
 // Neonを操作する共通のDB接続
 import { getDb } from "@/db";
@@ -176,10 +177,7 @@ export async function GET(
     });
   } catch (error) {
     // 詳しい原因は利用者へ返さずサーバーログへ残す
-    console.error(
-      "ホーム情報の取得に失敗しました。",
-      error,
-    );
+    logServerError("home_get_failed", error);
 
     // フロントへ安全な共通エラーを返す
     return Response.json(
@@ -191,4 +189,3 @@ export async function GET(
     );
   }
 }
-

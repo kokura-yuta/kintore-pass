@@ -4,6 +4,7 @@ import {
   and,
   desc,
   eq,
+  gte,
 } from "drizzle-orm";
 
 import { getDb } from "@/db";
@@ -13,6 +14,7 @@ import {
   aiGeneratedMenus,
   bodyAnalyses,
   bodyAnalysisAreas,
+  foodRecords,
   trainingExercises,
   trainingSessions,
   trainingSets,
@@ -70,6 +72,15 @@ export type UserAiContext = {
         reps: number | null;
       }[];
     }[];
+  }[];
+
+  // AIが栄養状況を判断するときに参考にする最近7日間の食事記録
+  recentFoodRecords: {
+    recordedDate: string;
+    mealType: string;
+    name: string;
+    calories: number;
+    proteinGrams: number;
   }[];
 
   // 同じ内容が続きすぎないようにAIが比較する直近の生成メニュー
@@ -296,6 +307,47 @@ export async function getUserAiContext(
         },
       ),
     );
+
+  // 今日を含む最近7日間の開始日をYYYY-MM-DD形式で作る
+  const foodRecordStartDate = new Date();
+  foodRecordStartDate.setDate(
+    foodRecordStartDate.getDate() - 6,
+  );
+  const foodRecordStartDateText =
+    foodRecordStartDate.toLocaleDateString(
+      "en-CA",
+      { timeZone: "Asia/Tokyo" },
+    );
+
+  // 本人の最近7日間の食事を新しい順で最大100件取得する
+  const recentFoodRecords = await db
+    .select({
+      recordedDate:
+        foodRecords.recordedDate,
+      mealType: foodRecords.mealType,
+      name: foodRecords.name,
+      calories: foodRecords.calories,
+      proteinGrams:
+        foodRecords.proteinGrams,
+    })
+    .from(foodRecords)
+    .where(
+      and(
+        eq(
+          foodRecords.userId,
+          user.userId,
+        ),
+        gte(
+          foodRecords.recordedDate,
+          foodRecordStartDateText,
+        ),
+      ),
+    )
+    .orderBy(
+      desc(foodRecords.recordedDate),
+      desc(foodRecords.createdAt),
+    )
+    .limit(100);
   // 本人が直近に生成したAIメニュー本体を新しい順で3件取得する
   const recentMenus = await db
     .select({
@@ -386,6 +438,7 @@ export async function getUserAiContext(
       : null,
 
     recentTrainingSessions,
+    recentFoodRecords,
     recentAiMenus,
   };
 }

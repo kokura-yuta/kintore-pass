@@ -1,10 +1,7 @@
 import { createContext, type PropsWithChildren, useContext, useMemo, useState } from 'react';
+import type { WeightRecord } from '@/lib/weightRecords';
 
-export type WeightRecord = {
-  id: string;
-  recordedOn: string;
-  weightKg: number;
-};
+export type { WeightRecord } from '@/lib/weightRecords';
 
 const previewRecords: WeightRecord[] = [
   { id: 'preview-1', recordedOn: '2026-08-01', weightKg: 67.4 },

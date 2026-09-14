@@ -35,7 +35,10 @@ export type TrainingRecordResponseItem = {
   conditionScore: number | null;
   memo: string | null;
   exercises: {
+    exerciseId: string;
     exerciseName: string;
+    bodyPart: string;
+    bodyArea: string | null;
     sets: {
       setNumber: number;
       weightKg: number | null;
@@ -60,5 +63,25 @@ export function getTrainingRecords(token: string) {
   return apiRequest<GetTrainingRecordsResponse>('/api/training-records', {
     method: 'GET',
     token,
+  });
+}
+
+export function updateTrainingRecord(
+  token: string,
+  trainingSessionId: string,
+  input: CreateTrainingRecordInput,
+) {
+  return apiRequest<CreateTrainingRecordResponse>('/api/training-records', {
+    method: 'PATCH',
+    token,
+    body: JSON.stringify({ trainingSessionId, ...input }),
+  });
+}
+
+export function deleteTrainingRecord(token: string, trainingSessionId: string) {
+  return apiRequest<{ message: string; deletedTrainingSessionId: string }>('/api/training-records', {
+    method: 'DELETE',
+    token,
+    body: JSON.stringify({ trainingSessionId }),
   });
 }

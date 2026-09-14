@@ -1,5 +1,7 @@
 # 身体画像を分析し、TypeScriptバックエンドへ結果JSONを返すPython API
 import base64
+import json
+import logging
 import os
 from io import BytesIO
 from pathlib import Path
@@ -29,6 +31,8 @@ ENV_FILE_PATH = (
     / ".env.local"
 )
 load_dotenv(ENV_FILE_PATH)
+
+logger = logging.getLogger("musclepas.body_analysis")
 
 
 def read_positive_float_env(
@@ -278,6 +282,12 @@ async def analyze_body(
         ge=0,
         le=80,
     ),
+    request_id: str | None = Form(
+        None,
+        min_length=8,
+        max_length=64,
+        pattern=r"^[A-Za-z0-9_-]+$",
+    ),
 ):
     # 正面・横・背面を同じ検査関数で安全確認し、3枚の容量を合計する
     total_image_size_bytes = 0
@@ -423,6 +433,22 @@ async def analyze_body(
         raise HTTPException(
             status_code=502,
             detail="身体分析結果を取得できませんでした。",
+        )
+
+    # 身体写真や分析本文は残さず、OpenAIの利用トークン数だけを記録する
+    if response.usage is not None:
+        logger.info(
+            json.dumps(
+                {
+                    "level": "info",
+                    "event": "openai_usage",
+                    "feature": "body_analysis",
+                    "requestId": request_id,
+                    "inputTokens": response.usage.input_tokens,
+                    "outputTokens": response.usage.output_tokens,
+                    "totalTokens": response.usage.total_tokens,
+                }
+            )
         )
 
     return response.output_parsed

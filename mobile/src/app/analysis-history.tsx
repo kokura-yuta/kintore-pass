@@ -5,6 +5,8 @@ import {
 } from 'expo-router';
 import {
   useCallback,
+  useEffect,
+  useRef,
   useState,
 } from 'react';
 import {
@@ -70,6 +72,7 @@ export default function AnalysisHistoryScreen() {
   const { getToken } = useAuth({
     treatPendingAsSignedOut: false,
   });
+  const getTokenRef = useRef(getToken);
   const [analyses, setAnalyses] = useState<
     BodyAnalysisHistoryItem[]
   >([]);
@@ -80,13 +83,18 @@ export default function AnalysisHistoryScreen() {
   const [errorMessage, setErrorMessage] =
     useState('');
 
+  // getTokenの最新版をRefへ保存し、履歴取得関数が再描画のたびに作り直されないようにする
+  useEffect(() => {
+    getTokenRef.current = getToken;
+  }, [getToken]);
+
   // 本人の身体分析履歴をバックエンド経由でNeonから取得する
   const loadHistory = useCallback(async () => {
     setStatus('loading');
     setErrorMessage('');
 
     try {
-      const token = await getToken();
+      const token = await getTokenRef.current();
 
       if (!token) {
         throw new Error(
@@ -115,7 +123,7 @@ export default function AnalysisHistoryScreen() {
       );
       setStatus('error');
     }
-  }, [getToken]);
+  }, []);
 
   // 分析画面から戻った場合も最新履歴へ更新する
   useFocusEffect(

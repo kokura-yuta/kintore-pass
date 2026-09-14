@@ -67,6 +67,28 @@ export async function runChatTool(
       clerkUserId,
     );
   }
+  // 食事履歴Toolが選ばれた場合は本人の最近7日間の記録を取得する
+  if (
+    toolName ===
+    "get_recent_food_records"
+  ) {
+    const aiContext =
+      await getUserAiContext(
+        clerkUserId,
+      );
+
+    if (!aiContext) {
+      return JSON.stringify({
+        error:
+          "ユーザー情報が見つかりません。",
+      });
+    }
+
+    return JSON.stringify({
+      recentFoodRecords:
+        aiContext.recentFoodRecords,
+    });
+  }
   if (toolName !== "get_user_profile") {
     return JSON.stringify({
       error:
