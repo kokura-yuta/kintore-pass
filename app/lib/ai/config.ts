@@ -20,7 +20,7 @@ export const openAiChatModel =
 
 export const openAiMenuModel =
   process.env.OPENAI_MENU_MODEL?.trim() ||
-  openAiChatModel;
+  "gpt-5.6-luna";
 
 export const maxChatToolCalls =
   readPositiveInteger(
@@ -32,23 +32,29 @@ export const maxChatToolCalls =
 export const maxChatOutputTokens =
   readPositiveInteger(
     "OPENAI_CHAT_MAX_OUTPUT_TOKENS",
-    3000,
-    8000,
+    600,
+    1200,
   );
 
 export const maxMenuOutputTokens =
   readPositiveInteger(
     "OPENAI_MENU_MAX_OUTPUT_TOKENS",
+    1800,
     4000,
-    8000,
   );
 
 export const maxChatAnswerCharacters =
   readPositiveInteger(
     "AI_CHAT_MAX_ANSWER_CHARACTERS",
-    4000,
-    8000,
+    400,
+    800,
   );
+
+// OpenAIへ渡す通常会話は直近5往復（利用者5件＋AI5件）までにする
+export const recentChatMessageLimit = 10;
+
+// 古い会話をまとめたDB要約が大きくなり続けないよう上限を決める
+export const maxChatSummaryCharacters = 800;
 
 // DBとフロントへ保存する前に長すぎるAI回答を切り詰める
 export function limitChatAnswer(

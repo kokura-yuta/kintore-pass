@@ -14,7 +14,8 @@ import { type ChatMessage, useChatHistory } from '@/contexts/ChatHistoryContext'
 import { deleteChatConversation, fetchChatHistory, sendChatMessage } from '@/lib/chatApi';
 import { isApiBypassEnabled } from '@/lib/api';
 
-const MAX_MESSAGE_LENGTH = 2000;
+// API料金と入力負荷を抑えるため、1回の質問は500文字までにする
+const MAX_MESSAGE_LENGTH = 500;
 
 function toTimestamp(value: string) {
   const timestamp = Date.parse(value);
@@ -274,7 +275,7 @@ export default function ChatScreen() {
             </View>
             <Pressable accessibilityLabel="メッセージを送信" accessibilityState={{ disabled: !canSend, busy: isSending }} disabled={!canSend} onPress={() => void submitMessage(input, true)} style={[styles.sendButton, !canSend && styles.disabledSend]}>{isSending ? <ActivityIndicator color="#050A0F" size="small" /> : <Text style={styles.sendText}>↑</Text>}</Pressable>
           </View>
-          {isTooLong ? <Text style={styles.lengthError}>2000文字以内で入力してください。</Text> : null}
+          {isTooLong ? <Text style={styles.lengthError}>500文字以内で入力してください。</Text> : null}
         </KeyboardAvoidingView>
       </SafeAreaView>
       <BottomNavigation />

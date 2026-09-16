@@ -3,13 +3,6 @@ import type {
 } from "openai/resources/responses/responses";
 import { createSafetyIdentifier } from "@/app/lib/ai/createSafetyIdentifier";
 import {
-  chatTools,
-} from "@/app/lib/ai/chatTools";
-
-import {
-  runChatTool,
-} from "@/app/lib/ai/runChatTool";
-import {
   APIConnectionTimeoutError,
 } from "openai";
 import {
@@ -29,9 +22,15 @@ import { checkModeration } from "@/app/lib/ai/checkModeration";
 import {
   limitChatAnswer,
   maxChatOutputTokens,
-  maxChatToolCalls,
   openAiChatModel,
+  recentChatMessageLimit,
 } from "@/app/lib/ai/config";
+import {
+  buildChatSummary,
+} from "@/app/lib/ai/chatSummary";
+import {
+  recordOpenAiUsage,
+} from "@/app/lib/ai/recordOpenAiUsage";
 import {
   chatRequestSchema,
   deleteChatSchema,
@@ -43,10 +42,7 @@ import {
   chatMessages,
   users,
 } from "@/db/schema";
-import {
-  logOpenAiUsage,
-  logServerError,
-} from "@/app/lib/observability/serverLog";
+import { logServerError } from "@/app/lib/observability/serverLog";
 
 // 1日と日本時間の時差をミリ秒で表す
 const millisecondsPerDay =
@@ -595,12 +591,17 @@ export async function POST(request: Request) {
 
     let conversationId =
       body?.conversationId?.trim() || null;
+    let conversationSummary = "";
+    let summarizedMessageCount = 0;
 
     // conversationIdが届いた場合は、本人のチャットか確認する
     if (conversationId) {
       const matchedConversations = await db
         .select({
           id: chatConversations.id,
+          summary: chatConversations.summary,
+          summarizedMessageCount:
+            chatConversations.summarizedMessageCount,
         })
         .from(chatConversations)
         .where(
@@ -638,6 +639,12 @@ export async function POST(request: Request) {
           },
         );
       }
+
+      conversationSummary =
+        matchedConversations[0].summary;
+      summarizedMessageCount =
+        matchedConversations[0]
+          .summarizedMessageCount;
     } else {
       // 新規チャットなら最初の質問からタイトルを作る
       const createdConversations = await db
@@ -671,7 +678,7 @@ export async function POST(request: Request) {
         content: message,
       });
     
-        // 今の質問を含む直近20件の会話をNeonから取得する
+    // 今の質問と、その直前5往復だけをNeonから取得する
     const recentMessages = await db
       .select({
         role: chatMessages.role,
@@ -688,7 +695,75 @@ export async function POST(request: Request) {
       .orderBy(
         desc(chatMessages.createdAt),
       )
-      .limit(20);
+      .limit(recentChatMessageLimit + 1);
+
+    // このチャットの総メッセージ数を調べ、5往復から外れた分だけ要約対象にする
+    const messageCountResults = await db
+      .select({
+        messageCount: count(chatMessages.id),
+      })
+      .from(chatMessages)
+      .where(
+        eq(
+          chatMessages.conversationId,
+          conversationId,
+        ),
+      );
+
+    const totalMessageCount = Number(
+      messageCountResults[0]?.messageCount ?? 0,
+    );
+    const targetSummarizedMessageCount =
+      Math.max(
+        0,
+        totalMessageCount -
+          (recentChatMessageLimit + 1),
+      );
+    const newlyOldMessageCount = Math.max(
+      0,
+      targetSummarizedMessageCount -
+        summarizedMessageCount,
+    );
+
+    // 前回の要約後に新しく古くなったメッセージだけを取得する
+    const newlyOldMessages =
+      newlyOldMessageCount > 0
+        ? await db
+            .select({
+              role: chatMessages.role,
+              content: chatMessages.content,
+            })
+            .from(chatMessages)
+            .where(
+              eq(
+                chatMessages.conversationId,
+                conversationId,
+              ),
+            )
+            .orderBy(
+              asc(chatMessages.createdAt),
+            )
+            .offset(summarizedMessageCount)
+            .limit(newlyOldMessageCount)
+        : [];
+
+    // OpenAIを追加で呼ばず、本人情報と古い相談を短いDB要約へ更新する
+    conversationSummary =
+      await buildChatSummary({
+        clerkUserId,
+        existingSummary:
+          conversationSummary,
+        newlyOldUserMessages:
+          newlyOldMessages
+            .filter(
+              (storedMessage) =>
+                storedMessage.role === "user",
+            )
+            .map(
+              (storedMessage) =>
+                storedMessage.content,
+            ),
+      });
 
     // 新しい順の検索結果を、AIが読める古い順へ並べ直す
     const conversationInput = [
@@ -703,101 +778,39 @@ export async function POST(request: Request) {
         content: storedMessage.content,
       }));
 
-        // 過去の会話をTool結果も追加できるOpenAI入力形式にする
+    // 短い要約・直近5往復・今回の質問だけをOpenAI入力にする
     const aiInput: ResponseInput = [
+      {
+        role: "developer",
+        content: `# 利用者の要約\n${conversationSummary || "保存済み情報なし"}`,
+      },
       ...conversationInput,
     ];
 
-    // AIへ会話履歴と利用可能なToolを渡す
-    let aiResponse =
+    // 1回の有料生成で回答を作る。本人情報は要約済みなので追加Tool通信は行わない
+    const aiResponse =
       await openai.responses.create({
         model: openAiChatModel,
         instructions: systemPrompt,
         input: aiInput,
-        tools: [...chatTools],
-        tool_choice: "auto",
-        parallel_tool_calls: false,
         max_output_tokens:
           maxChatOutputTokens,
+        reasoning: {
+          effort: "none",
+        },
+        store: false,
         safety_identifier:
         safetyIdentifier,
       });
 
-    // 質問・回答本文を残さず、料金確認に必要なトークン数だけをログへ記録する
-    logOpenAiUsage(
-      "chat",
-      aiResponse.usage,
+    // 本文を残さず、モデルとトークン数をユーザー別にNeonへ保存する
+    await recordOpenAiUsage({
+      userId: user.id,
+      feature: "chat",
+      model: openAiChatModel,
       requestId,
-    );
-
-    // AIがToolを選んだ場合、最大3回まで実行して結果を返す
-    for (
-      let toolRound = 0;
-      toolRound < maxChatToolCalls;
-      toolRound += 1
-    ) {
-      const toolCalls =
-        aiResponse.output.filter(
-          (outputItem) =>
-            outputItem.type ===
-            "function_call",
-        );
-
-      if (toolCalls.length === 0) {
-        break;
-      }
-
-      // 次のOpenAI通信でも必要なTool要求・推論・回答だけを残す
-      for (
-        const outputItem of aiResponse.output
-      ) {
-        if (
-          outputItem.type ===
-            "function_call" ||
-          outputItem.type === "reasoning" ||
-          outputItem.type === "message"
-        ) {
-          aiInput.push(outputItem);
-        }
-      }
-
-      for (const toolCall of toolCalls) {
-        const toolResult =
-          await runChatTool(
-            toolCall.name,
-            clerkUserId,
-          );
-
-        // どのTool要求への結果かcall_idで結び付ける
-        aiInput.push({
-          type: "function_call_output",
-          call_id: toolCall.call_id,
-          output: toolResult,
-        });
-      }
-
-      // Tool結果を読ませて、最終回答または次のTool判断を作らせる
-      aiResponse =
-        await openai.responses.create({
-          model: openAiChatModel,
-          instructions: systemPrompt,
-          input: aiInput,
-          tools: [...chatTools],
-          tool_choice: "auto",
-          parallel_tool_calls: false,
-          max_output_tokens:
-            maxChatOutputTokens,
-          safety_identifier:
-          safetyIdentifier,
-        });
-
-      // Tool実行後の追加通信も、本文を含めず使用量だけを記録する
-      logOpenAiUsage(
-        "chat",
-        aiResponse.usage,
-        requestId,
-      );
-    }
+      usage: aiResponse.usage,
+    });
     
     const reply = limitChatAnswer(
       aiResponse.output_text.trim(),
@@ -822,6 +835,9 @@ export async function POST(request: Request) {
     await db
       .update(chatConversations)
       .set({
+        summary: conversationSummary,
+        summarizedMessageCount:
+          targetSummarizedMessageCount,
         updatedAt: new Date(),
       })
       .where(

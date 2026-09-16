@@ -153,7 +153,7 @@ test("プロフィール・日付・文字数の上限を検査する", () => {
   );
   assert.equal(
     chatRequestSchema.safeParse({
-      message: "あ".repeat(2001),
+      message: "あ".repeat(501),
       requestId:
         "11111111-1111-4111-8111-111111111111",
     }).success,
@@ -497,6 +497,7 @@ test("AIチャットのTool回数と回答文字数に上限がある", () => {
   );
   assert.equal(limited.length, maxChatAnswerCharacters);
   assert.match(limited, /…$/);
+  assert.ok(maxChatAnswerCharacters <= 800);
 });
 
 test("月額1000円の有料機能と初回無料の身体分析を判定する", async () => {

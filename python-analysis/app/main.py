@@ -20,6 +20,7 @@ from fastapi import (
     File,
     Form,
     HTTPException,
+    Response,
     UploadFile,
 )
 from PIL import Image, UnidentifiedImageError
@@ -254,6 +255,7 @@ def health_check():
     response_model=BodyAnalysisResponse,
 )
 async def analyze_body(
+    http_response: Response,
     front_image: UploadFile = File(...),
     side_image: UploadFile = File(...),
     back_image: UploadFile = File(...),
@@ -449,6 +451,20 @@ async def analyze_body(
                     "totalTokens": response.usage.total_tokens,
                 }
             )
+        )
+
+        # TypeScript側でユーザー別の月間使用量をNeonへ保存できるよう数値だけ返す
+        http_response.headers["X-OpenAI-Input-Tokens"] = str(
+            response.usage.input_tokens
+        )
+        http_response.headers["X-OpenAI-Output-Tokens"] = str(
+            response.usage.output_tokens
+        )
+        http_response.headers["X-OpenAI-Total-Tokens"] = str(
+            response.usage.total_tokens
+        )
+        http_response.headers["X-OpenAI-Model"] = (
+            OPENAI_BODY_ANALYSIS_MODEL
         )
 
     return response.output_parsed

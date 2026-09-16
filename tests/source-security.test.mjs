@@ -201,16 +201,16 @@ test("アカウント削除は本人再確認と確認文字を必須にする",
   assert.match(accountScreen, /deleteConfirmation\s*!==\s*["']DELETE["']/);
 });
 
-test("AIチャットへ食事Toolの使用条件を明示する", async () => {
-  const prompt = await readFile(
+test("AIチャットの短い要約へ食事情報を含める", async () => {
+  const summarySource = await readFile(
     path.join(
       projectRoot,
-      "app/lib/ai/systemPrompt.js",
+      "app/lib/ai/chatSummary.ts",
     ),
     "utf8",
   );
 
-  assert.match(prompt, /get_recent_food_records/);
-  assert.match(prompt, /摂取カロリー/);
-  assert.match(prompt, /たんぱく質/);
+  assert.match(summarySource, /recentFoodRecords/);
+  assert.match(summarySource, /calories/);
+  assert.match(summarySource, /たんぱく質/);
 });

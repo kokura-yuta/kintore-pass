@@ -115,7 +115,8 @@ export const deleteTrainingRecordSchema = z.object({
 
 export const chatRequestSchema = z.object({
   conversationId: uuidSchema.nullable().optional(),
-  message: z.string().trim().min(1).max(2000),
+  // 長文による高額なAPI利用を防ぐため、質問は500文字までに制限する
+  message: z.string().trim().min(1).max(500),
   requestId: uuidSchema,
 });
 
