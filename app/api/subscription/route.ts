@@ -38,6 +38,7 @@ export async function GET(request: Request) {
   const access = await getPremiumAccess(user.id);
 
   return Response.json({
+    appAccountToken: user.id,
     plan: access.isPremium ? "premium" : "free",
     status: access.status,
     productId: access.productId,

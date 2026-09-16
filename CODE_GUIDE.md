@@ -14064,13 +14064,24 @@ OpenAI Platformではプロジェクト予算アラートを設定し、アプ�
 
 重要なのは、予算アラートは通常「通知」であり、必ずAPI通信を停止する機能とは限らないことです。そのため、アプリ側の回数制限を残します。
 
-### まだ残っている課金作業
+### App Store課金の購入・検証（2026年9月16日）
 
-現在完成しているのは、Neonの課金状態を使って機能を許可・拒否するバックエンドです。
+フロントは`expo-iap`を使い、月額商品の取得、購入、購入復元を行います。購入時はNeonユーザーのUUIDをAppleの`appAccountToken`へ渡します。
 
-App Storeで実際に月額1,000円を購入するには、フロントのStoreKit購入・購入復元、Appleの署名付き取引情報の検証、App Store Server Notifications V2による更新・解約・返金の反映が必要です。
+購入後はAppleの署名付き取引情報を`POST /api/subscription/apple/verify`へ送り、バックエンドでApple公式ライブラリを使って署名、Bundle ID、環境、商品ID、本人用UUID、元取引ID、有効期限、取消状態を確認します。検証成功後だけNeonの課金状態を更新し、フロントがApple取引を完了します。フロントの`isPremium: true`のような自己申告は使用しません。
 
-このApple検証が完成するまでは、フロントから送られた`isPremium: true`のような自己申告だけで有料状態へ変更してはいけません。
+更新・猶予期間・期限切れ・返金は`POST /api/subscription/apple/notifications`でApp Store Server Notifications V2を検証し、元取引IDが一致する課金状態へ反映します。
+
+必要な設定値は次のとおりです。
+
+- mobile：`EXPO_PUBLIC_APPLE_PREMIUM_PRODUCT_ID`
+- backend：`APPLE_PREMIUM_PRODUCT_ID`、`APPLE_BUNDLE_ID`、`APPLE_IAP_ENVIRONMENT`
+- backend：`APPLE_ROOT_CA_G2_BASE64`、`APPLE_ROOT_CA_G3_BASE64`
+- 本番backendのみ：`APPLE_APP_ID`
+
+コード、型、Lint、単体テスト、本番用ビルド、Expo Web書き出しは確認済みです。実決済はApp Store Connectの商品登録、Apple証明書、通知URL、iPhone開発ビルドが必要なため、Sandboxで購入・復元・更新・解約・返金を確認して完成とします。
+
+同日の依存関係監査で検出されたNext.jsの重大な既知問題は、修正版`16.3.5`へ更新しました。更新後もVinext本番ビルド、TypeScript、単体テスト19件は成功しています。その他の推移的依存関係は、互換性を壊す一括強制更新をせず個別に確認します。
 
 ### 自動テスト結果
 
