@@ -5,7 +5,7 @@ import {
   useLocalSearchParams,
   useRouter,
 } from 'expo-router';
-import { useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -22,12 +22,16 @@ import { ScreenStateCard } from '@/components/ScreenStateCard';
 import {
   ApiError,
   apiUploadRequest,
+  isApiBypassEnabled,
 } from '@/lib/api';
+import { fetchBodyAnalysisHistory } from '@/lib/bodyAnalyses';
 import { completeOnboarding } from '@/lib/onboarding';
+import { fetchSubscriptionStatus } from '@/lib/subscription';
 
 
 type PhotoPosition = 'front' | 'side' | 'back';
 type AnalysisStatus = 'input' | 'loading' | 'result';
+type AccessStatus = 'loading' | 'ready' | 'locked' | 'error';
 type SelectedPhoto = {
   uri: string;
   fileName: string;
@@ -51,6 +55,13 @@ type BodyAnalysisApiResponse = {
       recommendation: string;
     }[];
   };
+  usage: {
+    firstAnalysisFree: boolean;
+    limit: number;
+    used: number;
+    remaining: number;
+    resetsAt: string;
+  };
 };
 
 const MAX_IMAGE_SIZE = 8 * 1024 * 1024;
@@ -59,6 +70,17 @@ const positions: { key: PhotoPosition; label: string; guide: string }[] = [
   { key: 'side', label: '横', guide: '身体の真横から全身を撮影' },
   { key: 'back', label: '背面', guide: '背筋を伸ばして後ろから撮影' },
 ];
+
+function japanMonthKey(value: Date) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Tokyo',
+    year: 'numeric',
+    month: '2-digit',
+  }).formatToParts(value);
+  const year = parts.find((part) => part.type === 'year')?.value;
+  const month = parts.find((part) => part.type === 'month')?.value;
+  return `${year}-${month}`;
+}
 
 // ブラウザとiPhoneに合った形式で画像をFormDataへ追加する
 async function appendPhotoToFormData(
@@ -109,6 +131,7 @@ export default function BodyAnalysisScreen() {
   const { getToken } = useAuth({
     treatPendingAsSignedOut: false,
   });
+  const getTokenRef = useRef(getToken);
   const [photos, setPhotos] = useState<Record<PhotoPosition, SelectedPhoto | null>>({ front: null, side: null, back: null });
   const [selectingPosition, setSelectingPosition] = useState<PhotoPosition | null>(null);
   const [weightKg, setWeightKg] = useState('');
@@ -116,6 +139,15 @@ export default function BodyAnalysisScreen() {
   const [error, setError] = useState('');
   const [isCompleting, setIsCompleting] =
     useState(false);
+  const [accessStatus, setAccessStatus] = useState<AccessStatus>(
+    isInitialAnalysis || isApiBypassEnabled ? 'ready' : 'loading',
+  );
+  const [analysisRemaining, setAnalysisRemaining] = useState<number | null>(
+    isInitialAnalysis ? 1 : null,
+  );
+  const [accessMessage, setAccessMessage] = useState(
+    isInitialAnalysis ? '初回の身体分析は無料です。' : '',
+  );
   // APIから返った分析結果を画面表示用に保存する
   const [analysisResult, setAnalysisResult] =
   useState<BodyAnalysisApiResponse | null>(
@@ -123,6 +155,65 @@ export default function BodyAnalysisScreen() {
   );
   const selectedPhotoCount = Object.values(photos).filter(Boolean).length;
   const hasAllPhotos = selectedPhotoCount === positions.length;
+
+  useEffect(() => { getTokenRef.current = getToken; }, [getToken]);
+
+  const loadAnalysisAccess = useCallback(async () => {
+    if (isInitialAnalysis) {
+      setAccessStatus('ready');
+      setAnalysisRemaining(1);
+      setAccessMessage('初回の身体分析は無料です。');
+      return;
+    }
+    if (isApiBypassEnabled) {
+      setAccessStatus('ready');
+      setAnalysisRemaining(4);
+      setAccessMessage('開発用表示：今月あと4回利用できます。');
+      return;
+    }
+
+    setAccessStatus('loading');
+    try {
+      const token = await getTokenRef.current();
+      if (!token) throw new ApiError('ログイン情報を確認できませんでした。', 401);
+      const [subscription, history] = await Promise.all([
+        fetchSubscriptionStatus(token),
+        fetchBodyAnalysisHistory(token),
+      ]);
+
+      if (history.analyses.length === 0) {
+        setAccessStatus('ready');
+        setAnalysisRemaining(1);
+        setAccessMessage('初回の身体分析は無料です。');
+        return;
+      }
+      if (subscription.plan !== 'premium') {
+        setAccessStatus('locked');
+        setAnalysisRemaining(0);
+        setAccessMessage('2回目以降の身体分析はプレミアムプランで利用できます。');
+        return;
+      }
+
+      const currentMonth = japanMonthKey(new Date());
+      const usedThisMonth = history.analyses.filter((analysis) =>
+        analysis.analyzedAt
+          ? japanMonthKey(new Date(analysis.analyzedAt)) === currentMonth
+          : false,
+      ).length;
+      const remaining = Math.max(0, subscription.features.bodyAnalysis.monthlyLimitForPremium - usedThisMonth);
+      setAnalysisRemaining(remaining);
+      setAccessMessage(remaining > 0 ? `今月あと${remaining}回利用できます。` : '今月の身体分析上限に達しました。');
+      setAccessStatus(remaining > 0 ? 'ready' : 'locked');
+    } catch {
+      setAccessStatus('error');
+      setAccessMessage('身体分析の利用状況を確認できませんでした。');
+    }
+  }, [isInitialAnalysis]);
+
+  useEffect(() => {
+    const timerId = setTimeout(() => { void loadAnalysisAccess(); }, 0);
+    return () => clearTimeout(timerId);
+  }, [loadAnalysisAccess]);
 
   async function selectPhoto(position: PhotoPosition, source: 'camera' | 'library') {
     if (selectingPosition) return;
@@ -259,6 +350,12 @@ async function beginAnalysis() {
       );
 
     setAnalysisResult(result);
+    setAnalysisRemaining(result.usage.remaining);
+    setAccessMessage(
+      result.usage.firstAnalysisFree
+        ? '初回無料の身体分析が完了しました。'
+        : `今月あと${result.usage.remaining}回利用できます。`,
+    );
     setStatus('result');
   } catch (caughtError) {
     setStatus('input');
@@ -313,6 +410,48 @@ async function finishAnalysis() {
             title="身体を分析しています"
             type="loading"
           />
+        </SafeAreaView>
+      </View>
+    );
+  }
+
+  if (accessStatus === 'loading') {
+    return (
+      <View style={styles.screen}>
+        <SafeAreaView edges={['top', 'bottom']} style={styles.stateArea}>
+          <ScreenStateCard message="契約状態と今月の利用回数を確認しています。" title="利用状況を確認中" type="loading" />
+        </SafeAreaView>
+      </View>
+    );
+  }
+
+  if (accessStatus === 'error') {
+    return (
+      <View style={styles.screen}>
+        <SafeAreaView edges={['top', 'bottom']} style={styles.stateArea}>
+          <ScreenStateCard actionLabel="もう一度試す" message={accessMessage} onAction={() => { void loadAnalysisAccess(); }} title="利用状況を確認できませんでした" type="error" />
+        </SafeAreaView>
+      </View>
+    );
+  }
+
+  if (accessStatus === 'locked') {
+    return (
+      <View style={styles.screen}>
+        <SafeAreaView edges={['top', 'bottom']} style={styles.lockedArea}>
+          <Text style={styles.completeEyebrow}>BODY ANALYSIS</Text>
+          <Text style={styles.resultTitle}>身体分析の利用について</Text>
+          <View style={styles.lockedCard}>
+            <Text style={styles.lockedMessage}>{accessMessage}</Text>
+            <Text style={styles.lockedPrice}>食事管理＋身体分析　月額1,000円</Text>
+            <Text style={styles.lockedNote}>プレミアム会員は契約更新ごとに4回まで身体分析を利用できます。</Text>
+            <Pressable accessibilityRole="button" onPress={() => router.push('/subscription')} style={styles.primaryButton}>
+              <Text style={styles.primaryText}>プラン内容を見る</Text><Text style={styles.primaryArrow}>›</Text>
+            </Pressable>
+            <Pressable accessibilityRole="button" onPress={() => router.back()} style={styles.secondaryButton}>
+              <Text style={styles.secondaryText}>戻る</Text>
+            </Pressable>
+          </View>
         </SafeAreaView>
       </View>
     );
@@ -454,6 +593,7 @@ if (
         <ScrollView automaticallyAdjustKeyboardInsets contentContainerStyle={styles.content} keyboardDismissMode="interactive" keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
           <View style={styles.header}><Pressable accessibilityLabel="分析履歴へ戻る" accessibilityRole="button" onPress={() => router.back()} style={styles.backButton}><Text style={styles.backText}>‹</Text></Pressable><View><Text style={styles.eyebrow}>BODY ANALYSIS</Text><Text style={styles.title}>身体写真を設定</Text></View></View>
           <Text style={styles.lead}>正面・横・背面の3枚を、できるだけ同じ場所と明るさで撮影してください。</Text>
+          <View style={styles.usageCard}><Text style={styles.usageTitle}>{isInitialAnalysis ? '初回無料' : '身体分析の利用状況'}</Text><Text style={styles.usageText}>{accessMessage}</Text>{analysisRemaining !== null && !isInitialAnalysis ? <Text style={styles.usageCount}>残り {analysisRemaining} / 4回</Text> : null}</View>
           <View style={styles.progressRow}>
             <Text style={styles.progressLabel}>写真の準備状況</Text>
             <Text style={[styles.progressCount, hasAllPhotos && styles.progressComplete]}>{selectedPhotoCount}/3枚</Text>
@@ -496,4 +636,5 @@ const styles = StyleSheet.create({
   weightCard: { marginTop: 13, padding: 16, borderWidth: 1, borderColor: '#203441', borderRadius: 17, backgroundColor: '#0C151D' }, cardTitle: { color: '#F4F6F3', fontSize: 14, fontWeight: '700' }, optional: { color: '#657681', fontSize: 9 }, weightInputWrap: { minHeight: 50, flexDirection: 'row', alignItems: 'center', marginTop: 11, borderWidth: 1, borderColor: '#294653', borderRadius: 12, backgroundColor: '#050A0F' }, weightInput: { flex: 1, paddingHorizontal: 13, color: '#F4F6F3', fontSize: 15, fontWeight: '600' }, unit: { paddingRight: 13, color: '#72828D', fontSize: 10 },
   notice: { marginTop: 13, padding: 14, borderRadius: 14, backgroundColor: '#101C25' }, noticeTitle: { color: '#73E7FF', fontSize: 10, fontWeight: '700' }, noticeText: { marginTop: 6, color: '#8798A3', fontSize: 9, lineHeight: 15 }, error: { marginTop: 12, color: '#FF7676', fontSize: 11, lineHeight: 17 }, primaryButton: { minHeight: 57, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 15, paddingHorizontal: 17, borderRadius: 15, backgroundColor: '#00D4FF' }, disabledButton: { opacity: 0.4 }, primaryText: { color: '#050A0F', fontSize: 14, fontWeight: '700' }, primaryArrow: { color: '#050A0F', fontSize: 27 },
   stateArea: { flex: 1, justifyContent: 'center', paddingHorizontal: 18 }, completeEyebrow: { marginTop: 14, color: '#73E7FF', fontSize: 9, fontWeight: '700', letterSpacing: 1.4 }, resultTitle: { marginTop: 7, color: '#F4F6F3', fontSize: 27, fontWeight: '700' }, resultCard: { marginTop: 13, padding: 17, borderWidth: 1, borderColor: '#203441', borderRadius: 17, backgroundColor: '#0C151D' }, resultNumber: { color: '#73E7FF', fontSize: 9, fontWeight: '700' }, resultLabel: { marginTop: 6, color: '#F4F6F3', fontSize: 15, fontWeight: '700' }, resultText: { marginTop: 8, color: '#AAB7BF', fontSize: 11, lineHeight: 18 }, focusRow: { flexDirection: 'row', gap: 7, marginTop: 9 }, focusChip: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 16, backgroundColor: '#052C3A' }, focusText: { color: '#73E7FF', fontSize: 10, fontWeight: '700' }, previewNote: { marginTop: 13, color: '#556772', fontSize: 9, lineHeight: 15, textAlign: 'center' },
+  usageCard: { marginTop: 14, padding: 14, borderWidth: 1, borderColor: '#1E6076', borderRadius: 14, backgroundColor: '#081821' }, usageTitle: { color: '#73E7FF', fontSize: 10, fontWeight: '800' }, usageText: { marginTop: 5, color: '#E9F1F4', fontSize: 12, lineHeight: 18 }, usageCount: { marginTop: 8, color: '#00D4FF', fontSize: 17, fontWeight: '800' }, lockedArea: { flex: 1, justifyContent: 'center', padding: 22 }, lockedCard: { marginTop: 20, padding: 20, borderWidth: 1, borderColor: '#1E6076', borderRadius: 18, backgroundColor: '#081821' }, lockedMessage: { color: '#F4F6F3', fontSize: 15, fontWeight: '700', lineHeight: 23 }, lockedPrice: { marginTop: 14, color: '#00D4FF', fontSize: 18, fontWeight: '800' }, lockedNote: { marginTop: 9, color: '#A7B5BD', fontSize: 11, lineHeight: 18 }, secondaryButton: { minHeight: 50, alignItems: 'center', justifyContent: 'center', marginTop: 10, borderWidth: 1, borderColor: '#294653', borderRadius: 14 }, secondaryText: { color: '#A7B5BD', fontSize: 13, fontWeight: '700' },
 });
