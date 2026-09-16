@@ -1,4 +1,6 @@
 import { useAuth } from '@clerk/expo';
+import { BlurView } from 'expo-blur';
+import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -6,6 +8,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { BottomNavigation } from '@/components/BottomNavigation';
 import { isApiBypassEnabled } from '@/lib/api';
 import { createFoodRecord, deleteFoodRecord, fetchFoodRecords, updateFoodRecord, type FoodRecord, type MealType } from '@/lib/foodRecords';
+import { fetchSubscriptionStatus } from '@/lib/subscription';
 
 const mealTypes: MealType[] = ['朝食', '昼食', '夕食', '間食'];
 
@@ -23,6 +26,7 @@ function isValidDate(value: string) {
 
 export default function FoodScreen() {
   const { getToken } = useAuth({ treatPendingAsSignedOut: false });
+  const router = useRouter();
   const getTokenRef = useRef(getToken);
   const scrollRef = useRef<ScrollView>(null);
   const savingLock = useRef(false);
@@ -43,15 +47,41 @@ export default function FoodScreen() {
   const [success, setSuccess] = useState('');
   const [isLoading, setIsLoading] = useState(!isApiBypassEnabled);
   const [isSaving, setIsSaving] = useState(false);
+  const [accessState, setAccessState] = useState<'loading' | 'premium' | 'free' | 'error'>(isApiBypassEnabled ? 'premium' : 'loading');
 
   const totalCalories = entries.reduce((total, entry) => total + entry.calories, 0);
   const totalProtein = entries.reduce((total, entry) => total + entry.proteinGrams, 0);
 
   useEffect(() => { getTokenRef.current = getToken; }, [getToken]);
 
+  const loadSubscription = useCallback(async () => {
+    if (isApiBypassEnabled) {
+      setAccessState('premium');
+      return;
+    }
+    setAccessState('loading');
+    try {
+      const token = await getTokenRef.current();
+      if (!token) throw new Error('ログイン状態を確認できませんでした。');
+      const subscription = await fetchSubscriptionStatus(token);
+      setAccessState(subscription.features.calorieTracking ? 'premium' : 'free');
+    } catch {
+      setAccessState('error');
+    }
+  }, []);
+
+  useEffect(() => {
+    const timerId = setTimeout(() => { void loadSubscription(); }, 0);
+    return () => clearTimeout(timerId);
+  }, [loadSubscription]);
+
   const loadEntries = useCallback(async (date: string) => {
     if (isApiBypassEnabled) {
       setEntries(localEntries.filter((entry) => entry.recordedDate === date));
+      setIsLoading(false);
+      return;
+    }
+    if (accessState !== 'premium') {
       setIsLoading(false);
       return;
     }
@@ -66,7 +96,7 @@ export default function FoodScreen() {
       setEntries([]);
       setError(loadError instanceof Error ? loadError.message : '食事記録を読み込めませんでした。');
     } finally { setIsLoading(false); }
-  }, [localEntries]);
+  }, [accessState, localEntries]);
 
   useEffect(() => {
     const timerId = setTimeout(() => { void loadEntries(viewDate); }, 0);
@@ -140,6 +170,7 @@ export default function FoodScreen() {
   return (
     <View style={styles.screen}>
       <SafeAreaView edges={['top']} style={styles.safeArea}>
+        <View style={styles.contentArea}>
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.safeArea}>
           <ScrollView ref={scrollRef} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
             <View style={styles.header}><View><Text style={styles.eyebrow}>NUTRITION</Text><Text style={styles.title}>食事管理</Text></View><Text style={styles.date}>{viewDate === today() ? '今日' : viewDate}</Text></View>
@@ -165,6 +196,39 @@ export default function FoodScreen() {
             {isLoading ? <View style={styles.emptyCard}><ActivityIndicator color="#00D4FF" /><Text style={styles.emptyText}>食事記録を読み込んでいます。</Text></View> : entries.length === 0 ? <View style={styles.emptyCard}><Text style={styles.emptyTitle}>この日の食事記録はありません</Text><Text style={styles.emptyText}>食べたものを追加すると、この日の合計を確認できます。</Text></View> : <View style={styles.entryList}>{entries.map((entry) => <View key={entry.id} style={styles.entryCard}><View style={styles.entryCopy}><Text style={styles.entryType}>{entry.mealType}</Text><Text style={styles.entryName}>{entry.name}</Text><Text style={styles.entryProtein}>P {entry.proteinGrams.toFixed(1)} g</Text></View><View style={styles.entryNumbers}><Text style={styles.entryCalories}>{entry.calories.toLocaleString()} kcal</Text><Pressable accessibilityLabel={`${entry.name}を編集`} accessibilityRole="button" onPress={() => startEdit(entry)} style={styles.actionButton}><Text style={styles.actionText}>編集</Text></Pressable><Pressable accessibilityLabel={`${entry.name}を削除`} accessibilityRole="button" onPress={() => setDeletingId(entry.id)} style={styles.actionButton}><Text style={styles.deleteText}>削除</Text></Pressable></View></View>)}</View>}
           </ScrollView>
         </KeyboardAvoidingView>
+        {accessState !== 'premium' ? (
+          <BlurView
+            blurMethod={Platform.OS === 'android' ? 'dimezisBlurViewSdk31Plus' : undefined}
+            intensity={75}
+            style={styles.accessOverlay}
+            tint="dark">
+            {accessState === 'loading' ? (
+              <View style={styles.accessCard}>
+                <ActivityIndicator color="#00D4FF" />
+                <Text style={styles.accessDescription}>プランを確認しています。</Text>
+              </View>
+            ) : accessState === 'error' ? (
+              <View style={styles.accessCard}>
+                <Text style={styles.accessTitle}>プランを確認できませんでした</Text>
+                <Text style={styles.accessDescription}>通信状態を確認して、もう一度お試しください。</Text>
+                <Pressable accessibilityRole="button" onPress={() => { void loadSubscription(); }} style={styles.accessButton}>
+                  <Text style={styles.accessButtonText}>もう一度試す</Text>
+                </Pressable>
+              </View>
+            ) : (
+              <View style={styles.accessCard}>
+                <Text style={styles.accessEyebrow}>PREMIUM</Text>
+                <Text style={styles.accessTitle}>食事管理＋身体分析</Text>
+                <Text style={styles.accessPrice}>月額 1,000円</Text>
+                <Text style={styles.accessDescription}>食事の記録・編集・履歴と、身体分析を契約更新ごとに4回利用できます。</Text>
+                <Pressable accessibilityRole="button" onPress={() => router.push('/subscription')} style={styles.accessButton}>
+                  <Text style={styles.accessButtonText}>プラン内容を見る</Text>
+                </Pressable>
+              </View>
+            )}
+          </BlurView>
+        ) : null}
+        </View>
       </SafeAreaView>
       <BottomNavigation />
       <Modal animationType="fade" onRequestClose={() => { if (!isDeleting) setDeletingId(null); }} transparent visible={Boolean(deletingId)}><View style={styles.modalBackdrop}><View style={styles.confirmCard}><Text style={styles.confirmText}>この食事記録を削除しますか？</Text><View style={styles.confirmActions}><Pressable accessibilityRole="button" disabled={isDeleting} onPress={() => setDeletingId(null)}><Text style={styles.actionText}>キャンセル</Text></Pressable><Pressable accessibilityRole="button" disabled={isDeleting} onPress={() => { void removeEntry(); }}><Text style={styles.deleteText}>{isDeleting ? '削除中…' : '削除する'}</Text></Pressable></View></View></View></Modal>
@@ -173,7 +237,7 @@ export default function FoodScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#050A0F' }, safeArea: { flex: 1 }, content: { flexGrow: 1, paddingHorizontal: 18, paddingTop: 16, paddingBottom: 28 },
+  screen: { flex: 1, backgroundColor: '#050A0F' }, safeArea: { flex: 1 }, contentArea: { flex: 1, position: 'relative' }, content: { flexGrow: 1, paddingHorizontal: 18, paddingTop: 16, paddingBottom: 28 },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, eyebrow: { color: '#73E7FF', fontSize: 9, fontWeight: '700', letterSpacing: 1.6 }, title: { marginTop: 5, color: '#F4F6F3', fontSize: 28, fontWeight: '700' }, date: { color: '#8A9BA5', fontSize: 12, fontWeight: '700' },
   summaryCard: { marginTop: 20, padding: 18, borderWidth: 1, borderColor: '#1E6076', borderRadius: 18, backgroundColor: '#081821' }, cardLabel: { color: '#8A9BA5', fontSize: 10, fontWeight: '700' }, summaryRow: { flexDirection: 'row', alignItems: 'center', marginTop: 15 }, summaryItem: { flex: 1 }, summaryValue: { color: '#F4F6F3', fontSize: 29, fontWeight: '700' }, summaryUnit: { marginTop: 3, color: '#73E7FF', fontSize: 10, fontWeight: '700' }, divider: { width: 1, height: 48, marginHorizontal: 16, backgroundColor: '#203441' },
   formCard: { marginTop: 14, padding: 17, borderWidth: 1, borderColor: '#203441', borderRadius: 18, backgroundColor: '#0A1219' }, sectionTitle: { color: '#F4F6F3', fontSize: 16, fontWeight: '700' }, formLabel: { marginTop: 16, marginBottom: 7, color: '#A7B5BD', fontSize: 10, fontWeight: '700' }, mealTypeRow: { flexDirection: 'row', gap: 7 }, mealTypeButton: { flex: 1, minHeight: 40, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#294653', borderRadius: 12, backgroundColor: '#050A0F' }, selectedMealType: { borderColor: '#00D4FF', backgroundColor: '#00D4FF' }, mealTypeText: { color: '#9EADB5', fontSize: 10, fontWeight: '700' }, selectedMealTypeText: { color: '#050A0F' },
@@ -181,4 +245,5 @@ const styles = StyleSheet.create({
   error: { marginTop: 12, color: '#FF8D98', fontSize: 11 }, success: { marginTop: 12, color: '#73E7FF', fontSize: 11 }, addButton: { minHeight: 52, alignItems: 'center', justifyContent: 'center', marginTop: 16, borderRadius: 14, backgroundColor: '#00D4FF' }, disabledButton: { opacity: 0.55 }, addButtonText: { color: '#050A0F', fontSize: 13, fontWeight: '700' }, cancelButton: { alignItems: 'center', padding: 12 }, previewNote: { marginTop: 10, color: '#60727D', fontSize: 9, lineHeight: 14, textAlign: 'center' },
   listHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 22, marginBottom: 10 }, count: { color: '#73E7FF', fontSize: 10, fontWeight: '700' }, dateSelector: { flexDirection: 'row', gap: 8 }, dateInput: { flex: 1 }, dateButton: { minWidth: 72, alignItems: 'center', justifyContent: 'center', borderRadius: 12, backgroundColor: '#00D4FF' }, dateButtonText: { color: '#050A0F', fontSize: 12, fontWeight: '700' }, historyDate: { marginTop: 14, marginBottom: 8, color: '#73E7FF', fontSize: 12, fontWeight: '700' }, emptyCard: { alignItems: 'center', padding: 24, borderWidth: 1, borderColor: '#203441', borderRadius: 17, backgroundColor: '#091118' }, emptyTitle: { color: '#DDE4E7', fontSize: 13, fontWeight: '700' }, emptyText: { marginTop: 7, color: '#71838E', fontSize: 10, lineHeight: 17, textAlign: 'center' },
   entryList: { gap: 9 }, entryCard: { minHeight: 70, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 14, borderWidth: 1, borderColor: '#203441', borderRadius: 15, backgroundColor: '#091118' }, entryCopy: { flex: 1, marginRight: 12 }, entryType: { color: '#73E7FF', fontSize: 9, fontWeight: '700' }, entryName: { marginTop: 5, color: '#F4F6F3', fontSize: 13, fontWeight: '600' }, entryNumbers: { alignItems: 'flex-end' }, entryCalories: { color: '#F4F6F3', fontSize: 12, fontWeight: '700' }, entryProtein: { marginTop: 5, color: '#80929C', fontSize: 9, fontWeight: '700' }, actionButton: { minHeight: 35, justifyContent: 'center', paddingHorizontal: 8 }, actionText: { color: '#73E7FF', fontSize: 11, fontWeight: '700' }, deleteText: { color: '#FF8D98', fontSize: 11, fontWeight: '700' }, modalBackdrop: { flex: 1, justifyContent: 'center', padding: 24, backgroundColor: 'rgba(0,0,0,0.72)' }, confirmCard: { padding: 20, borderWidth: 1, borderColor: '#FF8D98', borderRadius: 14, backgroundColor: '#181115' }, confirmText: { color: '#F4F6F3', fontSize: 12 }, confirmActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 24, marginTop: 14 },
+  accessOverlay: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, alignItems: 'center', justifyContent: 'center', padding: 22 }, accessCard: { width: '100%', maxWidth: 420, alignItems: 'center', padding: 24, borderWidth: 1, borderColor: '#1E6076', borderRadius: 20, backgroundColor: 'rgba(5, 10, 15, 0.88)' }, accessEyebrow: { color: '#73E7FF', fontSize: 10, fontWeight: '800', letterSpacing: 1.8 }, accessTitle: { marginTop: 9, color: '#F4F6F3', fontSize: 22, fontWeight: '800', textAlign: 'center' }, accessPrice: { marginTop: 10, color: '#00D4FF', fontSize: 24, fontWeight: '800' }, accessDescription: { marginTop: 12, color: '#A7B5BD', fontSize: 12, lineHeight: 20, textAlign: 'center' }, accessButton: { width: '100%', minHeight: 50, alignItems: 'center', justifyContent: 'center', marginTop: 20, borderRadius: 14, backgroundColor: '#00D4FF' }, accessButtonText: { color: '#050A0F', fontSize: 13, fontWeight: '800' },
 });
