@@ -220,7 +220,7 @@ export default function FoodScreen() {
                 <Text style={styles.accessEyebrow}>PREMIUM</Text>
                 <Text style={styles.accessTitle}>食事管理＋身体分析</Text>
                 <Text style={styles.accessPrice}>月額 1,000円</Text>
-                <Text style={styles.accessDescription}>食事の記録・編集・履歴と、身体分析を契約更新ごとに4回利用できます。</Text>
+                <Text style={styles.accessDescription}>食事の記録・編集・履歴と、身体分析を毎月4回まで利用できます。</Text>
                 <Pressable accessibilityRole="button" onPress={() => router.push('/subscription')} style={styles.accessButton}>
                   <Text style={styles.accessButtonText}>プラン内容を見る</Text>
                 </Pressable>

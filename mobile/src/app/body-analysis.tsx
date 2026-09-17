@@ -444,7 +444,7 @@ async function finishAnalysis() {
           <View style={styles.lockedCard}>
             <Text style={styles.lockedMessage}>{accessMessage}</Text>
             <Text style={styles.lockedPrice}>食事管理＋身体分析　月額1,000円</Text>
-            <Text style={styles.lockedNote}>プレミアム会員は契約更新ごとに4回まで身体分析を利用できます。</Text>
+            <Text style={styles.lockedNote}>プレミアム会員は身体分析を毎月4回まで利用できます。</Text>
             <Pressable accessibilityRole="button" onPress={() => router.push('/subscription')} style={styles.primaryButton}>
               <Text style={styles.primaryText}>プラン内容を見る</Text><Text style={styles.primaryArrow}>›</Text>
             </Pressable>

@@ -51,7 +51,7 @@ export default function SubscriptionScreen() {
           <Text style={styles.item}>・食事の追加、編集、削除、日付別履歴</Text>
           <Text style={styles.item}>・カロリーとPFCの管理</Text>
           <Text style={styles.item}>・よく食べるもの、食事コピー</Text>
-          <Text style={styles.item}>・身体分析を契約更新日ごとに4回</Text>
+          <Text style={styles.item}>・身体分析を毎月4回まで</Text>
           <Text style={styles.note}>身体分析は初回設定時の1回だけ無料です。</Text>
         </View>
 
