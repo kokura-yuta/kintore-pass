@@ -333,6 +333,11 @@ export default function MyPageScreen() {
               {isSigningOut ? <ActivityIndicator color="#FF8D98" /> : <Text style={styles.signOutText}>ログアウト</Text>}
             </Pressable>
 
+            <View style={styles.legalRow}>
+              <Pressable accessibilityRole="link" onPress={() => router.push('/privacy' as Href)} style={styles.legalButton}><Text style={styles.legalText}>プライバシーポリシー</Text></Pressable>
+              <Pressable accessibilityRole="link" onPress={() => router.push('/terms' as Href)} style={styles.legalButton}><Text style={styles.legalText}>利用規約</Text></Pressable>
+            </View>
+
             <View style={styles.deleteAccountCard}>
               <Text style={styles.deleteAccountTitle}>アカウントと全データの削除</Text>
               <Text style={styles.deleteAccountDescription}>削除する場合は、下へ半角大文字でDELETEと入力してください。本人確認後、保存した全データを削除します。</Text>
@@ -418,6 +423,9 @@ const styles = StyleSheet.create({
   accountError: { marginTop: 14, color: '#FF7676', fontSize: 11, lineHeight: 17, textAlign: 'center' },
   signOutButton: { minHeight: 50, alignItems: 'center', justifyContent: 'center', marginTop: 14, borderWidth: 1, borderColor: '#6B3138', borderRadius: 14 },
   signOutText: { color: '#FF8D98', fontSize: 13, fontWeight: '700' },
+  legalRow: { flexDirection: 'row', gap: 9, marginTop: 15 },
+  legalButton: { flex: 1, minHeight: 46, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8, borderWidth: 1, borderColor: '#294653', borderRadius: 12, backgroundColor: '#0A1219' },
+  legalText: { color: '#A7B5BD', fontSize: 10, fontWeight: '600', textAlign: 'center' },
   deleteAccountCard: { marginTop: 28, padding: 16, borderWidth: 1, borderColor: '#6B3138', borderRadius: 17, backgroundColor: '#1A1013' },
   deleteAccountTitle: { color: '#FF8D98', fontSize: 15, fontWeight: '700' },
   deleteAccountDescription: { marginTop: 8, color: '#B89A9E', fontSize: 10, lineHeight: 17 },

@@ -218,6 +218,17 @@ h1 { margin: 8px 0; font-size: clamp(42px, 8vw, 88px); line-height: .95; }
   cursor: pointer;
 }
 
+.legalPage { width: min(760px, calc(100% - 36px)); padding: 56px 0 72px; }
+.legalPage h1 { margin-top: 10px; font-size: clamp(32px, 7vw, 52px); line-height: 1.15; }
+.legalEyebrow { margin: 0; color: #73e7ff; font-size: 11px; font-weight: 700; letter-spacing: .14em; }
+.legalUpdated { color: #72828d; font-size: 12px; }
+.legalNotice { margin-top: 24px; padding: 16px; border: 1px solid #735e24; border-radius: 14px; background: #1b180d; color: #f4d676; font-size: 13px; line-height: 1.7; }
+.legalSection { margin-top: 30px; }
+.legalSection h2 { margin: 0; color: #eaf8fc; font-size: 20px; }
+.legalSection p { margin: 10px 0 0; color: #a7b5bd; font-size: 14px; line-height: 1.9; }
+.legalLinks { display: flex; flex-wrap: wrap; gap: 18px; margin-top: 38px; padding-top: 20px; border-top: 1px solid #203441; }
+.legalLinks a { color: #73e7ff; }
+
 .bodyTypeButton:focus-visible,
 .goalUploadButton:focus-visible,
 .goalContinueButton:focus-visible,

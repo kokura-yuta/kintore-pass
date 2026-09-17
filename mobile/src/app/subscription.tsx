@@ -1,5 +1,5 @@
 import { useAuth } from '@clerk/expo';
-import { useRouter } from 'expo-router';
+import { type Href, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -45,6 +45,7 @@ export default function SubscriptionScreen() {
         <Text style={styles.title}>食事管理＋身体分析</Text>
         <Text style={styles.price}>月額 1,000円</Text>
         <Text style={styles.description}>毎日の食事記録と、身体の変化を継続して確認するためのプランです。</Text>
+        <Text style={styles.renewalNote}>1か月ごとに自動更新されます。解約はiPhoneのサブスクリプション管理からいつでも行えます。</Text>
 
         <View style={styles.card}>
           <Text style={styles.item}>・食事の追加、編集、削除、日付別履歴</Text>
@@ -66,6 +67,12 @@ export default function SubscriptionScreen() {
           <View style={styles.preparationCard}><ActivityIndicator color="#00D4FF" /><Text style={styles.preparationText}>プラン情報を確認しています。</Text></View>
         )}
 
+        <View style={styles.legalRow}>
+          <Pressable accessibilityRole="link" onPress={() => router.push('/terms' as Href)}><Text style={styles.legalText}>利用規約</Text></Pressable>
+          <Text style={styles.legalSeparator}>・</Text>
+          <Pressable accessibilityRole="link" onPress={() => router.push('/privacy' as Href)}><Text style={styles.legalText}>プライバシーポリシー</Text></Pressable>
+        </View>
+
         <Pressable accessibilityRole="button" onPress={() => router.back()} style={styles.backButton}>
           <Text style={styles.backText}>戻る</Text>
         </Pressable>
@@ -81,6 +88,7 @@ const styles = StyleSheet.create({
   title: { marginTop: 10, color: '#F4F6F3', fontSize: 29, fontWeight: '700' },
   price: { marginTop: 18, color: '#00D4FF', fontSize: 26, fontWeight: '800' },
   description: { marginTop: 12, color: '#A7B5BD', fontSize: 13, lineHeight: 22 },
+  renewalNote: { marginTop: 8, color: '#80929C', fontSize: 10, lineHeight: 17 },
   card: { marginTop: 24, padding: 19, gap: 13, borderWidth: 1, borderColor: '#1E6076', borderRadius: 18, backgroundColor: '#081821' },
   item: { color: '#E9F1F4', fontSize: 13, lineHeight: 21 },
   note: { marginTop: 4, color: '#80929C', fontSize: 10, lineHeight: 17 },
@@ -90,6 +98,9 @@ const styles = StyleSheet.create({
   activeCard: { marginTop: 16, padding: 17, borderWidth: 1, borderColor: '#00D4FF', borderRadius: 15, backgroundColor: '#081821' },
   activeTitle: { color: '#73E7FF', fontSize: 15, fontWeight: '800' },
   retryButton: { minHeight: 44, alignItems: 'center', justifyContent: 'center', marginTop: 12, borderWidth: 1, borderColor: '#00D4FF', borderRadius: 12 },
+  legalRow: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', marginTop: 20 },
+  legalText: { color: '#73E7FF', fontSize: 11, textDecorationLine: 'underline' },
+  legalSeparator: { color: '#657681', fontSize: 11 },
   backButton: { minHeight: 52, alignItems: 'center', justifyContent: 'center', marginTop: 24, borderWidth: 1, borderColor: '#00D4FF', borderRadius: 14 },
   backText: { color: '#73E7FF', fontSize: 13, fontWeight: '700' },
 });

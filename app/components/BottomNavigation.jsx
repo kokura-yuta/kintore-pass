@@ -22,7 +22,9 @@ export default function BottomNavigation() {
     pathname === "/setup" ||
     pathname === "/ideal-body" ||
     pathname === "/profile-setup" ||
-    pathname === "/initial-analysis";
+    pathname === "/initial-analysis" ||
+    pathname === "/privacy" ||
+    pathname === "/terms";
 
   if (isOnboardingRoute) {
     return null;
