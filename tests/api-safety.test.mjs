@@ -37,6 +37,7 @@ import {
   premiumMonthlyPriceYen,
   premiumRequiredResponse,
 } from "../app/lib/subscriptions/policy.ts";
+import { estimateOpenAiCostMicrosYen } from "../app/lib/admin/costConfig.ts";
 
 const validTrainingRecord = {
   performedAt: "2026-08-30T03:00:00.000Z",
@@ -60,6 +61,27 @@ const validTrainingRecord = {
     },
   ],
 };
+
+test("OpenAI料金をinputとoutputの別単価から100万分の1円単位で計算する", () => {
+  assert.equal(
+    estimateOpenAiCostMicrosYen(
+      "test-model",
+      1_000_000,
+      500_000,
+      {
+        "test-model": {
+          inputYenPerMillionTokens: 100,
+          outputYenPerMillionTokens: 400,
+        },
+      },
+    ),
+    300_000_000,
+  );
+  assert.equal(
+    estimateOpenAiCostMicrosYen("unknown", 1_000, 1_000, {}),
+    0,
+  );
+});
 
 test("正しいトレーニング記録を受け付ける", () => {
   assert.equal(

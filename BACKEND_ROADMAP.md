@@ -499,6 +499,19 @@
 
 ## 公開後または最後に行うこと
 
+### 運営ダッシュボード（2026-09-20）
+
+- [x] OpenAIのuserId・日時・モデル・機能・input/output/total tokensを記録
+- [x] モデル別単価を環境変数で管理し、呼び出し時点の推定料金を保存
+- [x] 管理者限定の`GET /api/admin/dashboard`を追加
+- [x] 売上・Apple手数料・OpenAI・Neon・その他費用・利益・利益率を集計
+- [x] OpenAIの機能別・モデル別・ユーザー別集計と高コストユーザーランキングを追加
+- [x] NeonのDB容量と主要テーブル件数を実測し、プラン料金は推定値として分離
+- [x] 変更可能なコスト警告閾値を追加
+- [ ] 公開DBへ`0013_add_openai_estimated_cost.sql`を適用
+- [ ] 公開先へ管理者ID・モデル単価・Neon料金・警告閾値を設定
+- [ ] App Store Connect Sales and Trendsとの実売上連携
+
 - [ ] OpenAIの予算アラートを管理画面で確認
   - [x] 公開Sitesの`AI_CHAT_DAILY_LIMIT`を100から30へ更新
   - [x] AIチャット30回・AIメニュー3回・身体分析月4回をOpenAI通信前に止める

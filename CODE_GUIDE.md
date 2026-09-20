@@ -14222,3 +14222,12 @@ AI_CHAT_MAX_ANSWER_CHARACTERS=400
 - `ResponseInput`：Responses APIへ渡せる会話データのTypeScript型
 - `store: false`：このAPI応答をOpenAI側の保存対象にしない指定
 - `reasoning.effort: "none"`：通常チャットで追加の推論トークンを使わない指定
+
+## 運営ダッシュボード（2026-09-20追加）
+
+- `app/admin/page.tsx`：運営指標・推移グラフ・OpenAI内訳・Neon実測値を表示する管理画面
+- `app/api/admin/dashboard/route.ts`：管理者権限を確認して売上・費用・利益を集計するAPI
+- `app/lib/admin/requireAdmin.ts`：`ADMIN_CLERK_USER_IDS`による管理者限定処理
+- `app/lib/admin/costConfig.ts`：月額料金、Apple手数料、OpenAIモデル単価、Neon・その他費用、警告閾値の設定
+- `openai_usage_records.estimated_cost_micros_yen`：OpenAI呼び出し時点の推定料金を100万分の1円単位で保存
+- `ADMIN_DASHBOARD_SETUP.md`：公開先の環境変数、DB反映、App Store Connect本格連携の手順

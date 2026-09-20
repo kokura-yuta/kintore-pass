@@ -1,5 +1,9 @@
 // 月額プランの価格と各機能の利用条件を、DB処理から分けて管理するファイル
-export const premiumMonthlyPriceYen = 1_000;
+const configuredMonthlyPrice = Number(process.env.PREMIUM_MONTHLY_PRICE_YEN);
+export const premiumMonthlyPriceYen =
+  Number.isFinite(configuredMonthlyPrice) && configuredMonthlyPrice > 0
+    ? configuredMonthlyPrice
+    : 1_000;
 export const premiumBodyAnalysisMonthlyLimit = 4;
 
 export type BodyAnalysisAccessDecision =

@@ -7,6 +7,7 @@ import {
   date,
   index,
   integer,
+  bigint,
   pgTable,
   real,
   text,
@@ -756,6 +757,14 @@ export const openAiUsageRecords = pgTable(
       .notNull()
       .default(0),
 
+    // 1円未満も失わないよう、推定料金を100万分の1円単位で保存する
+    estimatedCostMicrosYen: bigint(
+      "estimated_cost_micros_yen",
+      { mode: "number" },
+    )
+      .notNull()
+      .default(0),
+
     createdAt: timestamp("created_at", {
       withTimezone: true,
     })
@@ -778,6 +787,10 @@ export const openAiUsageRecords = pgTable(
     check(
       "openai_usage_tokens_nonnegative_check",
       sql`${table.inputTokens} >= 0 and ${table.outputTokens} >= 0 and ${table.totalTokens} >= 0`,
+    ),
+    check(
+      "openai_usage_cost_nonnegative_check",
+      sql`${table.estimatedCostMicrosYen} >= 0`,
     ),
   ],
 );

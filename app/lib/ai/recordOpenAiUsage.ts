@@ -5,6 +5,7 @@ import {
   logOpenAiUsage,
   logServerError,
 } from "@/app/lib/observability/serverLog";
+import { estimateOpenAiCostMicrosYen } from "@/app/lib/admin/costConfig";
 
 type OpenAiUsage = {
   input_tokens?: number | null;
@@ -52,6 +53,11 @@ export async function recordOpenAiUsage({
         inputTokens: usage.input_tokens ?? 0,
         outputTokens: usage.output_tokens ?? 0,
         totalTokens: usage.total_tokens ?? 0,
+        estimatedCostMicrosYen: estimateOpenAiCostMicrosYen(
+          model,
+          usage.input_tokens ?? 0,
+          usage.output_tokens ?? 0,
+        ),
       });
   } catch (error) {
     // 使用量記録の失敗で、利用者へのAI回答まで失敗させない
