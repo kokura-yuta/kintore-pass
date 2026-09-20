@@ -10,23 +10,16 @@ const publishableKey =
 const secretKey =
   process.env.CLERK_SECRET_KEY;
 
-// 必要なClerkキーが1つでも未設定なら認証処理を開始せず停止する
-if (!publishableKey || !secretKey) {
-  throw new Error(
-    "Clerkの環境変数が設定されていません。",
-  );
-}
-
 // 設定済みのキーを使ってトークン検証を行うClerkクライアントを作る
-const clerkClient = createClerkClient({
-  publishableKey,
-  secretKey,
-});
+const clerkClient = publishableKey && secretKey
+  ? createClerkClient({ publishableKey, secretKey })
+  : null;
 
 // Clerkトークンを検証し、本人確認の詳しい認証情報を返す
 export async function getClerkSessionAuth(
   request: Request,
 ) {
+  if (!clerkClient) return null;
   const requestState =
     await clerkClient.authenticateRequest(
       request,
@@ -58,6 +51,9 @@ export async function getClerkUserId(
 export async function getClerkUserDetails(
   clerkUserId: string,
 ) {
+  if (!clerkClient) {
+    throw new Error("Clerkの環境変数が設定されていません。");
+  }
   return clerkClient.users.getUser(
     clerkUserId,
   );
@@ -67,6 +63,9 @@ export async function getClerkUserDetails(
 export async function deleteClerkUser(
   clerkUserId: string,
 ) {
+  if (!clerkClient) {
+    throw new Error("Clerkの環境変数が設定されていません。");
+  }
   return clerkClient.users.deleteUser(
     clerkUserId,
   );

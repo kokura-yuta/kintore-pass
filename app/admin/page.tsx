@@ -6,6 +6,7 @@ import styles from "./page.module.css";
 type Breakdown = { name: string; calls: number; tokens: number; costYen: number };
 type DashboardData = {
   generatedAt: string;
+  preview?: boolean;
   summary: Record<string, number> & { paidUsers: number; totalTokens: number; apiCalls: number };
   openAi: { byFeature: Breakdown[]; byModel: Breakdown[]; byUser: Array<Breakdown & { userId: string; label: string }> };
   neon: {
@@ -78,6 +79,8 @@ export default function AdminDashboardPage() {
   const s = data.summary;
   return <main className={styles.page}>
     <header className={styles.header}><div><p>OPERATIONS</p><h1>運営ダッシュボード</h1><span>{new Date(data.generatedAt).toLocaleString("ja-JP")} 時点</span></div><button onClick={() => void load()}>更新</button></header>
+
+    {data.preview ? <div className={styles.preview}>開発用サンプルデータを表示しています</div> : null}
 
     {data.warnings.length ? <section className={styles.warning}><h2>コスト警告</h2>{data.warnings.map((warning) => <p key={warning}>⚠ {warning}</p>)}</section> : null}
 

@@ -2,6 +2,7 @@ import { and, count, gt, gte, inArray, sql } from "drizzle-orm";
 
 import { adminCostConfig, estimateOpenAiCostMicrosYen } from "@/app/lib/admin/costConfig";
 import { getAdminIdentity } from "@/app/lib/admin/requireAdmin";
+import { createAdminPreviewDashboard } from "@/app/lib/admin/previewDashboard";
 import { logServerError } from "@/app/lib/observability/serverLog";
 import { getDb } from "@/db";
 import {
@@ -52,6 +53,17 @@ function groupCost(rows: UsageRow[], key: "feature" | "model") {
 }
 
 export async function GET(request: Request) {
+  const localPreview =
+    process.env.NODE_ENV !== "production" &&
+    (!process.env.DATABASE_URL ||
+      !process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ||
+      !process.env.CLERK_SECRET_KEY);
+  if (localPreview) {
+    return Response.json(createAdminPreviewDashboard(), {
+      headers: { "Cache-Control": "no-store" },
+    });
+  }
+
   const admin = await getAdminIdentity(request);
   if (!admin.allowed) {
     return Response.json(
