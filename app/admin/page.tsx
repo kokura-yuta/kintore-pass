@@ -1,6 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import {
+  SignInButton,
+  UserButton,
+  useAuth,
+} from "@clerk/nextjs";
 import styles from "./page.module.css";
 
 type Breakdown = { name: string; calls: number; tokens: number; costYen: number };
@@ -26,13 +31,19 @@ const money = (value: number) => `¥${Math.round(value).toLocaleString("ja-JP")}
 const number = (value: number) => Math.round(value).toLocaleString("ja-JP");
 const featureNames: Record<string, string> = { chat: "AIチャット", menu: "メニュー生成", "body-analysis": "身体分析", summary: "会話要約", other: "その他" };
 
-async function fetchDashboard() {
+async function fetchDashboard(token?: string | null) {
   const preview =
     typeof window !== "undefined" &&
     new URLSearchParams(window.location.search).get("preview") === "1";
   const response = await fetch(
     `/api/admin/dashboard${preview ? "?preview=1" : ""}`,
-    { cache: "no-store", credentials: "include" },
+    {
+      cache: "no-store",
+      credentials: "include",
+      headers: token
+        ? { Authorization: `Bearer ${token}` }
+        : undefined,
+    },
   );
   const result = await response.json() as DashboardData & { error?: string };
   if (!response.ok) throw new Error(result.error || "管理データを取得できませんでした。");
@@ -53,6 +64,8 @@ function Bars({ data, valueKey, formatter, tone = "revenue" }: { data: Dashboard
 }
 
 export default function AdminDashboardPage() {
+  const { getToken, isLoaded, isSignedIn } =
+    useAuth();
   const [data, setData] = useState<DashboardData | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
@@ -61,7 +74,10 @@ export default function AdminDashboardPage() {
     setLoading(true);
     setError("");
     try {
-      setData(await fetchDashboard());
+      const token = isSignedIn
+        ? await getToken()
+        : null;
+      setData(await fetchDashboard(token));
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "管理データを取得できませんでした。");
     } finally {
@@ -70,22 +86,51 @@ export default function AdminDashboardPage() {
   };
 
   useEffect(() => {
+    if (!isLoaded) return;
+
+    const preview =
+      new URLSearchParams(
+        window.location.search,
+      ).get("preview") === "1";
+
+    if (!preview && !isSignedIn) {
+      setLoading(false);
+      return;
+    }
+
     let active = true;
-    fetchDashboard()
+    const fetchAuthenticatedDashboard = async () => {
+      const token = isSignedIn
+        ? await getToken()
+        : null;
+      return fetchDashboard(token);
+    };
+
+    fetchAuthenticatedDashboard()
       .then((result) => { if (active) setData(result); })
       .catch((reason: unknown) => {
         if (active) setError(reason instanceof Error ? reason.message : "管理データを取得できませんでした。");
       })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, []);
+  }, [getToken, isLoaded, isSignedIn]);
 
   if (loading) return <main className={styles.center}><p>運営データを集計しています…</p></main>;
+  if (!isSignedIn && !data) {
+    return <main className={styles.center}>
+      <p className={styles.loginEyebrow}>ADMIN ONLY</p>
+      <h1>運営ダッシュボード</h1>
+      <p>管理者のClerkアカウントでログインしてください。</p>
+      <SignInButton mode="modal">
+        <button>管理者としてログイン</button>
+      </SignInButton>
+    </main>;
+  }
   if (error || !data) return <main className={styles.center}><p className={styles.error}>{error || "表示できません。"}</p><button onClick={() => void load()}>もう一度試す</button></main>;
 
   const s = data.summary;
   return <main className={styles.page}>
-    <header className={styles.header}><div><p>OPERATIONS</p><h1>運営ダッシュボード</h1><span>{new Date(data.generatedAt).toLocaleString("ja-JP")} 時点</span></div><button onClick={() => void load()}>更新</button></header>
+    <header className={styles.header}><div><p>OPERATIONS</p><h1>運営ダッシュボード</h1><span>{new Date(data.generatedAt).toLocaleString("ja-JP")} 時点</span></div><div className={styles.headerActions}><button onClick={() => void load()}>更新</button>{isSignedIn ? <UserButton /> : null}</div></header>
 
     {data.preview ? <div className={styles.preview}>開発用サンプルデータを表示しています</div> : null}
 
