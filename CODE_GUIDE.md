@@ -1,14233 +1,1975 @@
-# MUSCLE PAS コードガイド
+# 筋トレPAS コードガイド
 
-バックエンドの完成状況・残作業・実装順は、`BACKEND_ROADMAP.md`へまとめています。バックエンド作業が完了するたびに、このコードガイドとロードマップの両方を更新します。
+最終更新：2026年9月20日
 
-このファイルは、**現在のコードがどこで何をしているかを理解するための説明書**です。
+このガイドは、現在のコードを理解するための説明書です。
 
-長いコードは丸ごと説明せず、処理の目的ごとに小さく分けています。
+過去の作業順ではなく、アプリ全体の仕組みを上から順番に学べる構成にしています。
 
-```text
-何をする場所か
-    ↓
-基本の型
-    ↓
-現在のコードを小さく分けて確認
-    ↓
-文法とデータの流れを確認
-```
+コードを読むときは、毎回次の3点を確認します。
 
-コード例は読みやすいように字下げを整えています。空白の位置を除き、現在のソースコードと同じ処理です。
+1. どのファイルに書かれているか
+2. そのコードが何をするか
+3. なぜその場所に必要なのか
 
-## 読みたい場所へ移動
+---
 
-- [1. ファイル構成](#1-ファイル構成)
-- [2. トップページ](#2-トップページ)
-- [3. 共通カード](#3-共通カード)
-- [4. 理想の体機能](#4-理想の体機能)
-- [5. トレーニング種目カタログ](#5-トレーニング種目カタログ)
-- [6. AIチャットのフロントエンド](#6-aiチャットのフロントエンド)
-- [7. AIチャットのバックエンド](#7-aiチャットのバックエンド)
-- [8. システムプロンプト](#8-システムプロンプト)
-- [9. CSSの読み方](#9-cssの読み方)
-- [10. 基本の型まとめ](#10-基本の型まとめ)
-- [11. 単語帳](#11-単語帳)
-- [12. PostgreSQLバックエンド](#12-postgresqlバックエンド)
-- [13. 現在まだ実装していないこと](#13-現在まだ実装していないこと)
+# 1. このアプリの全体像
 
-## 現在の実装状況
-
-| 機能 | 現在の状態 |
-| --- | --- |
-| Clerk認証 | メール認証、ログイン判定、未ログイン時の画面移動まで実装済み |
-| 初回設定 | 理想体型、身長・体重などの身体情報、完了状態をNeonへ保存・復元できる |
-| 理想の体 | 4種類の画像選択、参考画像プレビュー、選択結果のNeon保存・取得まで実装済み |
-| 身体分析 | 正面・横・背面画像をRender上のPythonへ送り、OpenAI分析、Neon保存、履歴表示まで実装済み。初回分析は任意 |
-| トレーニング記録 | 部位・詳細部位・種目・重量・回数・セットなどを入力し、本人の記録をNeonへ保存・取得できる |
-| AIメニュー | プロフィール・身体分析・最近の記録を基にOpenAIが生成し、Neonへ保存・再取得できる |
-| AIチャット | OpenAIとの会話、Neonへの保存、4つの本人データ取得Toolまで実通信確認済み。履歴の画面復元は接続中 |
-| Python分析API | Renderへ公開済み。ローカルでPythonサーバーを起動しなくても身体分析できる |
-
-OpenAIの回答は`aiResponse`へ保存し、`output_text`を`reply`としてフロントエンドへ返します。
-
-# 1. ファイル構成
-
-現在のアプリ本体は`mobile/`のExpo・React Native・TypeScriptです。ルートの`app/`は、スマホ版から呼ばれるTypeScriptバックエンドとAPIを担当します。
+筋トレPASは、画面・バックエンド・データベース・AI分析を組み合わせたアプリです。
 
 ```text
-mobile/src/app/                 スマホで利用者が見る各画面
-mobile/src/contexts/            複数画面で共有するState
-mobile/src/lib/                 スマホからバックエンドを呼ぶ通信処理
-
-app/api/                        Clerk認証付きTypeScript API
-app/lib/auth/                   Clerkの本人確認を共通化
-app/lib/ai/                     AI用データ、Prompt、Tool実行処理
-db/schema.ts                    Neonへ保存するテーブルの設計図
-
-python-analysis/app/main.py     身体画像を検査してOpenAIへ送るPython API
+Expo / React Nativeの画面
+        ↓ HTTPS通信
+TypeScriptバックエンドAPI
+        ↓
+Neon PostgreSQL ── OpenAI API
+        ↓              ↑
+  長期保存      Python身体分析API
 ```
 
-以下の構成は、開発初期に作ったWeb版プロトタイプの説明です。現在のスマホ版では、同じ役割を`mobile/src/`内のTypeScriptファイルが担当しています。
+## それぞれの担当
+
+### Expo / React Native
+
+利用者が触るスマートフォン画面を作ります。
+
+主な場所は`mobile/src/`です。
+
+ここでは、ボタン、入力欄、画面遷移、読み込み表示などを担当します。
+
+### TypeScriptバックエンド
+
+画面から届いた通信を受け取り、認証、入力確認、保存、AI呼び出しを行います。
+
+主な場所は`app/api/`と`app/lib/`です。
+
+秘密鍵はバックエンドだけで使用し、スマホ側へ渡しません。
+
+### Neon PostgreSQL
+
+ユーザー情報や記録を長期間保存するデータベースです。
+
+テーブルの設計は`db/schema.ts`にあります。
+
+### Python身体分析API
+
+正面・横・背面画像を検査し、OpenAIへ渡して身体分析結果を返します。
+
+主な場所は`python-analysis/app/main.py`です。
+
+### Clerk
+
+ログインと本人確認を担当します。
+
+ClerkのユーザーIDとNeonのユーザーを結び付けることで、他人のデータを表示しないようにします。
+
+### OpenAI
+
+AIチャット、AIメニュー、身体分析の文章生成を担当します。
+
+APIキーはバックエンドとPython側だけに置きます。
+
+### App Store課金
+
+月額プランの購入と復元はiPhone側で開始します。
+
+購入が本物かどうかは、バックエンドがAppleの署名を検証して判断します。
+
+---
+
+# 2. 使用している言語とファイルの違い
+
+## TypeScript（`.ts`）
+
+JavaScriptへ型を追加した言語です。
+
+API通信、DB操作、入力データの型などに使います。
+
+例：`app/api/chat/route.ts`、`mobile/src/lib/chatApi.ts`
+
+```ts
+type ChatResponse = {
+  conversationId: string;
+  reply: string;
+};
+```
+
+この型は、チャットAPIからどの名前・種類の値が返るかを決めています。
+
+## TSX（`.tsx`）
+
+TypeScriptの中にReactの画面を書ける形式です。
+
+例：`mobile/src/app/chat.tsx`
+
+```tsx
+<Text>{message.content}</Text>
+```
+
+`Text`はReact Nativeの画面部品です。
+
+`{}`の中ではTypeScriptの値を表示できます。
+
+## JavaScript（`.js`）
+
+型を書かずに動く言語です。
+
+このプロジェクトでは既存データやプロンプトの一部に残っています。
+
+例：`app/lib/ai/systemPrompt.js`
+
+新しい複雑な処理は、間違いに気付きやすいTypeScriptを基本にします。
+
+## Python（`.py`）
+
+身体画像の検査と画像対応AIへの受け渡しに使います。
+
+例：`python-analysis/app/main.py`
+
+TypeScriptとは別のサーバーとして動き、JSONで結果を返します。
+
+## SQL（`.sql`）
+
+Neonへテーブル変更を反映する命令です。
+
+例：`drizzle-postgres/0012_orange_arclight.sql`
+
+`schema.ts`は現在の完成設計、SQLマイグレーションは設計変更の履歴です。
+
+---
+
+# 3. フォルダ構成
 
 ```text
-app/
-├── layout.jsx                       全画面へ共通の下部メニューを置く
-├── page.jsx                         理想の体だけを表示するホーム画面
-├── globals.css                      アプリ全体の見た目を決める
-├── components/
-│   ├── BottomNavigation.jsx          6機能を切り替える固定下部メニュー
-│   ├── FeatureCard.jsx              6機能で共通のカード
-│   ├── IdealBodySection.jsx         理想の体機能
-│   ├── BodyAnalysisSection.jsx      身体分析の土台
-│   ├── ExerciseGroupCard.jsx        詳細部位ごとの種目カード
-│   ├── TrainingLogCard.jsx          記録専用画面への入口
-│   ├── TrainingLogSection.jsx       記録フォーム本体
-│   ├── MenuBuilderSection.jsx       AIメニューの土台
-│   ├── DashboardSection.jsx         ダッシュボードの土台
-│   └── AiChatSection.jsx            チャット画面への入口
-├── chat/
-│   └── page.jsx                     AIチャットの画面と操作
-├── analysis/
-│   └── page.jsx                     身体分析の専用画面
-├── training/
-│   └── page.jsx                     トレーニング記録の専用画面
-├── menu/
-│   └── page.jsx                     AIメニュー作成の専用画面
-├── dashboard/
-│   └── page.jsx                     進捗確認の専用画面
-├── api/chat/
-│   └── route.js                     チャットのバックエンド
-└── lib/
-    ├── ai/
-    │   └── systemPrompt.js          AIの役割と回答ルール
-    └── training/
-        └── exerciseOptions.js       部位別のトレーニング種目一覧
+musslepas/
+├── mobile/                 スマホアプリ
+│   └── src/
+│       ├── app/            画面
+│       ├── components/     再利用する画面部品
+│       ├── contexts/       複数画面で共有する一時状態
+│       └── lib/            API通信・変換・種目データ
+├── app/
+│   ├── api/                バックエンドAPI
+│   └── lib/                認証・AI・入力検査などの共通処理
+├── db/
+│   ├── index.ts            Neon接続
+│   └── schema.ts           テーブル設計
+├── drizzle-postgres/       DB変更履歴
+├── python-analysis/        身体分析API
+└── tests/                  バックエンドテスト
 ```
 
-## フロントエンドとバックエンド
+## `app`という名前が2つある理由
+
+`mobile/src/app/`はスマホの画面です。
+
+ルート直下の`app/api/`はバックエンドAPIです。
+
+同じ`app`という名前でも担当が違います。
+
+---
+
+# 4. アプリ起動からホームまで
+
+## 画面の流れ
 
 ```text
-フロントエンド
-利用者が見る画面、入力欄、ボタン、吹き出し
-
-バックエンド
-APIキーを守りながらOpenAIへ質問を送る処理
+index.tsx
+  ↓
+auth-gate.tsx
+  ↓
+sign-in.tsx または bootstrap.tsx
+  ↓
+ideal-body.tsx
+  ↓
+profile-setup.tsx
+  ↓
+initial-analysis.tsx
+  ↓
+home.tsx
 ```
 
-APIキーはブラウザ側へ書かず、`.env.local`とバックエンドだけで使用します。
+2回目以降は保存済み状態を確認し、基本的にホームへ進みます。
 
-# 2. トップページ
+## `index.tsx`
 
-担当ファイルは`app/page.jsx`です。
+ファイル：`mobile/src/app/index.tsx`
 
-## importする場所
+アプリのタイトルを短時間表示したあと、認証確認画面へ移動します。
 
-基本の型です。
-
-```js
-import 読み込む名前 from "ファイルの場所";
-```
-
-現在のホーム画面は、理想の体機能だけを読み込みます。
-
-```js
-import IdealBodySection from "./components/IdealBodySection";
-```
-
-- `import`：別ファイルの機能をこのファイルで使えるようにする
-- `IdealBodySection`：読み込んだコンポーネントにつける名前
-- `./components/IdealBodySection`：現在のファイルから見た読み込み先
-
-## 画面を組み立てる場所
-
-まず外側です。
-
-```jsx
-export default function Home() {
-  return (
-    <main>
-      {/* ここに画面の中身を書く */}
-    </main>
+```tsx
+useEffect(() => {
+  const timerId = setTimeout(
+    () => router.replace('/auth-gate'),
+    2500,
   );
-}
+
+  return () => clearTimeout(timerId);
+}, [router]);
 ```
 
-- `function Home()`：トップページを作る関数
-- `return`：ブラウザへ表示するJSXを返す
-- `<main>`：ページの主要部分を囲む
+1行ずつ読むと次の意味です。
 
-ホーム画面には理想の体だけを表示します。
+- `useEffect`は画面表示後に処理を実行します。
+- `setTimeout`は2.5秒後に処理を実行します。
+- `router.replace`は現在の画面を履歴に残さず切り替えます。
+- `clearTimeout`は画面が消えた場合に予約処理を解除します。
+- `[router]`は`router`が変わった場合だけEffectをやり直す指定です。
 
-```jsx
-<div className="singleFeaturePage">
-  <IdealBodySection />
-</div>
-```
+## `bootstrap.tsx`
 
-6機能を縦へ並べず、下部メニューから各専用画面へ切り替えます。
+ファイル：`mobile/src/app/bootstrap.tsx`
 
-## 固定下部メニュー
+ログイン後のユーザーが、初回設定のどこまで終わっているかを確認します。
 
-担当ファイルは`app/components/BottomNavigation.jsx`です。
-
-下部メニューに表示する6機能の情報を配列で定義します。
-
-```jsx
-const navigationItems = [
-  { href: "/", label: "理想", icon: "◇" },
-  { href: "/analysis", label: "分析", icon: "◉" },
-  { href: "/training", label: "記録", icon: "▤" },
-  { href: "/menu", label: "メニュー", icon: "▦" },
-  { href: "/dashboard", label: "進捗", icon: "↗" },
-  { href: "/chat", label: "AI", icon: "✦" },
-];
-```
-
-- `href`：押したときの移動先
-- `label`：画面下へ表示する機能名
-- `icon`：機能名の上へ表示する記号
-
-現在のURLを取得します。
-
-```jsx
-const pathname = usePathname();
-```
-
-`pathname`には`/`・`/training`・`/chat`など、現在表示している画面のパスが入ります。
-
-6件のデータを下部メニューのリンクへ変換します。
-
-```jsx
-{navigationItems.map((item) => {
-```
-
-現在のURLとリンク先を比較して、選択中かを判定します。
-
-```jsx
-const isActive =
-  item.href === "/"
-    ? pathname === "/"
-    : pathname.startsWith(item.href);
-```
-
-- ホームの`/`は完全に同じ場合だけ選択中にする
-- ほかの機能は`/training/...`など子画面でも同じ機能を選択中にする
-
-選択中の場合だけ`active`クラスを追加します。
-
-```jsx
-className={`bottomNavigationLink${
-  isActive ? " active" : ""
-}`}
-```
-
-下部メニューは`layout.jsx`へ置くため、すべての画面で共通表示されます。
-
-```jsx
-<body>
-  {children}
-  <BottomNavigation />
-</body>
-```
-
-`children`には現在の機能画面が入り、その下へ固定メニューを重ねて表示します。
-
-# 3. 共通カード
-
-担当ファイルは`app/components/FeatureCard.jsx`です。
-
-## 基本の型
-
-```jsx
-function コンポーネント名({ 受け取る値 }) {
-  return <表示するJSX />;
-}
-```
-
-## 値を受け取る部分
-
-```jsx
-export default function FeatureCard({
-  number,
-  title,
-  description,
-  children,
-}) {
-```
-
-| 名前 | 受け取る内容 |
-| --- | --- |
-| `number` | `01`などの機能番号 |
-| `title` | 「理想の体」などの見出し |
-| `description` | 機能の短い説明 |
-| `children` | カードごとに異なる中身 |
-
-## 受け取った値を表示する部分
-
-```jsx
-<p className="featureNumber">{number}</p>
-<h2>{title}</h2>
-<p>{description}</p>
-```
-
-`{}`は、JSXの中でJavaScriptの値を表示する記号です。
-
-異なる中身は次の1行で表示します。
-
-```jsx
-<div className="featureContent">{children}</div>
-```
-
-`children`があるため、同じカードデザインの中へ体型選択やチャットリンクなど別々の内容を入れられます。
-
-# 4. 理想の体機能
-
-担当ファイルは`app/components/IdealBodySection.jsx`です。
-
-## この機能のデータの流れ
+バックエンドの`POST /api/users/bootstrap`から状態を取得します。
 
 ```text
-bodyTypesに4種類のデータを用意
-        ↓
-map()で4枚のカードへ変換
-        ↓
-クリックした体型名をStateへ保存
-        ↓
-同じ体型名をlocalStorageへ保存
+onboardingCompleted = true
+→ ホーム
+
+goalBodyTypeがない
+→ 理想体型
+
+profileCompleted = false
+→ 身体情報
+
+それ以外
+→ 初回分析
 ```
 
-参考画像は別の流れです。
+bootstrapは「アプリ起動時の案内係」です。
 
-```text
-ファイルを選択
-    ↓
-元ファイルをStateへ保存
-    ↓
-FileReaderで表示用データへ変換
-    ↓
-imgでプレビュー表示
+データそのものを保存する機能ではありません。
+
+---
+
+# 5. React画面の基本形
+
+## `useState`
+
+画面内で変化する値を保存します。
+
+```tsx
+const [draftMessage, setDraftMessage] = useState('');
 ```
 
-## 4-1. ブラウザで動く機能を使う準備
+文の構造は次のとおりです。
 
-```jsx
-"use client";
+- `const`で変数を定義します。
+- `draftMessage`は現在の入力内容です。
+- `setDraftMessage`は入力内容を変更する関数です。
+- `useState('')`は最初の値を空文字にします。
+- 配列の1番目と2番目を取り出す書き方を分割代入と呼びます。
 
-import { useState } from "react";
-```
+## `onChangeText`
 
-- `"use client"`：クリック、State、localStorageなどブラウザ上の機能を使う指定
-- `useState`：変化する値をReactに覚えさせる機能
+React Nativeの入力欄が変化したときに実行されます。
 
-## 4-2. 体型データ
-
-基本の型です。
-
-```js
-const 配列名 = [
-  {
-    プロパティ名: 値,
-  },
-];
-```
-
-現在の1件分です。
-
-```js
-{
-  name: "細マッチョ",
-  image: "/images/body-types/lean-muscle.png",
-  description: "体脂肪を抑えた、引き締まった体型",
-}
-```
-
-- `name`：表示と選択状態に使う体型名
-- `image`：`public`フォルダ内にある画像の場所
-- `description`：体型の特徴
-
-同じ形のオブジェクトを4件、`bodyTypes`配列へ入れています。
-
-## 4-3. Stateを定義する
-
-基本の型です。
-
-```js
-const [現在の値, 値を変更する関数] = useState(初期値);
-```
-
-### 選択中の体型
-
-```js
-const [selectedBodyType, setSelectedBodyType] = useState("");
-```
-
-右から読みます。
-
-```text
-useState("")
-→ 最初は空文字でStateを作る
-
-selectedBodyType
-→ 現在選択されている体型名を読む
-
-setSelectedBodyType
-→ 選択中の体型名を変更する
-```
-
-### 選択した画像ファイル
-
-```js
-const [referenceImage, setReferenceImage] = useState(null);
-```
-
-最初はファイルが存在しないため、初期値は`null`です。
-
-### プレビュー用データ
-
-```js
-const [referenceImagePreview, setReferenceImagePreview] = useState("");
-```
-
-画像を表示する`src`へ渡す文字列を保存します。
-
-## 4-4. 選択した体型を保存する
-
-基本の型です。
-
-```js
-function 関数名(受け取る値) {
-  画面のStateを更新する;
-  ブラウザへ保存する;
-}
-```
-
-現在のコードです。
-
-```js
-function handleBodyTypeSelect(bodyTypeName) {
-  setSelectedBodyType(bodyTypeName);
-  localStorage.setItem("goalBodyType", bodyTypeName);
-}
-```
-
-1行目から順番に読みます。
-
-1. `bodyTypeName`で「細マッチョ」などを受け取る
-2. `setSelectedBodyType()`で画面の選択状態を変える
-3. `localStorage.setItem()`で別ページからも読めるように保存する
-
-`"goalBodyType"`は保存した値を後から探すための名前です。
-
-## 4-5. `.map()`でカードを繰り返す
-
-基本の型です。
-
-```jsx
-{配列.map((1件分のデータ) => (
-  <表示する要素 />
-))}
-```
-
-まず、配列から1件ずつ受け取る部分です。
-
-```jsx
-{bodyTypes.map((bodyType) => (
-  // bodyTypeを使って1枚のカードを作る
-))}
-```
-
-- `bodyTypes`：4種類の体型データ
-- `.map()`：配列の全要素を順番に処理する
-- `bodyType`：現在処理している1種類の体型
-- `=>`：受け取ったデータを右側の表示へ変換する
-
-次に、カードを識別する部分です。
-
-```jsx
-<button
-  key={bodyType.name}
-  type="button"
->
-```
-
-`key`は、Reactが4枚のカードを区別するための値です。
-
-## 4-6. 選択中だけCSSクラスを追加する
-
-基本の型です。
-
-```js
-条件 ? 条件が正しい場合 : 条件が違う場合
-```
-
-現在のコードです。
-
-```jsx
-className={
-  selectedBodyType === bodyType.name
-    ? "bodyTypeButton selected"
-    : "bodyTypeButton"
-}
-```
-
-読む順番です。
-
-```text
-selectedBodyType === bodyType.name
-→ 選択中の名前と、このカードの名前が同じか確認
-
-同じ
-→ selectedクラスも付ける
-
-違う
-→ 通常クラスだけ付ける
-```
-
-## 4-7. クリックした体型名を関数へ渡す
-
-```jsx
-onClick={() => handleBodyTypeSelect(bodyType.name)}
-```
-
-- `onClick`：ボタンを押したときに実行する
-- `() =>`：クリックされるまで処理を待たせる
-- `bodyType.name`：クリックしたカードの体型名
-
-## 4-8. カードの中身を表示する
-
-画像です。
-
-```jsx
-<img
-  src={bodyType.image}
-  alt={`${bodyType.name}の見本`}
-  className="bodyTypeImage"
+```tsx
+<TextInput
+  value={draftMessage}
+  onChangeText={setDraftMessage}
 />
 ```
 
-- `src`：表示する画像の場所
-- `alt`：画像を見られない場合にも意味を伝える文章
-- `` `${bodyType.name}の見本` ``：体型名を文章へ埋め込む
+文字を入力するたびに、その文字列が`setDraftMessage`へ渡されます。
 
-名前と説明は別々に表示します。
+その結果、`draftMessage`へ最新の入力内容が入ります。
 
-```jsx
-<span className="bodyTypeName">{bodyType.name}</span>
-<span className="bodyTypeDescription">
-  {bodyType.description}
-</span>
-```
+Web Reactの`event.target.value`と違い、React Nativeは文字列を直接受け取ります。
 
-## 4-9. 選択されたファイルを1件取得する
+## `onPress`
 
-```js
-const selectedFile = event.target.files?.[0] ?? null;
-```
-
-この1行は次の順番で読みます。
-
-```text
-event.target
-→ 操作されたinput
-
-.files
-→ inputで選択されたファイル一覧
-
-?.[0]
-→ filesが存在する場合だけ、最初の1件を取得
-
-?? null
-→ 取得結果がnullまたはundefinedならnullを使う
-```
-
-### `?.[0]`を詳しく確認
-
-普通に最初の要素を取る形です。
-
-```js
-files[0]
-```
-
-しかし、`files`自体が存在しない状態で`[0]`を読むとエラーになる可能性があります。
-
-```js
-files?.[0]
-```
-
-`?.`を付けると、`files`がある場合だけ`[0]`を読みます。なければエラーにせず`undefined`になります。
-
-### `?? null`を詳しく確認
-
-基本の型です。
-
-```js
-左側の値 ?? 代わりに使う値
-```
-
-左側が`null`または`undefined`のときだけ右側を使います。
-
-```text
-画像あり     → Fileオブジェクト
-画像なし     → undefined ?? null → null
-```
-
-空文字`""`や数値の`0`は有効な値として残ります。
-
-## 4-10. ファイルがない場合を先に終わらせる
-
-```js
-if (!selectedFile) {
-  setReferenceImagePreview("");
-  return;
-}
-```
-
-- `!selectedFile`：ファイルがないか確認する
-- `setReferenceImagePreview("")`：以前のプレビューを消す
-- `return`：この関数の残りを実行せず終了する
-
-## 4-11. ファイルを画像表示用データへ変換する
-
-まず読み取り機能を作ります。
-
-```js
-const reader = new FileReader();
-```
-
-読み取り完了後の処理を登録します。
-
-```js
-reader.onload = () => {
-  setReferenceImagePreview(reader.result);
-};
-```
-
-最後に読み取りを開始します。
-
-```js
-reader.readAsDataURL(selectedFile);
-```
-
-この3つは次の順番です。
-
-```text
-FileReaderを作る
-    ↓
-読み終わったときの処理を登録する
-    ↓
-Data URLへの変換を開始する
-    ↓
-完了後、reader.resultをStateへ保存する
-```
-
-## 4-12. 値がある場合だけ表示する
-
-ファイル名です。
-
-```jsx
-{referenceImage && (
-  <p>選択した画像:{referenceImage.name}</p>
-)}
-```
-
-プレビューです。
-
-```jsx
-{referenceImagePreview && (
-  <img
-    src={referenceImagePreview}
-    alt="選択した参考画像のプレビュー"
-    className="referenceImagePreview"
-  />
-)}
-```
-
-`値 && 表示`は、左側に値がある場合だけ右側を表示するReactの書き方です。
-
-# 5. トレーニング種目カタログ
-
-担当ファイルは`app/lib/training/exerciseOptions.js`です。
-
-このファイルは、トレーニング記録で選択できる種目を管理します。画面の操作は書かず、固定の種目データだけを担当します。
-
-## データの階層
-
-```text
-大部位
-  ↓
-詳細部位
-  ↓
-実際のトレーニング種目
-```
-
-現在は次の規模です。
-
-| 種類 | 数 |
-| --- | --- |
-| 大部位 | 7 |
-| 詳細部位 | 26 |
-| トレーニング種目 | 190 |
-
-大部位は、胸・背中・肩・腕・脚・腹・全身です。
-
-## 基本の型
-
-```js
-export const データ名 = {
-  大部位: {
-    詳細部位: [種目データ],
-  },
-};
-```
-
-`{}`の中へさらに`{}`を入れる「入れ子のオブジェクト」です。
-
-## 胸上部までの構造
-
-まず、大部位の胸です。
-
-```js
-胸: {
-  // 胸の詳細部位を入れる
-},
-```
-
-その中へ胸上部を作ります。
-
-```js
-胸上部: [
-  // 胸上部の種目を入れる
-],
-```
-
-`胸上部`の値は、複数の種目を保存する配列`[]`です。
-
-## 1種目の構造
-
-```js
-{
-  id: "incline-barbell-bench-press",
-  name: "インクラインバーベルベンチプレス",
-  equipment: "バーベル",
-}
-```
-
-長い一覧も、すべてこの同じ型の繰り返しです。
-
-| プロパティ | 目的 |
-| --- | --- |
-| `id` | 表示名が変わっても同じ種目として識別する |
-| `name` | 画面に表示する日本語の種目名 |
-| `equipment` | バーベル・ダンベル・自重など使用器具を記録する |
-
-`bodyPart`と`targetMuscle`を1種目ずつ繰り返し書かない理由は、外側の`胸`と`胸上部`から分かるためです。
-
-```text
-胸
-└── 胸上部
-    └── インクラインバーベルベンチプレス
-        ├── id
-        ├── name
-        └── equipment
-```
-
-後で記録を保存するときは、大部位・詳細部位・種目・重量・回数・セットを一つの記録へまとめます。
-
-## トレーニング記録の専用画面へ移動する仕組み
-
-トレーニング記録へは、全画面共通の下部メニューから移動します。
-
-```jsx
-{ href: "/training", label: "記録", icon: "▤" }
-```
-
-- `href="/training"`：移動先をトレーニング記録ページにする
-- `label="記録"`：下部メニューへ表示する文字
-- 記録を押すと`app/training/page.jsx`が表示される
-
-専用画面では、今まで作った記録フォームを読み込みます。
-
-```jsx
-import TrainingLogSection from "../components/TrainingLogSection";
-```
-
-読み込んだフォームを専用画面へ配置します。
-
-```jsx
-<TrainingLogSection />
-```
-
-画面移動は固定下部メニューへ統一したため、トレーニング記録画面には「トップへ戻る」リンクを置きません。
-
-役割を分けると、次の構造になります。
-
-```text
-下部メニューの記録
-└── /trainingへ移動
-    └── TrainingLogSectionの記録フォームを表示
-```
-
-## 5-1. 大部位を選択する画面
-
-担当ファイルは`app/components/TrainingLogSection.jsx`です。
-
-ブラウザで選択操作とStateを使うための指定です。
-
-```jsx
-"use client";
-```
-
-ReactからState機能を読み込みます。
-
-```jsx
-import { useState } from "react";
-```
-
-トレーニング記録では、共通の`FeatureCard`を使いません。
-
-```jsx
-<section className="trainingLogPanel">
-  {/* 部位選択と詳細部位カード */}
-</section>
-```
-
-- `section`：トレーニング記録の操作部分を一つにまとめる
-- `trainingLogPanel`：トレーニング記録専用のCSSを適用する名前
-- 共通カードを外すことで、専用ページ内の見出しが二重になるのを防ぐ
-
-部位別の種目カタログを読み込みます。
-
-```jsx
-import { exercisesByBodyPart } from "../lib/training/exerciseOptions";
-```
-
-選択中の大部位を保存するStateです。
-
-```jsx
-const [selectedBodyPart, setSelectedBodyPart] = useState("");
-```
-
-- `selectedBodyPart`：現在選択されている大部位
-- `setSelectedBodyPart`：選択中の大部位を変更する関数
-- `""`：最初は何も選択されていない
-
-部位名と横並びボタンをまとめます。
-
-```jsx
-<div className="bodyPartSelector">
-  <p className="trainingFieldLabel">部位</p>
-  <div className="bodyPartTabs">
-    {/* 部位ボタン */}
-  </div>
-</div>
-```
-
-- `bodyPartSelector`：部位の見出しとボタン一覧をまとめる
-- `bodyPartTabs`：CSSで部位ボタンを横並びにする
-
-すべての大部位を1件ずつボタンへ変換します。
-
-```jsx
-{Object.keys(exercisesByBodyPart).map((bodyPart) => (
-  <button
-    className={`bodyPartTab${
-      selectedBodyPart === bodyPart ? " active" : ""
-    }`}
-    type="button"
-    key={bodyPart}
-    onClick={() => setSelectedBodyPart(bodyPart)}
-    aria-pressed={selectedBodyPart === bodyPart}
-  >
-    {bodyPart}
-  </button>
-))}
-```
-
-```text
-Object.keys(...).map(...)
-→ カタログの大部位を1件ずつボタンへ変換する。
-
-selectedBodyPart === bodyPart ? " active" : ""
-→ 現在選択中の部位だけactiveクラスを追加する。
-
-onClick={() => setSelectedBodyPart(bodyPart)}
-→ 押した部位名をselectedBodyPartへ保存する。
-
-aria-pressed={selectedBodyPart === bodyPart}
-→ 選択中かどうかを読み上げ機能へ伝える。
-```
-
-<details>
-<summary>以前の大部位select方式で学んだ内容（現在のコードでは未使用）</summary>
-
-選択中の種目IDを保存するStateです。
-
-```jsx
-const [selectedExerciseId, setSelectedExerciseId] =
-  useState("");
-```
-
-ラベルと選択欄をつなぎます。
-
-```jsx
-<label htmlFor="bodyPart">
-  部位
-</label>
-```
-
-`htmlFor="bodyPart"`と、次の`id="bodyPart"`が対応します。
-
-選択欄の開始部分です。
-
-```jsx
-<select
-  id="bodyPart"
-  value={selectedBodyPart}
-```
-
-- `id`：ラベルと選択欄を対応させる名前
-- `value`：現在のStateを選択欄へ反映する
-
-選択内容が変わったときの処理です。
-
-```jsx
-onChange={(event) =>
-  setSelectedBodyPart(event.target.value)
-}
-```
-
-一行ずつ読むと次の意味です。
-
-```text
-onChange={(event) =>
-→ 選択内容が変わったとき、操作情報をeventで受け取る
-
-event.target.value
-→ 操作されたselectから選択値を取得する
-
-setSelectedBodyPart(...)
-→ 選択値をselectedBodyPartのStateへ保存する
-```
-
-最初に表示する未選択の項目です。
-
-```jsx
-<option value="">部位を選択</option>
-```
-
-`value=""`なので、この項目を選んでいる間は`selectedBodyPart`も空文字です。
-
-大部位名を取り出して選択肢へ変換します。
-
-```jsx
-{Object.keys(exercisesByBodyPart).map((bodyPart) => (
-```
-
-- `Object.keys(exercisesByBodyPart)`：カタログから胸・背中・肩などのプロパティ名を配列で取得する
-- `.map()`：取得したすべての大部位を順番に処理する
-- `bodyPart`：現在処理している大部位名を受け取る変数
-- `=>`：受け取った大部位名を下の`option`へ変換する
-
-1件分の選択肢です。
-
-```jsx
-<option key={bodyPart} value={bodyPart}>
-```
-
-- `key`：Reactが各選択肢を区別する値
-- `value`：選択後に`event.target.value`から取得される値
-
-利用者が見る大部位名です。
-
-```jsx
-{bodyPart}
-```
-
-最後に`option`、`.map()`、JSX内のJavaScript処理を閉じます。
-
-```jsx
-</option>
-))}
-```
-
-全体の流れです。
-
-```text
-種目カタログから大部位名を取得
-        ↓
-map()で1件ずつoptionへ変換
-        ↓
-利用者が大部位を選択
-        ↓
-event.target.valueで選択値を取得
-        ↓
-selectedBodyPartへ保存
-```
-
-</details>
-
-現在の実装では、詳細部位と種目を`select`で1件ずつ選ばず、詳細部位カードをまとめて表示します。
-
-<details>
-<summary>以前のselect方式で学んだ内容（現在のコードでは未使用）</summary>
-
-## 5-2. 以前のselect方式で詳細部位を表示する
-
-詳細部位の選択状態を保存します。
-
-```jsx
-const [selectedTargetMuscle, setSelectedTargetMuscle] =
-  useState("");
-```
-
-- `selectedTargetMuscle`：現在選択されている胸上部・広背筋などの詳細部位
-- `setSelectedTargetMuscle`：詳細部位を変更する関数
-- `useState("")`：最初は何も選択されていない
-
-選択中の大部位から、詳細部位名の配列を作ります。
-
-```jsx
-const targetMuscleOptions = Object.keys(
-  exercisesByBodyPart[selectedBodyPart] ?? {}
-);
-```
-
-一行ずつ読むと次の意味です。
-
-```text
-exercisesByBodyPart[selectedBodyPart]
-→ 選択中の大部位の中身を取得する
-
-?? {}
-→ 大部位が未選択なら空のオブジェクトを使う
-
-Object.keys(...)
-→ 胸上部・胸中部などのプロパティ名を配列で取得する
-
-const targetMuscleOptions =
-→ 取得結果を詳細部位の選択肢として保存する
-```
-
-胸を選択した場合の結果です。
-
-```js
-["胸上部", "胸中部", "胸下部", "胸全体"]
-```
-
-大部位が変わったときに実行する関数です。
-
-```jsx
-function handleBodyPartChange(event) {
-  const nextBodyPart = event.target.value;
-  setSelectedBodyPart(nextBodyPart);
-  setSelectedTargetMuscle("");
-  setSelectedExerciseId("");
-}
-```
-
-一行ずつ読むと次の意味です。
-
-```text
-function handleBodyPartChange(event)
-→ 大部位の選択変更を処理し、操作情報をeventで受け取る
-
-const nextBodyPart = event.target.value
-→ 新しく選択された大部位を取得する
-
-setSelectedBodyPart(nextBodyPart)
-→ 新しい大部位をStateへ保存する
-
-setSelectedTargetMuscle("")
-→ 前の大部位で選んだ詳細部位を空に戻す
-
-setSelectedExerciseId("")
-→ 前の大部位で選んだ種目を空に戻す
-```
-
-大部位の選択欄から関数を呼び出します。
-
-```jsx
-onChange={handleBodyPartChange}
-```
-
-Reactが選択操作の`event`を`handleBodyPartChange`へ自動的に渡します。
-
-大部位が選択されている場合だけ、詳細部位のまとまりを表示します。
-
-```jsx
-{selectedBodyPart && (
-  <div>
-```
-
-`selectedBodyPart`が空文字なら表示されません。胸などが入っていれば`div`の中を表示します。
-
-詳細部位のラベルです。
-
-```jsx
-<label htmlFor="targetMuscle">
-  詳細部位
-</label>
-```
-
-詳細部位のStateを選択欄へ反映します。
-
-```jsx
-<select
-  id="targetMuscle"
-  value={selectedTargetMuscle}
-```
-
-選択が変わったら、新しい詳細部位をStateへ保存します。
-
-```jsx
-onChange={(event) =>
-  setSelectedTargetMuscle(event.target.value)
-}
-```
-
-最初に表示する未選択項目です。
-
-```jsx
-<option value="">詳細部位を選択</option>
-```
-
-詳細部位の配列を1件ずつ選択肢へ変換します。
-
-```jsx
-{targetMuscleOptions.map((targetMuscle) => (
-```
-
-`targetMuscle`には、胸上部・胸中部などが1件ずつ入ります。
-
-1件分の選択肢です。
-
-```jsx
-<option key={targetMuscle} value={targetMuscle}>
-  {targetMuscle}
-</option>
-```
-
-- `key`：Reactが詳細部位を区別する値
-- `value`：選択後に取得する詳細部位名
-- `{targetMuscle}`：利用者が画面で見る文字
-
-処理全体の流れです。
-
-```text
-利用者が胸を選択
-        ↓
-selectedBodyPartへ胸を保存
-        ↓
-胸オブジェクトから詳細部位名を取得
-        ↓
-targetMuscleOptionsへ配列で保存
-        ↓
-map()で詳細部位のoptionを表示
-        ↓
-選択した詳細部位をselectedTargetMuscleへ保存
-```
-
-## 5-3. 以前のselect方式で種目一覧を取り出す
-
-選択した種目のIDを保存するStateです。
-
-```jsx
-const [selectedExerciseId, setSelectedExerciseId] =
-  useState("");
-```
-
-- `selectedExerciseId`：現在選択されている種目のID
-- `setSelectedExerciseId`：選択中の種目IDを変更する関数
-- `useState("")`：最初は種目が未選択なので空文字から始める
-
-選択中の大部位と詳細部位から、表示する種目一覧を取り出します。
-
-```jsx
-const exerciseOptions =
-  exercisesByBodyPart[selectedBodyPart]?.[
-    selectedTargetMuscle
-  ] ?? [];
-```
-
-一行ずつ読むと次の意味です。
-
-```text
-const exerciseOptions =
-→ 取り出した種目配列をexerciseOptionsという名前で定義する
-
-exercisesByBodyPart[selectedBodyPart]
-→ 全種目カタログから、現在選択中の大部位を取り出す
-
-?.[selectedTargetMuscle]
-→ 大部位が存在するときだけ、現在選択中の詳細部位を取り出す
-
-?? []
-→ 大部位や詳細部位が未選択なら、代わりに空の配列を使う
-```
-
-胸と胸中部を選んだ場合は、実質的に次の場所を読んでいます。
-
-```jsx
-exercisesByBodyPart["胸"]["胸中部"]
-```
-
-結果は種目オブジェクトが入った配列です。
-
-```js
-[
-  {
-    id: "barbell-bench-press",
-    name: "バーベルベンチプレス",
-    equipment: "バーベル",
-  },
-]
-```
-
-`?.[]`は、変数に入っているプロパティ名を安全に読む書き方です。大部位が未選択でもエラーを起こしません。
-
-`?? []`は、左側が`undefined`または`null`なら空配列を使います。次に`.map()`で種目を並べるため、代わりの値も配列にしています。
-
-詳細部位を変更する処理です。
-
-```jsx
-function handleTargetMuscleChange(event) {
-  const nextTargetMuscle = event.target.value;
-  setSelectedTargetMuscle(nextTargetMuscle);
-  setSelectedExerciseId("");
-}
-```
-
-一行ずつ読むと次の意味です。
-
-```text
-function handleTargetMuscleChange(event)
-→ 詳細部位が変更されたときの処理を定義する
-
-const nextTargetMuscle = event.target.value
-→ 新しく選択された詳細部位を取得する
-
-setSelectedTargetMuscle(nextTargetMuscle)
-→ 新しい詳細部位をStateへ保存する
-
-setSelectedExerciseId("")
-→ 前の詳細部位で選んだ種目を空に戻す
-```
-
-詳細部位の選択欄から、この関数を呼び出します。
-
-```jsx
-onChange={handleTargetMuscleChange}
-```
-
-Reactが選択操作の`event`を関数へ自動的に渡します。
-
-</details>
-
-## 5-4. 詳細部位カードへ最初の3種目を表示する
-
-担当ファイルは`app/components/ExerciseGroupCard.jsx`です。
-
-詳細部位名と、その詳細部位に登録された種目配列を受け取ります。
-
-```jsx
-export default function ExerciseGroupCard({
-  targetMuscle,
-  exercises,
-}) {
-```
-
-- `targetMuscle`：胸上部・胸中部などの詳細部位名
-- `exercises`：その詳細部位に登録されている種目オブジェクトの配列
-- `{ targetMuscle, exercises }`：親から渡されたpropsを名前ごとに取り出す分割代入
-
-全種目から、カードへ最初に表示する3種目を取り出します。
-
-```jsx
-const previewExercises = exercises.slice(0, 3);
-```
-
-一行ずつ読むと次の意味です。
-
-```text
-exercises
-→ その詳細部位に登録されている全種目
-
-.slice(0, 3)
-→ 0番目から3番目の直前まで、合計3件を取り出す
-
-const previewExercises =
-→ 取り出した3件をpreviewExercisesとして定義する
-```
-
-`.slice()`は元の配列を変更せず、新しい配列を作ります。
-
-詳細部位名をカードの見出しとして表示します。
-
-```jsx
-<h3>{targetMuscle}</h3>
-```
-
-最初の3種目を1件ずつボタンへ変換します。
-
-```jsx
-{previewExercises.map((exercise) => (
-```
-
-`exercise`には、現在処理している1種目のオブジェクトが入ります。
-
-```jsx
-<button
-  className="exerciseListButton"
-  type="button"
-  key={exercise.id}
->
-```
-
-- `className`：後から種目ボタンの見た目を指定する名前
-- `type="button"`：フォームを誤って送信しない通常ボタンにする
-- `key={exercise.id}`：Reactが各種目を区別するID
-
-種目名と装飾用の矢印を表示します。
-
-```jsx
-<span>{exercise.name}</span>
-<span aria-hidden="true">›</span>
-```
-
-`aria-hidden="true"`は、意味を持たない装飾用の矢印を読み上げ対象から外します。
-
-現在は種目ボタンの表示だけです。種目の選択処理と「もっと見る」は次の工程で追加します。
-
-カードが開いているかをStateで管理します。
-
-```jsx
-const [isExpanded, setIsExpanded] = useState(false);
-```
-
-```text
-isExpanded
-→ 全種目を表示しているかを保存する。
-
-setIsExpanded
-→ 開閉状態を変更する。
-
-useState(false)
-→ 最初は閉じた状態から始める。
-```
-
-開閉状態によって表示する種目配列を切り替えます。
-
-```jsx
-const visibleExercises = isExpanded
-  ? exercises
-  : exercises.slice(0, 3);
-```
-
-```text
-const visibleExercises = isExpanded
-→ isExpandedを条件に、表示する種目配列を定義する。
-
-? exercises
-→ 開いている場合はすべての種目を使う。
-
-: exercises.slice(0, 3)
-→ 閉じている場合は最初の3種目だけを使う。
-```
-
-表示する種目配列を1件ずつボタンへ変換します。
-
-```jsx
-{visibleExercises.map((exercise) => (
-```
-
-`visibleExercises`は、閉じている場合は3件、開いている場合は全件になります。
-
-種目が4件以上ある場合だけ開閉ボタンを表示します。
-
-```jsx
-{exercises.length > 3 && (
-```
-
-```text
-exercises.length > 3
-→ 登録されている種目数が3件を超えているか確認する。
-
-&&
-→ 条件が正しい場合だけ続くボタンを表示する。
-```
-
-ボタンを押したときに開閉状態を反転します。
-
-```jsx
-onClick={() =>
-  setIsExpanded((currentIsExpanded) => !currentIsExpanded)
-}
-```
-
-```text
-onClick={() =>
-→ ボタンを押したときの処理を指定する。
-
-currentIsExpanded
-→ 変更する直前の開閉状態を受け取る。
-
-!currentIsExpanded
-→ falseをtrueへ、trueをfalseへ反転する。
-```
-
-開閉状態に合わせてボタンの文字を変更します。
-
-```jsx
-{isExpanded ? "閉じる" : "もっと見る"}
-```
-
-`isExpanded`が`true`なら「閉じる」、`false`なら「もっと見る」を表示します。
-
-記録画面で詳細部位カードを使えるように読み込みます。
-
-```jsx
-import ExerciseGroupCard from "./ExerciseGroupCard";
-```
-
-選択中の大部位に含まれる詳細部位を、カードへ変換して表示します。
-
-```jsx
-{selectedBodyPart && (
-  <div className="exerciseGroupList">
-    {targetMuscleOptions.map((targetMuscle) => (
-      <ExerciseGroupCard
-        key={targetMuscle}
-        targetMuscle={targetMuscle}
-        exercises={
-          exercisesByBodyPart[selectedBodyPart][targetMuscle]
-        }
-      />
-    ))}
-  </div>
-)}
-```
-
-コードを一行ずつ読むと次の意味です。
-
-```text
-{selectedBodyPart && (
-→ 大部位が選択されている場合だけカード一覧を表示する。
-
-<div className="exerciseGroupList">
-→ 複数の詳細部位カードを一つの一覧にまとめる。
-
-{targetMuscleOptions.map((targetMuscle) => (
-→ 詳細部位を1件ずつ受け取り、カードへ変換する。
-
-<ExerciseGroupCard
-→ 詳細部位カードを1枚表示する。
-
-key={targetMuscle}
-→ Reactが各カードを区別するために詳細部位名を使う。
-
-targetMuscle={targetMuscle}
-→ 胸上部などの詳細部位名をカードへ渡す。
-
-exercises={exercisesByBodyPart[selectedBodyPart][targetMuscle]}
-→ 選択中の大部位と詳細部位に対応する種目配列をカードへ渡す。
-```
-
-# 6. AIチャットのフロントエンド
-
-担当ファイルは`app/chat/page.jsx`です。
-
-## 全体のデータの流れ
-
-```text
-textareaへ質問を入力
-    ↓
-handleSubmitを実行
-    ↓
-利用者メッセージを画面へ追加
-    ↓
-POST /api/chatへJSONを送信
-    ↓
-返されたreplyをAIメッセージへ変換
-    ↓
-AIの吹き出しを画面へ追加
-```
-
-## 6-1. チャットで使うState
-
-入力途中の文章です。
-
-```js
-const [draftMessage, setDraftMessage] = useState("");
-```
-
-会話履歴です。
-
-```js
-const [messages, setMessages] = useState([]);
-```
-
-送信中かどうかです。
-
-```js
-const [isSending, setIsSending] = useState(false);
-```
-
-エラー文章です。
-
-```js
-const [errorMessage, setErrorMessage] = useState("");
-```
-
-初期値の意味です。
-
-| 初期値 | 意味 |
-| --- | --- |
-| `""` | まだ文章がない |
-| `[]` | まだメッセージがない |
-| `false` | まだ送信していない |
-
-## 6-2. フォームの通常動作を止める
-
-```js
-async function handleSubmit(event) {
-  event.preventDefault();
-```
-
-- `async`：関数内で`await`を使えるようにする
-- `event`：送信時の情報
-- `preventDefault()`：フォーム送信によるページ再読み込みを止める
-
-## 6-3. 入力前後の空白を削除する
-
-```js
-const trimmedMessage = draftMessage.trim();
-```
-
-`trim()`は文字列の先頭と末尾にある空白や改行を削除します。
-
-## 6-4. 送ってはいけない場合は終了する
-
-```js
-if (!trimmedMessage || isSending) {
-  return;
-}
-```
-
-次のどちらかなら終了します。
-
-- 質問が空
-- すでに送信中
-
-## 6-5. 他機能の目標体型を読む
-
-```js
-const goalBodyType =
-  localStorage.getItem("goalBodyType") ?? "";
-```
-
-理想の体機能が保存した`goalBodyType`を読みます。保存されていない場合は空文字を使います。
-
-## 6-6. 利用者メッセージを作る
-
-基本の型です。
-
-```js
-const 変数名 = {
-  プロパティ名: 値,
-};
-```
-
-現在のコードです。
-
-```js
-const userMessage = {
-  id: crypto.randomUUID(),
-  role: "user",
-  content: trimmedMessage,
-};
-```
-
-| プロパティ | 用途 |
-| --- | --- |
-| `id` | メッセージを区別する番号 |
-| `role` | 利用者とAIを区別する役割 |
-| `content` | 表示する本文 |
-
-## 6-7. 現在の履歴を残して追加する
-
-基本の型です。
-
-```js
-setState((現在の値) => [
-  ...現在の値,
-  新しい値,
-]);
-```
-
-現在のコードです。
-
-```js
-setMessages((currentMessages) => [
-  ...currentMessages,
-  userMessage,
-]);
-```
-
-- `currentMessages`：更新直前の会話履歴
-- `...currentMessages`：現在の全メッセージを新しい配列へ展開する
-- `userMessage`：配列の最後へ追加する
-
-## 6-8. 送信前の画面状態を変える
-
-```js
-setDraftMessage("");
-setIsSending(true);
-setErrorMessage("");
-```
-
-順番に、入力欄を空にし、送信中へ変更し、以前のエラーを消します。
-
-## 6-9. バックエンドへ送る
-
-通信の外側です。
-
-```js
-const response = await fetch("/api/chat", {
-  // 通信設定を書く
-});
-```
-
-- `fetch()`：指定したURLへ通信する
-- `await`：レスポンスが返るまでこの関数の続きを待つ
-- `response`：返ってきたレスポンス全体
-
-送信方法です。
-
-```js
-method: "POST",
-```
-
-`POST`はデータをバックエンドへ送る方法です。
-
-JSONを送ることを伝える部分です。
-
-```js
-headers: {
-  "Content-Type": "application/json",
-},
-```
-
-送るデータです。
-
-```js
-body: JSON.stringify({
-  message: trimmedMessage,
-  userData: {
-    goalBodyType,
-  },
-}),
-```
-
-ここは入れ子構造です。
-
-```text
-送信データ
-├── message
-└── userData
-    └── goalBodyType
-```
-
-`JSON.stringify()`はJavaScriptのオブジェクトを通信できるJSON文字列へ変換します。
-
-## 6-10. 返されたJSONを読む
-
-```js
-const data = await response.json();
-```
-
-`response`全体からJSON部分を読み取り、JavaScriptのオブジェクトとして`data`へ保存します。
-
-## 6-11. AIメッセージを作る
-
-```js
-const assistantMessage = {
-  id: crypto.randomUUID(),
-  role: "assistant",
-  content: data.reply,
-};
-```
-
-バックエンドが返した`reply`を、AI側のメッセージ本文へ入れます。
-
-このメッセージも同じ型で履歴へ追加します。
-
-```js
-setMessages((currentMessages) => [
-  ...currentMessages,
-  assistantMessage,
-]);
-```
-
-## 6-12. 失敗時と終了時の処理
-
-失敗した場合です。
-
-```js
-catch {
-  setErrorMessage(
-    "回答を取得できませんでした。もう一度お試しください。"
-  );
-}
-```
-
-成功・失敗のどちらでも最後に実行する部分です。
-
-```js
-finally {
-  setIsSending(false);
-}
-```
-
-`false`へ戻すことで、入力と送信ボタンを再び使えるようにします。
-
-## 6-13. Enterで送信する
-
-日本語入力の変換中か確認します。
-
-```js
-if (event.nativeEvent.isComposing) {
-  return;
-}
-```
-
-変換確定のEnterで誤送信しないための処理です。
-
-次に、EnterとShiftキーを確認します。
-
-```js
-if (event.key === "Enter" && !event.shiftKey) {
-  event.preventDefault();
-  event.currentTarget.form?.requestSubmit();
-}
-```
-
-```text
-Enterだけ
-→ フォームを送信
-
-Shift + Enter
-→ 条件に入らないため改行
-```
-
-## 6-14. 会話履歴を吹き出しへ変換する
-
-```jsx
-{messages.map((message) => (
-  <div
-    key={message.id}
-    className={`chatMessage ${message.role}`}
-  >
-    <p>{message.content}</p>
-  </div>
-))}
-```
-
-このコードは3段階です。
-
-1. `.map()`でメッセージを1件ずつ受け取る
-2. `role`をクラス名へ入れて利用者とAIの見た目を分ける
-3. `content`を吹き出しの本文として表示する
-
-## 6-15. textareaとStateをつなぐ
-
-現在の値を表示します。
-
-```jsx
-value={draftMessage}
-```
-
-入力が変わるたびにStateを更新します。
-
-```jsx
-onChange={(event) =>
-  setDraftMessage(event.target.value)
-}
-```
-
-Enter操作を関数へ渡します。
-
-```jsx
-onKeyDown={handleKeyDown}
-```
-
-Reactが入力値をStateで管理する形を「制御コンポーネント」と呼びます。
-
-# 7. AIチャットのバックエンド
-
-担当ファイルは`app/api/chat/route.js`です。
-
-## バックエンドの流れ
-
-```text
-フロントエンドからPOSTを受け取る
-    ↓
-JSONをJavaScriptオブジェクトへ変換
-    ↓
-目標体型を安全に取得
-    ↓
-システムプロンプトと質問をOpenAIへ送る
-    ↓
-結果をaiResponseへ保存
-    ↓
-replyをJSONでフロントエンドへ返す
-```
-
-## 7-1. OpenAIを使う準備
-
-SDKを読み込みます。
-
-```js
-import OpenAI from "openai";
-```
-
-プロンプトを別ファイルから読み込みます。
-
-```js
-import { systemPrompt } from "../../lib/ai/systemPrompt";
-```
-
-通信に使用するクライアントを作ります。
-
-```js
-const openai = new OpenAI();
-```
-
-`new OpenAI()`は`.env.local`の`OPENAI_API_KEY`をサーバー側で読み取ります。
-
-## 7-2. POSTリクエストを受け取る
-
-```js
-export async function POST(request) {
-```
-
-- `export`：フレームワークから実行できるように公開する
-- `POST`：`POST /api/chat`を受け付ける関数名
-- `request`：届いたリクエスト全体
-
-## 7-3. 届いたJSONを読む
-
-```js
-const body = await request.json();
-```
-
-`request.json()`でJSONをJavaScriptオブジェクトへ変換し、`body`へ保存します。
-
-## 7-4. 目標体型を安全に読む
-
-```js
-const goalBodyType =
-  body.userData?.goalBodyType ?? "未設定";
-```
-
-読む順番です。
-
-```text
-body
-→ 受信データ全体
-
-.userData
-→ 利用者データのまとまり
-
-?.goalBodyType
-→ userDataがある場合だけ目標体型を読む
-
-?? "未設定"
-→ 値がない場合は「未設定」を使う
-```
-
-## 7-5. OpenAIへ回答作成を依頼する
-
-基本の型です。
-
-```js
-const 結果 = await OpenAIへ送る処理({
-  使用するモデル,
-  AIへの指示,
-  利用者の入力,
-});
-```
-
-### 結果の保存先とAPI
-
-```js
-const aiResponse = await openai.responses.create({
-```
-
-- `aiResponse`：OpenAIから返される結果全体
-- `responses.create()`：回答を新しく作る処理
-
-### 使用するモデル
-
-```js
-model: "gpt-5.6-luna",
-```
-
-`model`は回答作成に使用するAIを指定します。
-
-### AIへの指示
-
-```js
-instructions: `${systemPrompt}
-
-# 今回の利用者データ
-
-目標体型：${goalBodyType}`,
-```
-
-この文字列は2種類の情報を結合しています。
-
-```text
-systemPrompt
-→ AIの役割と共通ルール
-
-goalBodyType
-→ 今回の利用者が選んだ目標体型
-```
-
-### 利用者の質問
-
-```js
-input: body.message,
-```
-
-フロントエンドが送った`message`をAIへの入力にします。
-
-### 設定を閉じる
-
-```js
-});
-```
-
-ここで`responses.create()`の設定オブジェクトと呼び出しが終わります。
-
-## 7-6. JSONをフロントエンドへ返す
-
-OpenAIが作った回答文をフロントエンドへ返します。
-
-```js
-return Response.json({
-  reply: aiResponse.output_text,
-});
-```
-
-- `Response.json()`：オブジェクトをJSONレスポンスへ変換する
-- `reply`：フロントエンドが`data.reply`で読む名前
-- `aiResponse.output_text`：OpenAIの結果全体から回答文だけを取り出す
-- `return`：レスポンスを返して関数を終了する
-
-読む順番です。
-
-```text
-aiResponse
-→ OpenAIから返された結果全体
-
-.output_text
-→ 結果の中にある回答文だけを取得
-
-reply:
-→ 回答文をreplyという名前でJSONへ入れる
-```
-
-# 8. システムプロンプト
-
-担当ファイルは`app/lib/ai/systemPrompt.js`です。
-
-## 基本の型
-
-```js
-export const 変数名 = `
-複数行の文章
-`;
-```
-
-現在の開始部分です。
-
-```js
-export const systemPrompt = `
-# 役割
-
-あなたは、利用者の理想の身体づくりを支援する筋力トレーニングAIです。
-```
-
-- `export`：`route.js`から読み込めるようにする
-- `const systemPrompt`：共通指示を保存する変数
-- バッククォート：改行を含む長い文字列を作る
-
-プロンプトは役割ごとに分かれています。
-
-| 見出し | 決める内容 |
-| --- | --- |
-| `# 役割` | 筋力トレーニングAIとして回答する |
-| `# 目的` | 今日取るべき行動が分かる回答にする |
-| `# 回答方針` | 日本語、具体性、不足情報、安全性 |
-| `# 利用者データの扱い` | 事実と推測を区別し、渡されていない情報を作らない |
-
-長いプロンプトを`route.js`へ直接書かない理由は、**通信処理とAIの回答ルールを別々に読めるようにするため**です。
-
-# 9. CSSの読み方
-
-担当ファイルは`app/globals.css`です。
-
-CSSはすべてを丸ごと暗記せず、対象・設定・値の3つに分けて読みます。
-
-## 基本の型
-
-```css
-.対象のクラス名 {
-  設定する項目: 値;
-}
-```
-
-## 体型カードを2列にする
-
-```css
-.bodyTypeButtons {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-}
-```
-
-- `display: grid`：Gridレイアウトを使う
-- `repeat(2, ...)`：2列作る
-- `gap`：カード間の隙間
-
-## 選択中のカードを変える
-
-```css
-.bodyTypeButton.selected {
-  border-color: var(--accent);
-  background: var(--accent);
-  color: var(--background);
-}
-```
-
-`.bodyTypeButton`と`.selected`の両方が付いた要素だけに適用されます。
-
-## 会話を縦に並べる
-
-```css
-.chatMessages {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-```
-
-`flex-direction: column`で吹き出しを上から下へ並べます。
-
-## 利用者とAIを左右へ分ける
-
-利用者側です。
-
-```css
-.chatMessage.user {
-  align-self: flex-end;
-}
-```
-
-AI側です。
-
-```css
-.chatMessage.assistant {
-  align-self: flex-start;
-}
-```
-
-## LINE風の入力欄
-
-丸みです。
-
-```css
-.chatInput {
-  border-radius: 22px;
-}
-```
-
-入力中の枠色です。
-
-```css
-.chatInput:focus {
-  border-color: var(--accent);
-}
-```
-
-操作できない送信ボタンです。
-
-```css
-.chatSendButton:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-```
-
-## 下部メニューを画面下へ固定する
-
-```css
-.bottomNavigation {
-  position: fixed;
-  right: 0;
-  bottom: 0;
-  left: 0;
-}
-```
-
-- `position: fixed`：画面をスクロールしても同じ位置へ固定する
-- `bottom: 0`：画面の一番下へ配置する
-- `right: 0`と`left: 0`：画面の横幅いっぱいに広げる
-
-6つの機能を横一列へ並べます。
-
-```css
-.bottomNavigationInner {
-  display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-}
-```
-
-- `display: grid`：下部メニューをGridレイアウトにする
-- `repeat(6, ...)`：同じ幅の列を6個作る
-- `minmax(0, 1fr)`：長い文字があっても6列を同じ幅で収める
-
-選択中の機能だけアクセントカラーへ変えます。
-
-```css
-.bottomNavigationLink.active {
-  color: var(--accent);
-}
-```
-
-本文が固定メニューの後ろへ隠れないように、`body`の下側へ余白を作ります。
-
-```css
-body {
-  padding-bottom: 96px;
-}
-```
-
-## トレーニング記録の部位ボタンを横並びにする
-
-```css
-.bodyPartTabs {
-  display: flex;
-  gap: 8px;
-  overflow-x: auto;
-  padding-bottom: 8px;
-  scrollbar-width: none;
-}
-```
-
-- `display: flex`：胸・背中・肩などのボタンを横方向へ並べる
-- `gap: 8px`：部位ボタン同士に隙間を作る
-- `overflow-x: auto`：画面へ収まらない場合に横スクロールできるようにする
-- `scrollbar-width: none`：操作は残したままスクロールバーを隠す
-
-各部位ボタンを押しやすいカプセル型にします。
-
-```css
-.bodyPartTab {
-  min-width: 64px;
-  min-height: 44px;
-  flex: 0 0 auto;
-  border-radius: 999px;
-}
-```
-
-- `min-width`：ボタンが小さくなりすぎるのを防ぐ
-- `min-height`：スマホで押しやすい高さを確保する
-- `flex: 0 0 auto`：横幅を縮めず、横スクロール側へ並べる
-- `border-radius: 999px`：左右が丸い形にする
-
-選択中の部位だけアクセントカラーへ変えます。
-
-```css
-.bodyPartTab.active {
-  border-color: var(--accent);
-  background: var(--accent);
-  color: var(--background);
-}
-```
-
-## 詳細部位と種目をカード形式にする
-
-詳細部位カードを隙間を空けて縦へ並べます。
-
-```css
-.exerciseGroupList {
-  display: grid;
-  gap: 16px;
-}
-```
-
-胸上部などの見出しと種目一覧を一枚のカードへまとめます。
-
-```css
-.exerciseGroupCard {
-  overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: 18px;
-  background: var(--surface);
-}
-```
-
-- `overflow: hidden`：中の背景や線をカードの角丸内へ収める
-- `border-radius: 18px`：カードの角を丸くする
-- `background: var(--surface)`：共通のカード背景色を使う
-
-種目名と矢印を左右へ配置します。
-
-```css
-.exerciseListButton {
-  display: flex;
-  width: 100%;
-  min-height: 52px;
-  align-items: center;
-  justify-content: space-between;
-  background: transparent;
-}
-```
-
-- `width: 100%`：種目ボタンをカード幅いっぱいにする
-- `min-height: 52px`：スマホで押しやすい高さを作る
-- `justify-content: space-between`：種目名を左、矢印を右へ置く
-- `background: transparent`：ブラウザ標準の灰色背景を消す
-
-「もっと見る」をカード幅いっぱいにします。
-
-```css
-.exerciseMoreButton {
-  width: 100%;
-  min-height: 44px;
-  color: var(--accent);
-}
-```
-
-# 10. 基本の型まとめ
-
-## 変数を定義する
-
-```js
-const 変数名 = 値;
-```
-
-## 関数を定義する
-
-```js
-function 関数名(受け取る値) {
-  実行する処理;
-}
-```
-
-## Stateを定義する
-
-```js
-const [現在の値, 更新する関数] = useState(初期値);
-```
-
-## オブジェクトを作る
-
-```js
-const 変数名 = {
-  プロパティ名: 値,
-};
-```
-
-## 配列を画面表示へ変換する
-
-```jsx
-{配列.map((1件分) => (
-  <表示する要素 key={識別する値} />
-))}
-```
-
-## 条件で処理を終了する
-
-```js
-if (終了する条件) {
-  return;
-}
-```
-
-## 条件によって表示を切り替える
-
-```jsx
-{条件 && <表示する要素 />}
-```
-
-## 条件によって値を切り替える
-
-```js
-条件 ? 正しい場合の値 : 違う場合の値
-```
-
-## 非同期通信を行う
-
-```js
-async function 関数名() {
-  const 結果 = await 通信処理();
-}
-```
-
-## エラー処理を行う
-
-```js
-try {
-  成功する可能性がある処理;
-} catch {
-  失敗した場合の処理;
-} finally {
-  成功・失敗のどちらでも行う処理;
-}
-```
-
-# 11. 単語帳
-
-## JavaScript
-
-| 単語 | 意味 |
-| --- | --- |
-| `const` | 変数を定義する |
-| `function` | 再利用できる処理を定義する |
-| `return` | 値を返す、または関数を終了する |
-| `if` | 条件が正しい場合だけ処理する |
-| `!` | 真偽を反対にする |
-| `===` | 型も含めて左右が同じか確認する |
-| `&&` | 左右の条件が両方正しいか確認する。Reactでは条件表示にも使う |
-| `||` | 左右のどちらかが正しいか確認する |
-| `? :` | 条件によって2つの値を切り替える |
-| `[]` | 配列を作る |
-| `{}` | オブジェクトや処理のまとまりを作る |
-| `プロパティ` | オブジェクト内の名前付きデータ |
-| `.` | オブジェクトの中にあるプロパティや機能を使う |
-| `object[variable]` | 変数に入っている名前を使ってオブジェクトのプロパティを取得する |
-| `=>` | アロー関数を作る |
-| `.map()` | 配列の全要素を別の形へ変換する |
-| `.slice(0, 3)` | 配列を変更せず、先頭から3件を新しい配列として取り出す |
-| `...` | 配列などの中身を展開する |
-| `.trim()` | 文字列の前後の空白を削除する |
-| `.length` | 文字数や配列の要素数を取得する |
-| `?.` | 左側が存在する場合だけ続きを読む |
-| `??` | 左側が`null`か`undefined`の場合だけ右側を使う |
-| テンプレートリテラル | バッククォートで文字列を作り`${}`で値を埋め込む |
-| `new` | 設計図から新しいオブジェクトを作る |
-| `Object.keys()` | オブジェクトのプロパティ名を配列として取得する |
-| props | 親コンポーネントから子コンポーネントへ渡されるデータ |
-
-## 非同期処理と通信
-
-| 単語 | 意味 |
-| --- | --- |
-| `async` | 関数内で`await`を使えるようにする |
-| `await` | Promiseの結果が返るまで関数内の続きを待つ |
-| `Promise` | 将来完了する処理と結果を表す |
-| `try` | 失敗する可能性がある処理を書く |
-| `catch` | `try`が失敗した場合に実行する |
-| `finally` | 成功・失敗に関係なく最後に実行する |
-| `fetch()` | URLへHTTP通信する |
-| `POST` | データを送るHTTPメソッド |
-| `headers` | 通信データの補足情報 |
-| `Content-Type` | 送るデータ形式を伝えるヘッダー |
-| `JSON.stringify()` | オブジェクトをJSON文字列へ変換する |
-| `request.json()` | 受信したJSONをJavaScriptオブジェクトへ変換する |
-| `response.json()` | レスポンスのJSONをJavaScriptオブジェクトへ変換する |
-| `Response.json()` | JavaScriptオブジェクトをJSONレスポンスにする |
-
-## ReactとJSX
-
-| 単語 | 意味 |
-| --- | --- |
-| コンポーネント | 画面を機能ごとに分けた部品 |
-| JSX | JavaScript内へHTMLに似た表示を書く記法 |
-| `import` | 別ファイルの機能を読み込む |
-| `export default` | ファイルの代表として機能を公開する |
-| props | 親コンポーネントから子へ渡す値 |
-| `children` | 開始タグと終了タグの間に書かれた中身 |
-| `useState` | 画面上で変化する値をReactに記憶させる |
-| `setState` | Stateを更新し、必要な画面を再表示する |
-| `key` | 繰り返し表示する要素をReactが区別する値 |
-| `className` | JSXでCSSクラスを指定する |
-| `disabled` | 入力やボタンを操作できない状態にする |
-| `role="alert"` | エラーなど重要な変化を支援技術へ伝える |
-
-## イベント
-
-| 単語 | 意味 |
-| --- | --- |
-| `event` | クリックや入力など操作の情報 |
-| `event.target` | 操作が発生した要素 |
-| `event.currentTarget` | イベント処理が登録されている要素 |
-| `event.preventDefault()` | ブラウザの標準動作を止める |
-| `onClick` | クリック時に処理する |
-| `onChange` | 入力内容が変わったときに処理する |
-| `onKeyDown` | キーを押したときに処理する |
-| `event.key` | 押されたキーの名前 |
-| `shiftKey` | Shiftキーも押されているかを表す |
-| `isComposing` | 日本語入力の変換中かを表す |
-| `requestSubmit()` | フォームの送信処理を実行する |
-
-## ブラウザAPI
-
-| 単語 | 意味 |
-| --- | --- |
-| `localStorage` | 同じブラウザ内に文字列データを保存する |
-| `setItem()` | localStorageへ名前と値を保存する |
-| `getItem()` | 保存名を使って値を読み取る |
-| `FileReader` | ブラウザでファイル内容を読み取る |
-| `onload` | ファイルの読み取り完了後に実行する |
-| `readAsDataURL()` | 画像を`img`で表示できるData URLへ変換する |
-| `crypto.randomUUID()` | 重複しにくいID文字列を作る |
-
-## CSS
-
-| 単語 | 意味 |
-| --- | --- |
-| CSSクラス | 複数の要素へ再利用できる見た目の名前 |
-| `var()` | `:root`で定義したCSS変数を使う |
-| Grid | 行と列で要素を並べるレイアウト |
-| Flexbox | 一方向へ要素を並べるレイアウト |
-| `flex-direction` | Flexboxで並べる方向を決める |
-| `align-self` | 1要素だけ配置位置を変える |
-| `object-fit` | 画像を枠へどう収めるか決める |
-| `:focus` | 入力欄が選択中のときに適用する |
-| `::placeholder` | 入力前の例文へ適用する |
-| `:disabled` | 操作できない要素へ適用する |
-
-# 12. PostgreSQLバックエンド
-
-## 12-0. 初心者向け：バックエンドの基本
-
-### バックエンドとは何か
-
-バックエンドは、利用者の画面から直接見えない場所で、データの確認・保存・取得や本人確認を行う処理です。
-
-このアプリでは、友達が担当するiPhoneの画面がフロントエンド、自分が担当するAPI・認証・データベース・AI連携がバックエンドです。
-
-```text
-フロントエンド
-→ 利用者が見る画面、ボタン、入力欄
-
-バックエンド
-→ 本人確認、入力チェック、保存、検索、AIとの通信
-
-データベース
-→ バックエンドから渡された情報を長期間保存する場所
-```
-
-バックエンドとデータベースは同じものではありません。
-
-バックエンドは「何を確認し、何を保存し、何を返すか」を判断する係です。
-
-Neon PostgreSQLは、判断されたユーザー情報や記録を実際に保管する場所です。
-
-### なぜフロントエンドからNeonを直接操作しないのか
-
-フロントエンドのコードは利用者の端末へ配られるため、秘密鍵やデータベースの接続情報を書いてはいけません。
-
-また、画面から届いたユーザーIDや入力値が正しいとは限りません。
-
-そのため、必ずバックエンドが本人確認と入力チェックを行ってからNeonを操作します。
-
-```text
-iPhoneアプリ
-    ↓ リクエスト
-バックエンドAPI
-    ├─ 本当にログインしているか確認
-    ├─ 入力内容が正しいか確認
-    ├─ 本人のデータだけを検索・保存
-    └─ 画面へ返してよい情報だけを選ぶ
-    ↓
-Neon PostgreSQL
-```
-
-### APIとは何か
-
-APIは、フロントエンドとバックエンドが情報を受け渡すための受付窓口です。
-
-このプロジェクトでは、`app/api/.../route.ts`がAPIのファイルです。
-
-例えば`app/api/users/bootstrap/route.ts`は、ログイン後にユーザーを準備するための受付窓口です。
-
-フロントエンドはAPIへリクエストを送り、バックエンドは処理結果をレスポンスとして返します。
-
-```text
-リクエスト：フロントエンドからバックエンドへ送るもの
-レスポンス：バックエンドからフロントエンドへ返すもの
-```
-
-### HTTPメソッドの基本
-
-| 書き方 | 主な目的 | このアプリでの例 |
-| --- | --- | --- |
-| `GET` | データを取得する | 保存済みプロフィールを取得する |
-| `POST` | 新しい処理や登録を行う | ログイン後のユーザーを初期化する |
-| `PATCH` | 既存データの一部を更新する | 理想体型やプロフィールを変更する |
-| `DELETE` | データを削除する | チャット履歴を削除する |
-
-メソッド名だけで安全性が決まるわけではありません。どのAPIでも、本人確認と入力チェックが必要です。
-
-### JSONとは何か
-
-JSONは、フロントエンドとバックエンドの間でデータを渡すための共通形式です。
-
-```json
-{
-  "goalBodyType": "細マッチョ"
-}
-```
-
-JSON自体はデータベースではありません。
-
-JSONは通信中のデータの形で、Neon PostgreSQLはデータを長期間保存する場所です。
-
-### 1回のバックエンド処理で行う基本順序
-
-このプロジェクトのユーザー用APIは、基本的に次の順番で考えます。
-
-```text
-1. リクエストを受け取る
-2. Clerkでログインを確認する
-3. ClerkユーザーIDを取得する
-4. 入力値を確認する
-5. Neonから本人のデータを検索する
-6. 必要なデータを保存・更新・取得する
-7. JSONとHTTPステータスを返す
-8. 失敗した場合は安全なエラーを返す
-```
-
-毎回ログイン画面を表示するわけではありません。
-
-Clerkが発行したセッショントークンを各リクエストに付け、バックエンドがそのトークンを毎回確認します。
-
-これは、以前ログインしたかを何度も尋ねる処理ではなく、「今回の通信も本当に本人から届いたか」を確認する処理です。
-
-### 認証とユーザー検索の違い
-
-認証は、Clerkを使って「誰から届いた通信か」を確認することです。
-
-ユーザー検索は、確認できたClerkユーザーIDを使ってNeonから本人のアプリデータを探すことです。
-
-```text
-Clerk
-→ この通信は clerkUserId = user_abc の本人だと確認
-
-Neon
-→ clerk_user_id = user_abc のプロフィールや記録を検索
-```
-
-Clerkはパスワードやログイン状態を管理し、Neonは身長・体重・理想体型・トレーニング記録などを管理します。
-
-### HTTPステータスの基本
-
-| 番号 | 意味 | 使用例 |
-| --- | --- | --- |
-| `200` | 処理成功 | 既存データの取得や更新に成功 |
-| `201` | 新規作成成功 | 初めてユーザーをNeonへ登録した |
-| `400` | 入力内容に問題がある | 必須メールや身長がない |
-| `401` | ログイン確認ができない | トークンがない・無効・期限切れ |
-| `404` | 対象データが見つからない | 本人のユーザーデータがない |
-| `500` | サーバー内部で失敗した | DB接続など予期しないエラー |
-
-### バックエンドのコードを読むときの考え方
-
-最初からすべての文法を暗記する必要はありません。
-
-まず、各コードを次の5種類に分けて読むと流れを理解しやすくなります。
-
-```text
-入力：何を受け取ったか
-認証：誰から届いたか
-確認：値を保存してよいか
-DB操作：何を検索・保存・更新したか
-出力：画面へ何を返したか
-```
-
-今回の`bootstrap` APIも、この5種類を順番に実行しているだけです。
-
-## 現在の担当分担
-
-| 担当 | 作る範囲 |
-| --- | --- |
-| 友達 | React画面・ボタン・入力フォーム・カード・スマホ向けCSSなどのUI |
-| 自分 | バックエンドAPI・Neon PostgreSQL・認証・入力値チェック・AI・フロントエンドとAPIの接続 |
-
-友達が作った画面から入力値を受け取り、APIへ接続する`fetch()`も自分の担当です。
-
-```text
-友達が作る画面UI
-        ↓
-自分がfetch()でAPIへ接続
-        ↓ JSON
-自分が作るapp/api内のバックエンド
-        ↓
-Neon PostgreSQL・OpenAI API
-```
-
-友達は`.env.local`の秘密情報やNeonへ直接アクセスせず、画面側で必要な値と操作を用意します。
-
-## バックエンドで使う言語・ライブラリ・形式の違い
-
-| 分類 | 名前 | このプロジェクトでの役割 |
-| --- | --- | --- |
-| プログラミング言語 | TypeScript | `route.ts`・`schema.ts`などのバックエンド処理を型付きで書く |
-| プログラミング言語 | JavaScript | 一部の既存APIやフロントエンド処理を書く |
-| UIの書き方 | JSX | Reactで画面の要素を書く |
-| DB操作ライブラリ | Drizzle ORM | TypeScriptからPostgreSQLを検索・登録・更新する |
-| 通信データ形式 | JSON | フロントエンドとバックエンドの間で値を送受信する |
-| DB用言語 | SQL | PostgreSQLへテーブル作成やデータ操作を命令する |
-| データベース | PostgreSQL | ユーザー情報・記録・会話を保存する |
-| DB提供サービス | Neon | PostgreSQLをインターネット上で利用できるようにする |
-
-`app/api/users/goal/route.ts`で直接書いている言語はTypeScriptです。
-
-```text
-TypeScriptでAPI処理を書く
-        ↓
-Drizzle ORMを使ってDB操作を表す
-        ↓
-内部でSQLとしてPostgreSQLへ送られる
-        ↓
-結果をJSON形式でフロントエンドへ返す
-```
-
-Drizzle ORM・JSON・PostgreSQL・Neonは、すべてTypeScriptとは役割が違います。
-
-### TypeScriptとJavaScriptを分けている理由
-
-現在のプロジェクトは、すでに作成済みのフロントエンドがJavaScript・JSX、新しく作るDBとバックエンドの中心部分がTypeScriptになっています。
-
-```text
-既存のReact画面
-→ JavaScript・JSX
-
-新しいDB設計・ユーザーAPI
-→ TypeScript
-```
-
-TypeScriptはJavaScriptへ型の確認を追加した言語で、実行前に値の種類やデータ構造の間違いを見つけやすくなります。
-
-バックエンドではユーザーID・認証情報・DBの列・APIの入力値など、形を間違えると保存やセキュリティに影響するデータを扱うため、TypeScriptを使っています。
-
-フロントエンドの既存コードはJavaScriptで正常に動いているため、学習途中で全ファイルを書き換えて複雑にせず、そのまま利用しています。
-
-```text
-TypeScriptを使う主な場所
-- db/schema.ts
-- db/index.ts
-- app/api/users/.../route.ts
-- drizzle.config.ts
-
-JavaScript・JSXを使う主な場所
-- app/components/...jsx
-- app/.../page.jsx
-- 既存のapp/api/chat/route.js
-```
-
-今後の基本方針は、新しく作るDB・認証・保存APIはTypeScript、既存のReact画面は現在のJavaScript・JSXに合わせることです。フロントエンドを将来TypeScriptへ統一する場合は、`.jsx`を`.tsx`へ段階的に移行します。
-
-## 12-1. バックエンドで使用している技術
-
-| 技術 | 何をするものか | 現在の状態 |
-| --- | --- | --- |
-| Next.js Route Handler | `app/api`内へGET・POSTなどのAPIを作る | AIチャットAPIで使用中 |
-| Vinext | Next.js形式のアプリをVite・Cloudflare Workers環境で動かす | 使用中 |
-| TypeScript | DB設定やテーブル定義を型付きで書く | `db`と設定ファイルで使用中 |
-| Neon PostgreSQL | ユーザー情報・記録・会話を永続保存するデータベース | 接続済み・usersテーブル作成済み |
-| Drizzle ORM | TypeScriptからPostgreSQLの保存・取得・更新・削除を行う | DB接続とusersテーブル定義まで実装済み |
-| Drizzle Kit | テーブル設計からマイグレーションファイルを作り、DBへ適用する | usersテーブルのマイグレーション適用済み |
-| `@neondatabase/serverless` | Cloudflare WorkersなどからNeonへHTTP接続するドライバー | インストール済み |
-| `dotenv` | マイグレーションコマンドから`.env.local`を読み込む | インストール済み |
-| OpenAI SDK | 質問やユーザーデータをOpenAI APIへ送り、AI回答を受け取る | 基本チャットで使用中 |
-| JSON | フロントエンドとバックエンド間でデータを送受信する形式 | チャットAPIで使用中 |
-| Clerk | ログイン・セッション・本人確認を担当する認証サービス | 導入・API移行作業中 |
-| `@clerk/backend` | iPhoneアプリから届くClerkトークンをバックエンドで検証する | 共通認証ファイルと初期化APIで使用中 |
-| Cloudflare Workers | デプロイ後にAPIやサーバー処理を実行する環境 | プロジェクトの実行基盤 |
-
-### PostgreSQL・Neon・Drizzleの違い
-
-```text
-PostgreSQL
-→ データを保存・検索するデータベース本体
-
-Neon
-→ PostgreSQLをインターネット上で管理・提供するサービス
-
-Drizzle ORM
-→ TypeScriptからPostgreSQLを操作するための仕組み
-
-Drizzle Kit
-→ テーブルの作成・変更履歴を生成してDBへ反映する開発用ツール
-```
-
-### バックエンド全体のデータの流れ
-
-```text
-Reactの入力フォーム
-        ↓ JSON
-Next.jsのAPI（app/api/.../route.js）
-        ↓ 入力値チェック
-Drizzle ORM
-        ↓ SQL操作
-Neon PostgreSQL
-        ↓ 保存結果・検索結果
-Next.jsのAPI
-        ↓ JSON
-Reactへ結果を表示
-```
-
-AIを使う場合は、PostgreSQLから取得した情報をOpenAIへ追加で渡します。
-
-```text
-Neon PostgreSQLから過去記録を取得
-        ↓
-必要なデータだけ整理
-        ↓
-OpenAI APIへ質問と一緒に送信
-        ↓
-AI回答を受け取る
-        ↓
-回答と会話履歴をPostgreSQLへ保存
-        ↓
-フロントエンドへJSONで返す
-```
-
-PostgreSQLへ保存するだけではAIの長期記憶になりません。質問時に必要な過去データを取得し、OpenAIへ渡す処理まで作ることで長期記憶として機能します。
-
-## 12-2. バックエンド関連ファイルの役割
-
-| ファイル・フォルダ | 役割 |
-| --- | --- |
-| `.env.local` | DB接続文字列とOpenAI APIキーを外部へ公開せず保存する |
-| `db/schema.ts` | users・profiles・training_recordsなどのテーブルを定義する |
-| `db/index.ts` | APIからNeon PostgreSQLへ接続する共通関数を提供する |
-| `drizzle.config.ts` | Drizzle KitへDB種類・スキーマ・接続先を伝える |
-| `drizzle-postgres/` | PostgreSQL用のテーブル変更履歴を保存する |
-| `app/api/.../route.ts` | フロントエンドからの通信を受け取り、本人確認後にDBやAIを操作する |
-| `app/lib/ai/systemPrompt.js` | AIの役割・回答ルール・禁止事項を定義する |
-| `app/lib/auth/clerk-auth.ts` | Clerkトークンを検証し、本人のClerkユーザーIDを取得する |
-
-### `db/index.ts`と`drizzle.config.ts`の違い
-
-```text
-db/index.ts
-→ アプリ実行中にAPIがデータを保存・取得するために使う
-
-drizzle.config.ts
-→ 開発中にテーブルを作成・変更するコマンドが使う
-```
-
-## 12-3. バックエンドで作る機能
-
-| 機能 | バックエンドの役割 | 現在の状態 |
-| --- | --- | --- |
-| 初回起動判定 | 初回設定が完了しているか返す | 初期化API実装済み・Neon接続テスト成功 |
-| ユーザー管理 | 認証情報とアプリ内ユーザーIDを結び付ける | 検索・新規登録API実装済み・Neon接続テスト成功 |
-| 理想体型 | 選択した目標体型をユーザーごとに保存・取得する | 保存API実装済み・Neon接続テスト成功 |
-| プロフィール | 身長・体重・体脂肪率・可能時間などを保存する | 保存・取得API実装済み。身長・体重のみ必須 |
-| 身体分析 | 3方向の写真をPythonとOpenAIで分析し、結果を日付付きで保存する | Render公開、Neon保存、履歴取得、AI Toolでの利用まで確認済み |
-| トレーニング記録 | 種目・重量・回数・セット・時間・調子・メモを保存する | 保存APIとNeon保存まで実装済み |
-| 記録履歴 | 日付やユーザーIDで過去記録を取得する | 本人の履歴取得とAI Toolでの利用を確認済み |
-| 体重記録 | 日付ごとの体重を保存し、グラフ用データを返す | 未実装 |
-| 画像保存 | 身体写真は分析時に送信できる。本番用画像ストレージへの長期保存は未実装 |
-| AIメニュー | 過去記録とプロフィールからメニューを生成・保存する | OpenAI生成、Neon保存、再取得まで実装済み |
-| AIチャット | OpenAIへ質問を送り、回答を返す | スマホからの実通信とNeon保存を確認済み |
-| チャット履歴 | ルーム・メッセージ・タイトルをユーザーごとに保存する | Neon保存・GET API・アプリ再読み込み後の画面復元まで確認済み |
-| AI Tool | AIが目標・記録・プロフィールを必要に応じて取得する | 4つのToolを実装し、すべて実通信確認済み |
-| 長期記憶 | 過去データを検索してAIへ渡し、回答と履歴を保存する | 直近20件の会話と各機能データをAIへ渡せる。履歴画面の復元も確認済み |
-
-### AI Toolへ渡す情報の方針
-
-最終的に、AIはログイン中のユーザー本人についてアプリ内へ保存された全機能の情報をTool経由で取得できるようにします。
-
-```text
-理想体型
-身体プロフィール
-体重履歴
-身体分析結果
-トレーニング記録
-最近鍛えていない部位
-過去に生成したAIメニュー
-メニューの実施結果
-コンディション・調子・メモ
-AIチャット履歴と長期記憶
-```
-
-「全情報を利用可能にする」ことと「毎回すべてを一度にAIへ送る」ことは分けて考えます。
-
-履歴が増えた後も入力上限やAPI料金を抑えるため、AIがToolへ情報の種類・期間・件数を指定し、必要なデータを取得する構成にします。
-
-```text
-AIが質問内容を確認
-        ↓
-必要なToolと取得条件を選ぶ
-        ↓
-PostgreSQLから本人のデータだけ取得
-        ↓
-必要な情報をAIへ返す
-        ↓
-取得結果を使って回答する
-```
-
-Toolへ渡さない情報は、`DATABASE_URL`・OpenAI APIキー・認証用の秘密情報・他ユーザーのデータです。
-
-身体写真などの容量が大きいデータは、毎回の会話へ画像全体を渡さず、保存済みの分析結果や必要な画像だけを取得する設計にします。
-
-## 12-4. Drizzle KitのPostgreSQL設定
-
-担当ファイルは`drizzle.config.ts`です。
-
-`.env.local`からNeonの接続文字列を読み込みます。
-
-```ts
-import { config } from "dotenv";
-
-config({ path: ".env.local" });
-```
-
-PostgreSQL用マイグレーションの保存先・スキーマ・接続先を指定します。
-
-```ts
-export default defineConfig({
-  out: "./drizzle-postgres",
-  schema: "./db/schema.ts",
-  dialect: "postgresql",
-  dbCredentials: {
-    url: databaseUrl,
-  },
-});
-```
-
-- `out`：PostgreSQL用のテーブル変更履歴を保存する場所
-- `schema`：テーブル設計を読み取るファイル
-- `dialect`：使用するDBの種類をPostgreSQLにする
-- `dbCredentials`：マイグレーションを適用するNeonの接続情報
-
-## 12-5. Neon PostgreSQLへ接続する場所
-
-担当ファイルは`db/index.ts`です。
-
-このファイルは、APIとNeon PostgreSQLをつなぐ共通の入口です。
-
-```text
-フロントエンドからAPIを呼ぶ
-        ↓
-APIがgetDb()を実行
-        ↓
-Neon PostgreSQLへ接続
-        ↓
-ユーザー情報・記録・会話を保存または取得
-```
-
-Neon対応のDrizzle機能とテーブル定義を読み込みます。
-
-```ts
-import { drizzle } from "drizzle-orm/neon-http";
-import * as schema from "./schema";
-```
-
-- `drizzle-orm/neon-http`：サーバーレス環境からNeon PostgreSQLへHTTP接続する
-- `schema`：`db/schema.ts`で定義するすべてのテーブルをまとめて読み込む
-
-ほかのバックエンド処理から使えるDB接続関数を定義します。
-
-```ts
-export function getDb() {
-```
-
-`.env.local`に保存した接続文字列を取得します。
-
-```ts
-const databaseUrl = process.env.DATABASE_URL;
-```
-
-接続文字列がない場合は、原因が分かるエラーを出して処理を止めます。
-
-```ts
-if (!databaseUrl) {
-  throw new Error(
-    "DATABASE_URLが設定されていません。",
-  );
-}
-```
-
-接続文字列とテーブル定義を使い、DB操作用オブジェクトを返します。
-
-```ts
-return drizzle(databaseUrl, { schema });
-```
-
-各APIへ接続コードを繰り返し書かず、`getDb()`を呼ぶだけで同じ設定を利用するためのファイルです。
-
-| 単語 | 意味 |
-| --- | --- |
-| PostgreSQL | 複数ユーザーのデータ保存や検索に使うリレーショナルデータベース |
-| Neon | サーバーレス環境から利用できるPostgreSQLサービス |
-| Drizzle ORM | TypeScriptからテーブル定義やSQL操作を扱う仕組み |
-| `DATABASE_URL` | DBの場所・ユーザー名・パスワードなどを含む秘密の接続文字列 |
-| `getDb()` | 共通設定でDB接続を取得する関数 |
-
-## 12-6. ユーザー情報を保存するテーブル
-
-担当ファイルは`db/schema.ts`です。
-
-このファイルは、PostgreSQLへ保存するデータの名前・種類・必須条件・初期値を定義する場所です。
-
-```text
-認証済みユーザーの情報
-        ↓
-usersテーブルからemailを検索
-        ↓
-初回設定の進み具合を確認
-        ↓
-初回セットアップまたはホームへ進む
-```
-
-PostgreSQLのテーブルを作るために必要な機能を読み込みます。
-
-```ts
-import {
-  boolean,
-  pgTable,
-  text,
-  timestamp,
-  uuid,
-} from "drizzle-orm/pg-core";
-```
-
-- `boolean`：`true`または`false`を保存する
-- `pgTable`：PostgreSQLのテーブルを定義する
-- `text`：文字列を保存する
-- `timestamp`：日付と時刻を保存する
-- `uuid`：重複しにくいIDを保存する
-
-`users`というテーブルを定義し、ほかのバックエンドファイルから利用できるようにします。
-
-```ts
-export const users = pgTable("users", {
-```
-
-`users`はTypeScript内で使う名前で、`"users"`はPostgreSQL内のテーブル名です。
-
-ユーザーを重複なく識別するIDを定義します。
-
-```ts
-id: uuid("id").defaultRandom().primaryKey(),
-```
-
-- `uuid("id")`：`id`というUUID形式の列を作る
-- `.defaultRandom()`：新規登録時にUUIDを自動生成する
-- `.primaryKey()`：この値を各ユーザーの中心となる識別子にする
-
-ログイン中のユーザーとDB内のデータを結び付ける情報を定義します。
-
-```ts
-email: text("email").notNull().unique(),
-displayName: text("display_name"),
-```
-
-- `.notNull()`：値が空になることを禁止する
-- `.unique()`：同じメールアドレスの重複登録を禁止する
-- `displayName`には`.notNull()`がないため、表示名がなくても登録できる
-
-初回セットアップがすべて完了したか保存します。
-
-```ts
-onboardingCompleted: boolean("onboarding_completed")
-  .notNull()
-  .default(false),
-```
-
-新規ユーザーは初期値が`false`になり、起動時に初回セットアップへ進みます。
-
-現在選択している理想体型を保存します。
-
-```ts
-goalBodyType: text("goal_body_type"),
-```
-
-細マッチョ・逆三角形・フィジーク・バルクアップなどの文字列が入る予定です。
-
-身体情報の入力が完了したか保存します。
-
-```ts
-profileCompleted: boolean("profile_completed")
-  .notNull()
-  .default(false),
-```
-
-初回の身体分析が完了したか保存します。
-
-```ts
-initialAnalysisCompleted: boolean(
-  "initial_analysis_completed",
-)
-  .notNull()
-  .default(false),
-```
-
-作成日時と最終更新日時を保存します。
-
-```ts
-createdAt: timestamp("created_at", {
-  withTimezone: true,
-})
-  .notNull()
-  .defaultNow(),
-```
-
-`withTimezone: true`はタイムゾーンを扱える日時にし、`.defaultNow()`は登録時の現在日時を自動保存します。
-
-```ts
-updatedAt: timestamp("updated_at", {
-  withTimezone: true,
-})
-  .notNull()
-  .defaultNow(),
-```
-
-`updatedAt`は最後にユーザー情報を変更した日時を保存する列です。今後の更新APIで、データ変更時に新しい日時を設定します。
-
-### `users`テーブルの項目一覧
-
-| TypeScriptの名前 | PostgreSQLの列名 | 保存する内容 |
-| --- | --- | --- |
-| `id` | `id` | ユーザー固有のUUID |
-| `email` | `email` | 認証に使うメールアドレス |
-| `displayName` | `display_name` | 画面に表示する名前 |
-| `onboardingCompleted` | `onboarding_completed` | 初回セットアップ全体の完了状態 |
-| `goalBodyType` | `goal_body_type` | 現在選択中の理想体型 |
-| `profileCompleted` | `profile_completed` | 身体情報入力の完了状態 |
-| `initialAnalysisCompleted` | `initial_analysis_completed` | 初回身体分析の完了状態 |
-| `createdAt` | `created_at` | ユーザー作成日時 |
-| `updatedAt` | `updated_at` | ユーザー情報の最終更新日時 |
-
-### 今回追加された単語
-
-| 単語 | 意味 |
-| --- | --- |
-| `pgTable()` | PostgreSQLのテーブルを定義する関数 |
-| `uuid()` | UUID形式の列を作る関数 |
-| `.primaryKey()` | テーブル内のデータを識別する中心の列にする |
-| `.notNull()` | 空の値を禁止する |
-| `.unique()` | 同じ値の重複を禁止する |
-| `.default()` | 新しいデータへ最初から入れる値を指定する |
-| `.defaultNow()` | 新しいデータへ現在日時を自動で入れる |
-| `withTimezone` | 日時とタイムゾーンを一緒に扱えるようにする設定 |
-
-## 12-7. usersテーブルのマイグレーション
-
-担当ファイルは`drizzle-postgres/0000_create_users.sql`です。
-
-マイグレーションは、`db/schema.ts`の設計を実際のPostgreSQLへ反映するためのSQLとして記録した変更履歴です。
-
-```text
-db/schema.ts
-    ↓ Drizzle Kitで変換
-drizzle-postgres/0000_create_users.sql
-    ↓ 次の作業でNeonへ適用
-Neon PostgreSQLのusersテーブル
-```
-
-次のコマンドで生成しました。
-
-```bash
-npm run db:generate -- --name=create_users
-```
-
-- `npm run db:generate`：`package.json`に登録したDrizzle Kitの生成処理を実行する
-- `--name=create_users`：変更履歴へ`create_users`という目的が分かる名前を付ける
-- このコマンドはSQLをローカルへ生成するだけで、Neonのデータベースは変更しない
-
-生成されたファイルは次の3種類です。
-
-| ファイル | 目的 |
-| --- | --- |
-| `drizzle-postgres/0000_create_users.sql` | PostgreSQLが実行するテーブル作成命令 |
-| `drizzle-postgres/meta/0000_snapshot.json` | 生成時点のテーブル設計をDrizzleが比較に使う記録 |
-| `drizzle-postgres/meta/_journal.json` | マイグレーションの順番と名前をDrizzleが管理する記録 |
-
-`users`というテーブルを作り始めます。
-
-```sql
-CREATE TABLE "users" (
-```
-
-ユーザー固有のUUIDを主キーとして自動生成します。
-
-```sql
-"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-```
-
-必須のメールアドレスを文字列で保存します。
-
-```sql
-"email" text NOT NULL,
-```
-
-表示名は未設定を許可する文字列として保存します。
-
-```sql
-"display_name" text,
-```
-
-初回セットアップの完了状態を、初期値`false`で保存します。
-
-```sql
-"onboarding_completed" boolean DEFAULT false NOT NULL,
-```
-
-現在選んでいる理想体型を文字列で保存します。
-
-```sql
-"goal_body_type" text,
-```
-
-身体情報入力と初回分析の完了状態を、初期値`false`で保存します。
-
-```sql
-"profile_completed" boolean DEFAULT false NOT NULL,
-"initial_analysis_completed" boolean DEFAULT false NOT NULL,
-```
-
-作成日時と更新日時には、登録時の現在日時を自動保存します。
-
-```sql
-"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
-```
-
-同じメールアドレスのユーザーを重複登録できないようにします。
-
-```sql
-CONSTRAINT "users_email_unique" UNIQUE("email")
-```
-
-テーブル定義を閉じます。
-
-```sql
-);
-```
-
-生成されたSQLと`meta`ファイルはDrizzleが管理する変更履歴なので、通常は手作業で変更しません。設計を変更するときは`db/schema.ts`を直して、新しいマイグレーションを生成します。
-
-### Neonへマイグレーションを適用する
-
-次のコマンドで、まだ適用されていないマイグレーションをNeonへ反映しました。
-
-```bash
-npx drizzle-kit migrate --config drizzle.config.ts
-```
-
-- `npx`：プロジェクトへインストールされているコマンドを実行する
-- `drizzle-kit migrate`：未適用のマイグレーションをDBへ順番に適用する
-- `--config drizzle.config.ts`：使用するDrizzle設定ファイルを指定する
-
-Drizzleは適用済みのマイグレーションをNeon内の履歴テーブルへ記録します。そのため、同じコマンドをもう一度実行しても、適用済みの`0000_create_users.sql`を重複実行しません。
-
-適用後にNeonを読み取り専用で確認し、`users`テーブルと次の9項目が作成済みであることを確認しました。
-
-```text
-id
-email
-display_name
-onboarding_completed
-goal_body_type
-profile_completed
-initial_analysis_completed
-created_at
-updated_at
-```
-
-### 今回追加されたSQL単語
-
-| 単語 | 意味 |
-| --- | --- |
-| `CREATE TABLE` | 新しいテーブルを作成する |
-| `PRIMARY KEY` | 各データを識別する中心の列にする |
-| `DEFAULT` | 値が指定されなかった場合の初期値を決める |
-| `NOT NULL` | 空の値を禁止する |
-| `CONSTRAINT` | データを保存するときの制約に名前を付ける |
-| `UNIQUE` | 同じ値の重複を禁止する |
-| `gen_random_uuid()` | 重複しにくいUUIDを自動生成する |
-| `now()` | 現在の日付と時刻を取得する |
-
-## 12-8. ユーザー初期化API
-
-担当ファイルは`app/api/users/bootstrap/route.ts`です。
-
-このAPIは、ログイン中の利用者をNeon PostgreSQLの`users`テーブルへ登録または取得し、初回設定の状態を返す場所です。
-
-`bootstrap`は、アプリを使い始めるために必要なデータを準備するという意味です。
-
-```text
-アプリから初期化APIを呼ぶ
-        ↓
-ログイン中のメールアドレスを取得
-        ↓
-usersテーブルを検索
-        ↓
-未登録なら新規作成
-登録済みなら現在の情報を取得
-        ↓
-初回設定の状態をJSONで返す
-```
-
-メールアドレスが一致するユーザーを検索する機能を読み込みます。
-
-```ts
-import { eq } from "drizzle-orm";
-```
-
-`eq`はequalの略で、2つの値が等しいという検索条件を作ります。
-
-今後、次のような意味の検索で使用します。
-
-```text
-users.email = ログイン中のメールアドレス
-```
-
-現在ログインしているユーザー情報を取得する機能を読み込みます。
-
-```ts
-import { getChatGPTUser } from "@/app/chatgpt-auth";
-```
-
-この処理は、ブラウザから送られたメールアドレスを信用せず、サーバー側へ渡された認証情報を読み取ります。
-
-Neon PostgreSQLへの共通接続関数を読み込みます。
-
-```ts
-import { getDb } from "@/db";
-```
-
-各APIへ接続文字列やDrizzle設定を繰り返し書かず、`getDb()`を呼び出して同じ接続設定を利用します。
-
-`users`テーブルの設計を読み込みます。
-
-```ts
-import { users } from "@/db/schema";
-```
-
-この`users`を使い、どのテーブルのどの項目を検索・登録するか指定します。
-
-### `@/`の意味
-
-`@/`はプロジェクトの一番上を表す省略記号です。
-
-```text
-@/db
-↓
-プロジェクト直下のdbフォルダ
-```
-
-`../../../db`のように現在位置から何階層戻るか数えなくても、同じ場所を分かりやすく指定できます。
-
-### POST通信とログイン確認
-
-このURLへPOST通信が来たときに実行する関数を定義します。
-
-```ts
-export async function POST() {
-```
-
-- `export`：Next.jsがAPIとして利用できるように関数を公開する
-- `async`：完了まで時間がかかる処理で`await`を使えるようにする
-- `function POST()`：POST通信を受け取る関数を定義する
-
-ログイン中のユーザー情報を取得します。
-
-```ts
-const authenticatedUser = await getChatGPTUser();
-```
-
-- `const authenticatedUser`：取得結果を後から変更しない変数へ保存する
-- `await`：認証情報の取得が終わるまで、次の行へ進まず待つ
-- `getChatGPTUser()`：サーバーへ渡された認証済みユーザー情報を読み取る
-
-認証情報を取得できなかった場合だけ、中の処理を実行します。
-
-```ts
-if (!authenticatedUser) {
-```
-
-`!authenticatedUser`は、値が`null`など「ユーザー情報なし」の状態か確認する条件です。
-
-認証されていないことをJSONで返し、API処理を終了します。
-
-```ts
-return Response.json(
-  { error: "ログインが必要です。" },
-  { status: 401 },
-);
-```
-
-- `return`：結果を返して、これより下の処理へ進まないようにする
-- `Response.json()`：JavaScriptの値をJSON形式のHTTPレスポンスへ変換する
-- `{ error: "ログインが必要です。" }`：フロントエンドへ返すエラー内容
-- `{ status: 401 }`：未認証を表すHTTPステータスを設定する
-
-現在できている処理の流れです。
-
-```text
-POST通信を受信
-        ↓
-ログイン情報を取得
-        ↓
-情報なし → 401とエラーJSONを返して終了
-情報あり → 次に追加するDB検索へ進む
-```
-
-### メールアドレスで登録済みユーザーを検索する
-
-Neon PostgreSQLを操作するための共通接続を取得します。
-
-```ts
-const db = getDb();
-```
-
-`getDb()`が返したDB操作用オブジェクトを、後から変更しない`db`という変数へ保存します。
-
-検索結果が返るまで待ち、結果の配列を`existingUsers`へ保存します。
-
-```ts
-const existingUsers = await db
-```
-
-DrizzleのDB検索は複数件を返せるため、1件だけの場合でも結果は配列になります。
-
-DBからデータを取得する検索を開始します。
-
-```ts
-.select()
-```
-
-検索する対象を`users`テーブルへ指定します。
-
-```ts
-.from(users)
-```
-
-ログイン中のメールアドレスと同じユーザーだけに絞ります。
-
-```ts
-.where(eq(users.email, authenticatedUser.email))
-```
-
-- `users.email`：DBに保存されているメールアドレスの列
-- `authenticatedUser.email`：現在ログインしているユーザーのメールアドレス
-- `eq(左, 右)`：左と右が等しいデータだけを検索する条件
-- `.where(...)`：指定した条件に合うデータへ絞る
-
-取得するデータを最大1件に制限します。
-
-```ts
-.limit(1);
-```
-
-メールアドレスには重複禁止の`.unique()`を設定していますが、必要な1件だけ取得する意思をコード上でも明確にしています。
-
-検索結果の先頭を取り出し、存在しない場合は`null`へ統一します。
-
-```ts
-const existingUser = existingUsers[0] ?? null;
-```
-
-- `existingUsers`：DB検索で返された配列
-- `[0]`：配列の先頭にある1件目を取り出す
-- データがない場合の`existingUsers[0]`は`undefined`になる
-- `?? null`：左側が`null`または`undefined`のときだけ、代わりに`null`を使う
-- `existingUser`：登録済みならユーザー情報、未登録なら`null`が入る
-
-`??`は`0`・空文字・`false`を有効な値として残し、`null`と`undefined`だけを右側の値へ置き換えます。
-
-現在できている処理の流れです。
-
-```text
-認証済みユーザー
-        ↓
-getDb()でNeonへ接続
-        ↓
-users.emailと認証メールを比較
-        ↓
-一致あり → existingUserにユーザー情報
-一致なし → existingUserにnull
-```
-
-### 登録済みユーザーの情報を返す
-
-`existingUser`にユーザー情報がある場合だけ、中の処理を実行します。
-
-```ts
-if (existingUser) {
-```
-
-登録済みなら`existingUser`はオブジェクトなので中へ進み、未登録なら`null`なので中へ進みません。
-
-登録済みユーザーの情報をJSON形式で返します。
-
-```ts
-return Response.json({
-```
-
-`return`が実行されるとAPI処理はここで終了するため、その下に追加する新規登録処理へ進みません。
-
-DBから取得したユーザー情報を`user`という名前で返します。
-
-```ts
-user: existingUser,
-```
-
-フロントエンドは、返されたJSONの`user`からID・理想体型・初回設定の状態などを読み取れます。
-
-登録済みユーザーであることを返します。
-
-```ts
-isNewUser: false,
-```
-
-`isNewUser`は「新しく作成したユーザーか」を表し、今回は登録済みなので`false`です。
-
-登録済みの場合に返るJSONは、次の形です。
-
-```json
-{
-  "user": {
-    "id": "ユーザーID",
-    "email": "メールアドレス",
-    "displayName": null,
-    "onboardingCompleted": false,
-    "goalBodyType": null,
-    "profileCompleted": false,
-    "initialAnalysisCompleted": false,
-    "createdAt": "作成日時",
-    "updatedAt": "更新日時"
-  },
-  "isNewUser": false
-}
-```
-
-このJSONを受け取ったフロントエンドは、`onboardingCompleted`を使って初回セットアップとホームのどちらへ進むか判断できます。
-
-```text
-existingUserあり
-        ↓
-userにDBのユーザー情報を入れる
-        ↓
-isNewUser: falseを付ける
-        ↓
-JSONを返してAPI終了
-```
-
-### 未登録ユーザーをNeonへ新規登録する
-
-ユーザーが見つからなかった場合は、認証情報を`users`テーブルへ保存します。
-
-```ts
-const createdUsers = await db
-```
-
-新規登録が完了するまで`await`で待ち、PostgreSQLから返された結果を`createdUsers`へ保存します。
-
-データを追加する対象を`users`テーブルへ指定します。
-
-```ts
-.insert(users)
-```
-
-`.insert()`は、指定したテーブルへ新しい1行を追加する処理を始めます。
-
-新しいユーザーへ保存する値を指定します。
-
-```ts
-.values({
-  email: authenticatedUser.email,
-  displayName: authenticatedUser.displayName,
-})
-```
-
-- `.values({...})`：新しい行の各項目へ保存する値を指定する
-- `email`：ログイン中のユーザーのメールアドレスを保存する
-- `displayName`：ログイン中のユーザーの表示名を保存する
-
-コードで指定していない項目には、`db/schema.ts`で決めた初期値が使われます。
-
-```text
-id                       → UUIDを自動生成
-onboardingCompleted      → false
-goalBodyType             → null
-profileCompleted         → false
-initialAnalysisCompleted → false
-createdAt                → 現在日時
-updatedAt                → 現在日時
-```
-
-新しく登録されたデータをPostgreSQLから返してもらいます。
-
-```ts
-.returning();
-```
-
-`.returning()`があるため、登録直後にもう一度検索しなくても、作成されたIDや初期値を取得できます。
-
-配列で返された登録結果から、新規ユーザーを取り出します。
-
-```ts
-const createdUser = createdUsers[0];
-```
-
-今回はユーザーを1件だけ登録するため、`[0]`で先頭の1件を取り出します。
-
-新規ユーザー情報をJSON形式で返します。
-
-```ts
-return Response.json(
-  {
-    user: createdUser,
-    isNewUser: true,
-  },
-  { status: 201 },
-);
-```
-
-- `user: createdUser`：新しく登録されたユーザー情報を返す
-- `isNewUser: true`：今回新しく登録されたことを返す
-- `status: 201`：新しいデータの作成に成功したことをHTTPで表す
-
-ユーザー初期化API全体の流れです。
-
-```text
-POST通信
-    ↓
-認証情報なし → HTTP 401
-    ↓ 認証情報あり
-メールアドレスでusersを検索
-    ↓
-登録済み → user + isNewUser: false
-    ↓ 未登録
-usersへ新規登録
-    ↓
-user + isNewUser: true + HTTP 201
-```
-
-### API全体のエラーを処理する
-
-認証・DB検索・新規登録を、エラーを捕まえられる範囲で囲みます。
-
-```ts
-try {
-```
-
-`try`の中は通常どおり上から処理され、途中でエラーが発生すると残りを中止して`catch`へ移動します。
-
-発生したエラー情報を受け取ります。
-
-```ts
-} catch (error) {
-```
-
-- `catch`：`try`内でエラーが発生した場合だけ実行する
-- `error`：実際に発生したエラー情報を受け取る変数
-
-開発者が原因を確認できるように、詳しい情報をサーバーログへ残します。
-
-```ts
-console.error(
-  "ユーザー初期化に失敗しました。",
-  error,
-);
-```
-
-`console.error()`は、どの処理で失敗したかという説明と、実際のエラー内容を開発者向けに記録します。
-
-フロントエンドへは安全な共通メッセージを返します。
-
-```ts
-return Response.json(
-  {
-    error:
-      "ユーザー情報の初期化に失敗しました。",
-  },
-  { status: 500 },
-);
-```
-
-- 詳しいDBエラーは接続先や内部構造を含む可能性があるため、ブラウザへそのまま返さない
-- `error`には利用者が理解できる共通メッセージだけを入れる
-- HTTP 500はサーバー内部の処理に失敗したことを表す
-
-エラー処理を含めた流れです。
-
-```text
-try内の処理に成功
-        ↓
-通常のJSONを返す
-
-try内でエラー発生
-        ↓
-残りの処理を中止
-        ↓
-catchで詳しい原因をサーバーへ記録
-        ↓
-安全なエラーJSONとHTTP 500を返す
-```
-
-### ユーザー初期化APIの接続テスト
-
-ローカル開発サーバーから、テスト専用の認証情報を使ってAPIを実際に呼びました。
-
-1回目はNeonにユーザーが存在しないため、新規登録されました。
-
-```text
-HTTP 201 Created
-isNewUser: true
-onboardingCompleted: false
-goalBodyType: null
-```
-
-同じ認証情報で2回目を呼ぶと、同じユーザーIDのデータが取得されました。
-
-```text
-HTTP 200 OK
-isNewUser: false
-```
-
-新しい行は追加されず、メールアドレス検索によって登録済みユーザーを再利用できたことを表します。
-
-認証情報を付けずに呼ぶと、DB操作を行わず未認証エラーが返りました。
-
-```text
-HTTP 401 Unauthorized
-error: ログインが必要です。
-```
-
-テストによって、次の3点を確認できました。
-
-```text
-未認証を拒否できる
-新規ユーザーをNeonへ登録できる
-登録済みユーザーを重複登録せず取得できる
-```
-
-Neonには接続確認用として`bootstrap-test-20260808@example.invalid`という実在しないテストユーザーが1件保存されています。
-
-### 今回追加された単語
-
-| 単語 | 意味 |
-| --- | --- |
-| `bootstrap` | アプリを開始するために必要な状態を準備する処理 |
-| `eq` | 2つの値が等しいというDB検索条件を作る関数 |
-| `@/` | プロジェクトの一番上からファイル位置を指定する省略記号 |
-| サーバー側認証 | ブラウザの入力ではなく、サーバーが確認した利用者情報を使うこと |
-| `async` | 関数内で完了を待つ`await`を使えるようにする |
-| `await` | 非同期処理が完了するまで次へ進まず待つ |
-| `Response.json()` | JSON形式のHTTPレスポンスを作る |
-| HTTP 401 | ログイン情報を確認できないことを表す番号 |
-| `.select()` | DBからデータを取得する検索を始める |
-| `.from()` | 検索対象のテーブルを指定する |
-| `.where()` | 条件に合うデータだけへ絞る |
-| `.limit()` | 取得する最大件数を指定する |
-| `[0]` | 配列の先頭にある1件目を取り出す |
-| `??` | 左側が`null`または`undefined`のときだけ右側を使う |
-| `isNewUser` | 今回新しく登録されたユーザーかを表す値 |
-| `.insert()` | 指定したDBテーブルへ新しいデータを追加する |
-| `.values()` | 新しく保存する各項目の値を指定する |
-| `.returning()` | 追加・更新されたデータをPostgreSQLから受け取る |
-| HTTP 201 | 新しいデータの作成に成功したことを表す番号 |
-| `try` | エラーを捕まえたい処理の範囲を作る |
-| `catch` | `try`内でエラーが発生した場合の処理を書く |
-| `console.error()` | 開発者向けにエラー情報を記録する |
-| HTTP 500 | サーバー内部で処理に失敗したことを表す番号 |
-
-## 12-9. 理想体型保存API
-
-担当ファイルは`app/api/users/goal/route.ts`です。
-
-このAPIは、初回セットアップやマイページで選んだ理想体型を、ログイン中のユーザー本人の`goalBodyType`へ保存する場所です。
-
-```text
-画面で理想体型を選ぶ
-        ↓
-自分が書くfetch()でPATCH通信
-        ↓
-理想体型保存API
-        ↓
-認証・入力値を確認
-        ↓
-NeonのgoalBodyTypeを更新
-```
-
-メールアドレスが一致するユーザーだけを更新する比較機能を読み込みます。
-
-```ts
-import { eq } from "drizzle-orm";
-```
-
-現在ログインしているユーザー情報を取得する機能を読み込みます。
-
-```ts
-import { getChatGPTUser } from "@/app/chatgpt-auth";
-```
-
-Neon PostgreSQLへの共通接続関数を読み込みます。
-
-```ts
-import { getDb } from "@/db";
-```
-
-更新対象となる`users`テーブルの設計を読み込みます。
-
-```ts
-import { users } from "@/db/schema";
-```
-
-ユーザー初期化APIと同じ部品を使いますが、今回は検索だけでなく`goalBodyType`の更新に利用します。
-
-### 保存を許可する理想体型
-
-DBへ保存してよい理想体型を配列へまとめます。
-
-```ts
-const allowedGoalBodyTypes = [
-  "細マッチョ",
-  "逆三角形",
-  "フィジーク",
-  "バルクアップ",
-];
-```
-
-フロントエンドから受け取った値がこの配列に含まれているか確認し、想定外の文字列が`goalBodyType`へ保存されることを防ぎます。
-
-```text
-細マッチョ → 配列に含まれる → 保存できる
-逆三角形   → 配列に含まれる → 保存できる
-その他     → 配列にない     → HTTP 400
-```
-
-### このファイルで使っている言語
-
-`route.ts`の`.ts`はTypeScriptファイルを表します。
-
-```text
-直接書いている言語：TypeScript
-DB操作に使うもの：Drizzle ORM
-受信・返信の形式：JSON
-保存先：Neon PostgreSQL
-```
-
-`request: Request`の`: Request`は、`request`へ入る値の型を指定するTypeScriptの書き方です。
-
-### PATCH関数と認証確認
-
-PATCH通信とその通信内容を受け取ります。
-
-```ts
-export async function PATCH(request: Request) {
-```
-
-- `PATCH`：すでに存在するユーザー情報の一部を変更する通信方法
-- `request`：フロントエンドから送られた通信内容を受け取る変数
-- `: Request`：`request`がWeb通信の情報を持つ型だとTypeScriptへ伝える
-
-ログイン中のユーザー情報を取得し、認証情報がなければHTTP 401を返します。
-
-```ts
-const authenticatedUser = await getChatGPTUser();
-
-if (!authenticatedUser) {
-  return Response.json(
-    { error: "ログインが必要です。" },
-    { status: 401 },
-  );
-}
-```
-
-### フロントエンドからJSONを受け取る
-
-通信内容をJSONからJavaScriptの値へ変換します。
-
-```ts
-const body = await request
-  .json()
-  .catch(() => null);
-```
-
-- `request.json()`：通信で送られたJSONを読み取る
-- `.catch(() => null)`：JSONが壊れていた場合はエラーで停止せず`null`を使う
-- `body`：変換後の受信データを保存する変数
-
-受信データから理想体型を取り出します。
-
-```ts
-const goalBodyType = body?.goalBodyType;
-```
-
-`?.`は`body`が`null`または`undefined`ならエラーを起こさず、結果を`undefined`にします。
-
-### 理想体型の入力値を確認する
-
-文字列でない場合、または許可一覧にない場合はHTTP 400を返します。
-
-```ts
-if (
-  typeof goalBodyType !== "string" ||
-  !allowedGoalBodyTypes.includes(goalBodyType)
-) {
-```
-
-- `typeof goalBodyType !== "string"`：値が文字列でないことを確認する
-- `||`：左か右のどちらかが当てはまれば不正とする
-- `.includes(goalBodyType)`：配列の中に受信した体型があるか確認する
-- `!`：判定結果を反対にし、配列に含まれない場合を表す
-
-不正な場合は安全なエラーを返します。
-
-```ts
-return Response.json(
-  {
-    error:
-      "正しい理想体型を選択してください。",
-  },
-  { status: 400 },
-);
-```
-
-HTTP 400は、サーバーではなく送られた入力内容に問題があることを表します。
-
-### Neonの理想体型を更新する
-
-`users`テーブルの既存データを更新します。
-
-```ts
-const updatedUsers = await db
-  .update(users)
-```
-
-- `.update(users)`：`users`テーブルの更新処理を始める
-- `updatedUsers`：更新後にPostgreSQLから返された結果の配列
-
-変更する項目を指定します。
-
-```ts
-.set({
-  goalBodyType,
-  updatedAt: new Date(),
-})
-```
-
-- `goalBodyType,`：`goalBodyType: goalBodyType`を省略した書き方
-- `new Date()`：現在の日付と時刻を作る
-- `updatedAt`：最後にユーザー情報を変更した日時を更新する
-
-ログイン中のメールアドレスと一致するユーザーだけに絞ります。
-
-```ts
-.where(
-  eq(
-    users.email,
-    authenticatedUser.email,
-  ),
-)
-```
-
-`.where()`がないと全ユーザーの理想体型を変更してしまうため、本人のメールアドレスを条件にしています。
-
-更新後のデータをPostgreSQLから受け取ります。
-
-```ts
-.returning();
-```
-
-### 更新結果を確認して返す
-
-更新結果の先頭を取り出し、存在しなければ`null`にします。
-
-```ts
-const updatedUser = updatedUsers[0] ?? null;
-```
-
-更新対象が見つからなければHTTP 404を返します。
-
-```ts
-if (!updatedUser) {
-  return Response.json(
-    { error: "ユーザーが見つかりません。" },
-    { status: 404 },
-  );
-}
-```
-
-更新に成功した場合は、更新後のユーザー情報をJSONで返します。
-
-```ts
-return Response.json({
-  user: updatedUser,
-});
-```
-
-### 予想外のエラーを処理する
-
-認証・JSON読取・DB更新の途中で予想外のエラーが起きた場合は`catch`へ進みます。
-
-```ts
-} catch (error) {
-```
-
-詳しい原因はサーバーログへ残し、利用者へは安全な共通メッセージとHTTP 500を返します。
-
-```ts
-console.error(
-  "理想体型の保存に失敗しました。",
-  error,
-);
-```
-
-```ts
-return Response.json(
-  { error: "理想体型の保存に失敗しました。" },
-  { status: 500 },
-);
-```
-
-### 理想体型保存APIの全体像
-
-```text
-PATCH通信を受け取る
-        ↓
-認証なし → HTTP 401
-        ↓
-JSONを読み取る
-        ↓
-不正な体型 → HTTP 400
-        ↓
-本人のgoalBodyTypeを更新
-        ↓
-ユーザーなし → HTTP 404
-        ↓
-更新後のuserをJSONで返す
-        ↓
-予想外の失敗 → HTTP 500
-```
-
-### 理想体型保存APIの接続テスト
-
-既存のテストユーザーを使い、ローカル画面と同じ3000番の開発サーバーからAPIを呼びました。
-
-許可された「細マッチョ」を送ると、Neonの`goalBodyType`と`updatedAt`が更新されました。
-
-```text
-HTTP 200 OK
-goalBodyType: 細マッチョ
-```
-
-許可一覧にない体型を送ると、DB更新前に入力エラーが返りました。
-
-```text
-HTTP 400 Bad Request
-error: 正しい理想体型を選択してください。
-```
-
-認証情報を付けずに送ると、DB更新前に未認証エラーが返りました。
-
-```text
-HTTP 401 Unauthorized
-error: ログインが必要です。
-```
-
-このテストによって、本人の理想体型を保存でき、不正入力と未認証の操作を拒否できることを確認しました。
-
-### 今回追加された単語
-
-| 単語 | 意味 |
-| --- | --- |
-| TypeScript | JavaScriptへ型の仕組みを追加したプログラミング言語 |
-| `PATCH` | 既存データの一部を変更するHTTP通信方法 |
-| `request: Request` | 通信内容を受け取る変数と、そのTypeScriptの型指定 |
-| `request.json()` | 受信したJSONをJavaScriptの値へ変換する |
-| `.catch()` | 直前の非同期処理が失敗した場合の処理を書く |
-| `?.` | 左側が`null`などでもエラーを起こさず安全に値を読む |
-| `typeof` | 値が文字列など、どの種類かを確認する |
-| `||` | 複数条件のどれか1つが当てはまることを表す |
-| `.includes()` | 配列に指定した値が含まれるか確認する |
-| `.update()` | DBの既存データを更新する |
-| `.set()` | DBで変更する項目と値を指定する |
-| `new Date()` | 現在の日付と時刻を持つ値を作る |
-| HTTP 400 | 送られた入力内容が不正であることを表す番号 |
-| HTTP 404 | 対象データが見つからないことを表す番号 |
-
-## 12-10. 身体プロフィールテーブル
-
-担当ファイルは`db/schema.ts`です。
-
-このテーブルは、身長・体重・体脂肪率・週のトレーニング回数などをユーザーごとに保存する場所です。
-
-このファイルへ直接書いている言語はTypeScriptで、Drizzle ORMの機能を使ってPostgreSQLのテーブルを定義します。
-
-```text
-TypeScript
-    ↓ Drizzle ORMのテーブル定義
-PostgreSQLのuser_profilesテーブル
-    ↓
-Neonへ身体情報を保存
-```
-
-週の回数や可能時間など、整数用の列を作る機能を読み込みます。
-
-```ts
-integer,
-```
-
-`integer`は小数部分を持たない整数をPostgreSQLへ保存します。
-
-身長・体重・体脂肪率など、小数を含められる列を作る機能を読み込みます。
-
-```ts
-real,
-```
-
-`real`は`172.5`や`65.8`のような小数を含む数値をPostgreSQLへ保存します。
-
-| 型 | 保存する予定の値 |
-| --- | --- |
-| `integer` | 週の回数、1回に使える分数 |
-| `real` | 身長、体重、体脂肪率 |
-
-### user_profilesテーブルの土台
-
-TypeScript内で`userProfiles`という名前を使い、PostgreSQLには`user_profiles`という名前でテーブルを作ります。
-
-```ts
-export const userProfiles = pgTable(
-  "user_profiles",
-  {
-```
-
-- `export`：ほかのAPIからテーブル定義を読み込めるようにする
-- `userProfiles`：TypeScriptのコード内で使う名前
-- `"user_profiles"`：PostgreSQL内で使うテーブル名
-
-プロフィール自体を識別するIDを作ります。
-
-```ts
-id: uuid("id")
-  .defaultRandom()
-  .primaryKey(),
-```
-
-新しいプロフィールを作成するとUUIDが自動生成され、そのプロフィールを識別する主キーになります。
-
-プロフィールを`users`テーブルのユーザーと結び付けます。
-
-```ts
-userId: uuid("user_id")
-  .notNull()
-  .unique()
-  .references(() => users.id, {
-    onDelete: "cascade",
-  }),
-```
-
-- `userId`：TypeScript内で使う項目名
-- `"user_id"`：PostgreSQL内で使う列名
-- `.notNull()`：どのユーザーのプロフィールかを必須にする
-- `.unique()`：同じユーザーIDのプロフィールを重複作成できないようにする
-- `.references(() => users.id)`：`users`テーブルに存在するIDだけを保存できるようにする
-- `onDelete: "cascade"`：ユーザーを削除した場合、そのユーザーのプロフィールも削除する
-
-このような別テーブル同士のつながりをリレーションと呼び、参照先を保証する`user_id`を外部キーと呼びます。
-
-```text
-users.id
-   ↓ 外部キー
-user_profiles.user_id
-
-1人のusersデータ
-   ↓ .unique()
-1件のuser_profilesデータ
-```
-
-### 身長・体重・体脂肪率
-
-身長をセンチメートル単位で保存します。
-
-```ts
-heightCm: real("height_cm")
-  .notNull(),
-```
-
-`heightCm`には`172.5`のような小数を保存し、`.notNull()`によって未入力を禁止します。
-
-体重をキログラム単位で保存します。
-
-```ts
-weightKg: real("weight_kg")
-  .notNull(),
-```
-
-`weightKg`には`65.8`のような小数を保存し、`.notNull()`によって未入力を禁止します。
-
-体脂肪率をパーセント単位で保存します。
-
-```ts
-bodyFatPercentage: real(
-  "body_fat_percentage",
-),
-```
-
-`bodyFatPercentage`には`15.5`のような小数を保存できます。
-
-身長と体重は`.notNull()`を付けた必須入力で、体脂肪率だけが任意入力です。
-
-```text
-身長・体重：入力必須
-体脂肪率：入力なしならnull
-```
-
-今後作るAPIでは、未入力をエラーにせず、値が送られた項目だけ数値の範囲を確認します。
-
-### 週の回数と可能時間
-
-1週間にトレーニングできる日数を整数で保存します。
-
-```ts
-weeklyTrainingDays: integer(
-  "weekly_training_days",
-),
-```
-
-例えば週3回なら`3`を保存します。
-
-1回のトレーニングに使える時間を分単位の整数で保存します。
-
-```ts
-availableMinutes: integer(
-  "available_minutes",
-),
-```
-
-例えば1回60分なら`60`を保存します。
-
-どちらにも`.notNull()`を付けていないため任意入力で、未入力時は`null`になります。
-
-```text
-weeklyTrainingDays未入力 → null
-availableMinutes未入力   → null
-```
-
-### トレーニング場所と苦手部位
-
-自宅・ジム・両方など、普段トレーニングする場所を任意入力で保存します。
-
-```ts
-trainingLocation: text(
-  "training_location",
-),
-```
-
-APIでは`home`・`gym`・`both`など、保存を許可する値を後から確認します。
-
-苦手部位を複数選べる文字列の配列として保存します。
-
-```ts
-weakBodyParts: text(
-  "weak_body_parts",
-).array(),
-```
-
-`.array()`を付けることで、次のように複数の部位を1項目へ保存できます。
-
-```json
-["胸", "背中", "脚"]
-```
-
-どちらも`.notNull()`がないため任意入力で、未入力時は`null`になります。
-
-### プロフィールの作成日時と更新日時
-
-身体プロフィールを最初に作成した日時を保存します。
-
-```ts
-createdAt: timestamp("created_at", {
-  withTimezone: true,
-})
-  .notNull()
-  .defaultNow(),
-```
-
-身体プロフィールを最後に変更した日時を保存します。
-
-```ts
-updatedAt: timestamp("updated_at", {
-  withTimezone: true,
-})
-  .notNull()
-  .defaultNow(),
-```
-
-この2項目は利用者が入力する項目ではなく、システムが自動的に保存します。
-
-- `timestamp`：日付と時刻を保存する型
-- `withTimezone: true`：タイムゾーンを扱える日時にする
-- `.notNull()`：システムが必ず日時を保存するため空を禁止する
-- `.defaultNow()`：プロフィール作成時の現在日時を自動で入れる
-
-`updatedAt`は、今後作るプロフィール保存APIで情報を変更するたびに`new Date()`へ更新します。
-
-### user_profilesの項目一覧
-
-| TypeScriptの名前 | PostgreSQLの列名 | 入力 | 保存する内容 |
-| --- | --- | --- | --- |
-| `id` | `id` | 自動 | プロフィール固有のUUID |
-| `userId` | `user_id` | 自動 | usersテーブルと結び付くID |
-| `heightCm` | `height_cm` | 必須 | 身長（cm） |
-| `weightKg` | `weight_kg` | 必須 | 体重（kg） |
-| `bodyFatPercentage` | `body_fat_percentage` | 任意 | 体脂肪率（%） |
-| `weeklyTrainingDays` | `weekly_training_days` | 任意 | 週のトレーニング日数 |
-| `availableMinutes` | `available_minutes` | 任意 | 1回のトレーニングに使える時間（20〜180分） |
-| `trainingLocation` | `training_location` | 任意 | 自宅・ジム・両方 |
-| `weakBodyParts` | `weak_body_parts` | 任意 | 苦手部位の配列 |
-| `createdAt` | `created_at` | 自動 | プロフィール作成日時 |
-| `updatedAt` | `updated_at` | 自動 | プロフィール最終更新日時 |
-
-### 今回追加された単語
-
-| 単語 | 意味 |
-| --- | --- |
-| リレーション | 複数のDBテーブル同士のつながり |
-| 外部キー | 別テーブルに存在するデータを参照する列 |
-| `.references()` | 参照するテーブルと列を指定する |
-| `onDelete: "cascade"` | 親データを削除したとき関連データも削除する |
-| 1対1 | 1人のユーザーに1件のプロフィールが対応する関係 |
-| 任意入力 | 値がなくても保存でき、DBでは`null`になる項目 |
-| `.array()` | PostgreSQLの1項目へ同じ種類の値を複数保存できる配列型にする |
-
-## 12-11. user_profilesのマイグレーション
-
-担当ファイルは`drizzle-postgres/0001_create_user_profiles.sql`です。
-
-`db/schema.ts`へ書いたTypeScriptのテーブル定義を、Drizzle KitがPostgreSQL用のSQLへ変換したファイルです。
-
-```text
-db/schema.ts
-TypeScript + Drizzle ORM
-        ↓ Drizzle Kit
-0001_create_user_profiles.sql
-SQL
-        ↓ 次の作業で適用
-Neon PostgreSQL
-```
-
-次のコマンドで生成しました。
-
-```bash
-npm run db:generate -- --name=create_user_profiles
-```
-
-生成結果では、2テーブル・`user_profiles`の11項目・外部キー1件が認識されました。
-
-PostgreSQLへ`user_profiles`テーブルを作るSQLです。
-
-```sql
-CREATE TABLE "user_profiles" (
-```
-
-プロフィールIDと、必須のユーザーIDを定義します。
-
-```sql
-"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-"user_id" uuid NOT NULL,
-```
-
-利用者が任意入力する身体情報を定義します。
-
-```sql
-"height_cm" real,
-"weight_kg" real,
-"body_fat_percentage" real,
-"weekly_training_days" integer,
-"available_minutes" integer,
-"training_location" text,
-"weak_body_parts" text[],
-```
-
-これらには`NOT NULL`が付いていないため、未入力時は`null`を保存できます。
-
-作成日時と更新日時を必須の自動入力として定義します。
-
-```sql
-"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
-```
-
-1人のユーザーが複数プロフィールを持てないようにします。
-
-```sql
-CONSTRAINT "user_profiles_user_id_unique" UNIQUE("user_id")
-```
-
-`user_profiles.user_id`と`users.id`を外部キーで結び付けます。
-
-```sql
-ALTER TABLE "user_profiles"
-ADD CONSTRAINT "user_profiles_user_id_users_id_fk"
-FOREIGN KEY ("user_id")
-REFERENCES "public"."users"("id")
-ON DELETE cascade
-ON UPDATE no action;
-```
-
-- `FOREIGN KEY`：別テーブルの列を参照する外部キーを作る
-- `REFERENCES`：参照先を`users.id`へ指定する
-- `ON DELETE cascade`：ユーザー削除時にプロフィールも削除する
-- `ON UPDATE no action`：参照先IDの更新に合わせた自動処理は行わない
-
-`0001`は2番目のマイグレーションであることを表し、最初の`0000_create_users.sql`の後に実行されます。
-
-この生成ファイルの言語はSQLです。普段はSQLを直接編集せず、TypeScriptの`db/schema.ts`を変更して新しいSQLを生成します。
-
-### Neonへの適用結果
-
-次のコマンドで、`0001_create_user_profiles.sql`をNeon PostgreSQLへ適用しました。
-
-```bash
-npx drizzle-kit migrate --config drizzle.config.ts
-```
-
-適用後にNeonを読み取り専用で確認し、次の結果を確認しました。
-
-```text
-user_profilesテーブル：あり
-列数：11
-外部キー：あり
-主キー：あり
-user_idの重複禁止：あり
-```
-
-`0001_create_user_profiles.sql`を適用した時点では7項目が`null`を許可していますが、その後に身長と体重を必須へ変更しました。次のマイグレーションでNeonへ反映します。
-
-```text
-height_cm              → nullを許可
-weight_kg              → nullを許可
-body_fat_percentage    → nullを許可
-weekly_training_days   → nullを許可
-available_minutes      → nullを許可
-training_location      → nullを許可
-weak_body_parts        → nullを許可
-```
-
-システムが管理する`id`・`user_id`・`created_at`・`updated_at`は必須項目です。
-
-## 12-12. 身体プロフィール保存・取得API
-
-担当ファイルは`app/api/users/profile/route.ts`です。
-
-このファイルへ書いている言語はTypeScriptです。ログイン中のユーザー本人の身体プロフィールをNeonへ保存・取得します。
-
-```ts
-import { eq } from "drizzle-orm";
-```
-
-`eq`は、認証メールやユーザーIDが一致するデータだけを検索・更新する条件に使います。
-
-```ts
-import { getChatGPTUser } from "@/app/chatgpt-auth";
-```
-
-サーバー側で確認されたログイン中のユーザー情報を取得します。
-
-```ts
-import { getDb } from "@/db";
-```
-
-Neon PostgreSQLを操作する共通接続を取得します。
-
-```ts
-import {
-  userProfiles,
-  users,
-} from "@/db/schema";
-```
-
-- `users`：認証メールからアプリ内ユーザーを探す
-- `userProfiles`：そのユーザーの身体情報を保存・取得する
-
-### GET通信とログイン確認
-
-身体プロフィールを取得するGET関数をTypeScriptで定義します。
-
-```ts
-export async function GET() {
-```
-
-サーバー側でログイン中のユーザー情報を取得します。
-
-```ts
-const authenticatedUser =
-  await getChatGPTUser();
-```
-
-認証情報を取得できなければ、DBへ接続せずHTTP 401を返します。
-
-```ts
-if (!authenticatedUser) {
-  return Response.json(
-    { error: "ログインが必要です。" },
-    { status: 401 },
-  );
-}
-```
-
-この時点では、認証済みの場合に次のDB検索へ進める状態までできています。
-
-### 認証メールからユーザーIDを取得する
-
-Neon PostgreSQLを操作するDB接続を取得します。
-
-```ts
-const db = getDb();
-```
-
-`const db`は取得した接続を後から変更しない変数へ保存するという意味です。
-
-DB検索の完了を待ち、結果を`matchedUsers`へ保存します。
-
-```ts
-const matchedUsers = await db
-```
-
-`.select({`は取得する項目を指定し始めます。
-
-```ts
-.select({
-```
-
-`id: users.id`は`users`テーブルのIDだけを`id`という名前で取得します。
-
-```ts
-id: users.id,
-```
-
-`.from(users)`は検索対象を`users`テーブルに指定します。
-
-```ts
-.from(users)
-```
-
-`.where(`は検索条件を指定し始めます。
-
-```ts
-.where(
-```
-
-`eq(`は左側と右側が同じデータだけを対象にします。
-
-```ts
-eq(
-```
-
-`users.email`はDBに保存されているメールアドレス列です。
-
-```ts
-users.email,
-```
-
-`authenticatedUser.email`は現在ログインしているユーザーのメールアドレスです。
-
-```ts
-authenticatedUser.email,
-```
-
-`.limit(1)`は取得件数を最大1件に制限します。
-
-```ts
-.limit(1);
-```
-
-検索結果の先頭を取り出し、データがなければ`null`を使います。
-
-```ts
-const currentUser =
-  matchedUsers[0] ?? null;
-```
-
-`matchedUsers[0]`は検索結果の配列から1件目を取り出します。
-
-`?? null`は左側が`null`または`undefined`の場合だけ`null`を使います。
-
-ユーザーが見つからなかった場合だけエラー処理へ入ります。
-
-```ts
-if (!currentUser) {
-```
-
-HTTP 404と安全なエラーJSONを返してGET処理を終了します。
-
-```ts
-return Response.json(
-  { error: "ユーザーが見つかりません。" },
-  { status: 404 },
-);
-```
-
-現在の流れは、認証メールからプロフィール検索に必要な`users.id`を取得するところまでです。
-
-### ユーザーIDから身体プロフィールを取得する
-
-DB検索の完了を待ち、結果を`matchedProfiles`へ保存します。
-
-```ts
-const matchedProfiles = await db
-```
-
-`.select()`はテーブルからデータを取得する検索を始めます。
-
-```ts
-.select()
-```
-
-`.from(userProfiles)`は検索対象を`user_profiles`テーブルに指定します。
-
-```ts
-.from(userProfiles)
-```
-
-`.where(`は取得するプロフィールの条件を指定し始めます。
-
-```ts
-.where(
-```
-
-`eq(`はプロフィール側とログインユーザー側のIDが同じデータだけに絞ります。
-
-```ts
-eq(
-```
-
-`userProfiles.userId`はプロフィールに保存されているユーザーIDです。
-
-```ts
-userProfiles.userId,
-```
-
-`currentUser.id`は認証メールから取得したログイン中のユーザーIDです。
-
-```ts
-currentUser.id,
-```
-
-`.limit(1)`は取得するプロフィールを最大1件にします。
-
-```ts
-.limit(1);
-```
-
-検索結果の1件目を取り出し、プロフィールがなければ`null`にします。
-
-```ts
-const profile =
-  matchedProfiles[0] ?? null;
-```
-
-プロフィールまたは`null`をJSON形式でフロントエンドへ返します。
-
-```ts
-return Response.json({
-  profile,
-});
-```
-
-`profile,`は`profile: profile`を省略したTypeScript・JavaScriptの書き方です。
-
-プロフィール未作成は異常ではないため、HTTP 404ではなく`profile: null`を返します。
-
-```json
-{
-  "profile": null
-}
-```
-
-現在のGET処理は、ログイン中のユーザー本人のプロフィールを取得できるところまで完成しています。
-
-### GET処理の予想外のエラーを捕まえる
-
-`try {`は認証とDB検索で発生するエラーを捕まえる範囲を始めます。
-
-```ts
-try {
-```
-
-`} catch (error) {`は`try`内でエラーが発生した場合だけ実行します。
-
-```ts
-} catch (error) {
-```
-
-`console.error(`は詳しい原因を開発者向けのサーバーログへ記録します。
-
-```ts
-console.error(
-```
-
-`"身体プロフィールの取得に失敗しました。"`は、どの処理で失敗したかをログへ残します。
-
-```ts
-"身体プロフィールの取得に失敗しました。",
-```
-
-`error`は実際に発生したエラー情報をログへ残します。
-
-```ts
-error,
-```
-
-`Response.json()`はフロントエンドへ安全な共通エラーを返します。
-
-```ts
-return Response.json(
-  {
-    error:
-      "身体プロフィールの取得に失敗しました。",
-  },
-  { status: 500 },
-);
-```
-
-HTTP 500は認証不足や入力ミスではなく、サーバー内部の処理に失敗したことを表します。
-
-### PATCH通信とログイン確認
-
-`export async function PATCH(`は身体プロフィールを保存・更新する関数を公開します。
-
-```ts
-export async function PATCH(
-```
-
-`request: Request,`はフロントエンドから送られた通信内容をTypeScriptの`Request`型で受け取ります。
-
-```ts
-request: Request,
-```
-
-`const authenticatedUser =`は認証結果を保存する変数を定義します。
-
-```ts
-const authenticatedUser =
-```
-
-`await getChatGPTUser();`はログイン中のユーザー情報を取得できるまで待ちます。
-
-```ts
-await getChatGPTUser();
-```
-
-`if (!authenticatedUser) {`は認証情報がない場合だけ中の処理へ進みます。
-
-```ts
-if (!authenticatedUser) {
-```
-
-`Response.json()`は未認証エラーをJSON形式で返します。
-
-```ts
-return Response.json(
-  { error: "ログインが必要です。" },
-  { status: 401 },
-);
-```
-
-HTTP 401を返した場合は`return`によってPATCH処理が終了し、DB操作へ進みません。
-
-### PATCH通信のJSONを読み取る
-
-`const body = await request`はJSONの読み取り結果を`body`へ保存する準備をします。
-
-```ts
-const body = await request
-```
-
-`.json()`はフロントエンドから送られたJSONをJavaScriptの値へ変換します。
-
-```ts
-.json()
-```
-
-`.catch(() => null)`はJSONが壊れていた場合に、処理を停止せず`null`を返します。
-
-```ts
-.catch(() => null);
-```
-
-`body === null`はJSONの読み取りに失敗した状態か確認します。
-
-```ts
-body === null ||
-```
-
-`typeof body !== "object"`は受信値が項目を持つオブジェクトでない状態か確認します。
-
-```ts
-typeof body !== "object" ||
-```
-
-`Array.isArray(body)`は受信値が配列になっていないか確認します。
-
-```ts
-Array.isArray(body)
-```
-
-`||`は3つの不正条件のうち、どれか1つでも当てはまることを表します。
-
-入力形式が不正なら安全なエラーJSONとHTTP 400を返します。
-
-```ts
-return Response.json(
-  { error: "入力内容が不正です。" },
-  { status: 400 },
-);
-```
-
-この確認に通った`body`だけが、次の身体情報の取り出し処理へ進みます。
-
-### JSONから身体情報を取り出す
-
-`const {`はオブジェクトから複数の項目を取り出す分割代入を始めます。
-
-```ts
-const {
-```
-
-`heightCm = null`は身長を取り出し、送られていなければ`null`にします。
-
-```ts
-heightCm = null,
-```
-
-`weightKg = null`は体重を取り出し、送られていなければ`null`にします。
-
-```ts
-weightKg = null,
-```
-
-`bodyFatPercentage = null`は体脂肪率を取り出し、送られていなければ`null`にします。
-
-```ts
-bodyFatPercentage = null,
-```
-
-`} = body;`は3項目の取得元を受信した`body`に指定します。
-
-```ts
-} = body;
-```
-
-この書き方をオブジェクトの分割代入と呼び、任意項目が`undefined`になる場合だけ初期値の`null`を使います。
-
-`weeklyTrainingDays = null`は週のトレーニング日数を取り出し、送られていなければ`null`にします。
-
-```ts
-weeklyTrainingDays = null,
-```
-
-`availableMinutes = null`は1回のトレーニングに使える時間を取り出し、送られていなければ`null`にします。
-
-```ts
-availableMinutes = null,
-```
-
-`trainingLocation = null`はトレーニング場所を取り出し、送られていなければ`null`にします。
-
-```ts
-trainingLocation = null,
-```
-
-`weakBodyParts = null`は苦手部位の配列を取り出し、送られていなければ`null`にします。
-
-```ts
-weakBodyParts = null,
-```
-
-`} = body;`は4項目の取得元を受信した`body`に指定します。
-
-現在の分割代入では未送信項目を`null`にしますが、次の入力値チェックで身長と体重の`null`を拒否します。残り5項目は任意入力です。
-
-### 任意入力の数値を確認する共通関数
-
-`function isOptionalNumberInRange(`は任意入力の数値が指定範囲内か確認する関数を定義します。
-
-```ts
-function isOptionalNumberInRange(
-```
-
-`value: unknown`は確認前で種類が分からない入力値を受け取ります。
-
-```ts
-value: unknown,
-```
-
-`minimum: number`は許可する最小値を数値として受け取ります。
-
-```ts
-minimum: number,
-```
-
-`maximum: number`は許可する最大値を数値として受け取ります。
-
-```ts
-maximum: number,
-```
-
-`return (`は確認結果を`true`か`false`で返し始めます。
-
-```ts
-return (
-```
-
-`value === null`は任意入力なので未入力の`null`を正しい値として許可します。
-
-```ts
-value === null ||
-```
-
-`typeof value === "number"`は入力値が数値か確認します。
-
-```ts
-typeof value === "number" &&
-```
-
-`Number.isFinite(value)`は`NaN`や`Infinity`ではない通常の数値か確認します。
-
-```ts
-Number.isFinite(value) &&
-```
-
-`value >= minimum`は入力値が最小値以上か確認します。
-
-```ts
-value >= minimum &&
-```
-
-`value <= maximum`は入力値が最大値以下か確認します。
-
-```ts
-value <= maximum
-```
-
-`||`は`null`または数値条件を満たす場合に`true`を返すことを表します。
-
-`&&`は数値に関するすべての条件を満たす必要があることを表します。
-
-### 任意入力の整数を確認する共通関数
-
-`function isOptionalIntegerInRange(`は任意入力の整数が指定範囲内か確認する関数を定義します。
-
-```ts
-function isOptionalIntegerInRange(
-```
-
-`value: unknown`は確認前で種類が分からない入力値を受け取ります。
-
-```ts
-value: unknown,
-```
-
-`minimum: number`は許可する最小値を受け取ります。
-
-```ts
-minimum: number,
-```
-
-`maximum: number`は許可する最大値を受け取ります。
-
-```ts
-maximum: number,
-```
-
-`value === null`は任意入力なので未入力を許可します。
-
-```ts
-value === null ||
-```
-
-`Number.isInteger(value)`は入力値が小数を含まない整数か確認します。
-
-```ts
-Number.isInteger(value) &&
-```
-
-`typeof value === "number"`は入力値が数値型か確認します。
-
-```ts
-typeof value === "number" &&
-```
-
-`value >= minimum`は入力値が最小値以上か確認します。
-
-`value <= maximum`は入力値が最大値以下か確認します。
-
-この関数は週のトレーニング日数と1回に使える時間の確認へ再利用します。
-
-### 身体情報の数値範囲を確認する
-
-`if (`は必須の身長・体重が未入力、または5つの数値のどれかに問題がある場合の条件分岐を始めます。
-
-`heightCm === null`は身長が未入力ならエラーにする必須チェックです。
-
-`weightKg === null`は体重が未入力ならエラーにする必須チェックです。
-
-`!isOptionalNumberInRange(heightCm, 50, 250)`は入力された身長が50〜250cmの数値か確認します。
-
-`!isOptionalNumberInRange(weightKg, 20, 500)`は入力された体重が20〜500kgの数値か確認します。
-
-`!isOptionalNumberInRange(bodyFatPercentage, 0, 80)`は体脂肪率が`null`または0〜80%でなければ不正とします。
-
-`!isOptionalIntegerInRange(weeklyTrainingDays, 0, 7)`は週の回数が`null`または0〜7の整数でなければ不正とします。
-
-`!isOptionalIntegerInRange(availableMinutes, 20, 180)`は、1回のトレーニングに使える時間が`null`または20〜180分の整数でなければ不正とします。
-
-`||`は5つの確認のどれか1つでも不正ならエラーにすることを表します。
-
-`Response.json()`は安全な入力エラーとHTTP 400を返します。
-
-```ts
-return Response.json(
-  {
-    error:
-      "身体情報の数値が正しくありません。",
-  },
-  { status: 400 },
-);
-```
-
-この確認によって、不正な文字列・範囲外の数値・週3.5回などの小数をDBへ保存しません。
-
-### PATCHで保存対象のユーザーIDを検索する
-
-`const db = getDb();`はNeon PostgreSQLを操作する接続を取得します。
-
-`const matchedUsers = await db`はユーザー検索の完了を待ち、結果を配列として保存します。
-
-`.select({ id: users.id })`はプロフィール保存に必要なユーザーIDだけを取得します。
-
-`.from(users)`は検索対象を`users`テーブルにします。
-
-`.where(eq(users.email, authenticatedUser.email))`は認証メールと同じメールを持つユーザーへ絞ります。
-
-`.limit(1)`は検索結果を最大1人に制限します。
-
-この検索によって、これから保存するプロフィールをログイン中のユーザーIDと結び付けられます。
-
-### PATCHの検索結果から現在のユーザーを取り出す
-
-`const currentUser =`はプロフィールを保存するユーザーを入れる変数を作ります。
-
-`matchedUsers[0]`は検索結果の配列から1人目を取り出します。
-
-`?? null`は検索結果が空なら値を`null`へ統一します。
-
-`if (!currentUser)`は保存先のユーザーが存在しない場合だけ中の処理を実行します。
-
-`Response.json()`は「ユーザーが見つかりません」というエラーとHTTP 404を返し、保存処理へ進ませません。
-
-この処理によって、プロフィールを存在しないユーザーIDへ保存することを防ぎます。
-
-### プロフィールとして保存する値をまとめる
-
-`const profileValues = {`は、DBへ保存するプロフィール情報を1つのオブジェクトにまとめます。
-
-`userId: currentUser.id`は、プロフィールをログイン中のユーザーと結び付けます。
-
-`heightCm`と`weightKg`は、入力必須として確認済みの身長と体重です。
-
-`bodyFatPercentage`、`weeklyTrainingDays`、`availableMinutes`、`trainingLocation`、`weakBodyParts`は任意入力のプロフィール情報です。
-
-`updatedAt: new Date()`は、プロフィールを保存・更新した現在日時を記録します。
-
-ここでは保存内容を準備しただけで、まだPostgreSQLへの書き込みは実行していません。
-
-### プロフィールを新規保存または更新する
-
-`const savedProfiles = await db`は、DBへの保存完了を待って保存結果を受け取ります。
-
-`.insert(userProfiles)`は`user_profiles`テーブルへプロフィールを新規作成しようとします。
-
-`.values(profileValues)`は、保存する内容として先ほどまとめたプロフィール情報を渡します。
-
-`.onConflictDoUpdate()`は、同じユーザーのプロフィールがすでにある場合に新規作成から更新へ切り替えます。
-
-`target: userProfiles.userId`は、重複しているかをユーザーIDで判断します。
-
-`set: profileValues`は、既存プロフィールを今回受け取った内容へ更新します。
-
-`.returning()`は、新規作成または更新されたプロフィールを配列として返します。
-
-初回は新規作成、マイページなどから変更した2回目以降は同じ1件を更新するため、プロフィールが重複しません。
-
-### 身体情報の保存完了状態を記録する
-
-`await db`は、ユーザー状態の更新が完了するまで待ちます。
-
-`.update(users)`は、初回設定の進み具合を管理する`users`テーブルを更新します。
-
-`.set({ profileCompleted: true })`は、身体情報の入力と保存が完了した状態にします。
-
-`updatedAt: new Date()`は、ユーザー状態を変更した現在日時を記録します。
-
-`.where(eq(users.id, currentUser.id))`は、ログイン中のユーザー本人だけを更新します。
-
-この時点では初回分析が残っているため、初回設定全体を表す`onboardingCompleted`はまだ変更しません。
-
-### 保存結果をフロントエンドへ返す
-
-`const savedProfile =`は、保存されたプロフィールを入れる変数を作ります。
-
-`savedProfiles[0] ?? null`は保存結果の配列から1件目を取り出し、結果がなければ`null`にします。
-
-`return Response.json()`は、保存結果をJSONとしてフロントエンドへ返してPATCH処理を終了します。
-
-`profile: savedProfile`は、PostgreSQLへ保存された最新のプロフィールです。
-
-`profileCompleted: true`は、身体情報の入力・保存が完了したことをフロントエンドへ伝えます。
-
-フロントエンドは成功レスポンスを受け取った後、初回分析画面へ進めます。
-
-ステータスを明示していない成功レスポンスにはHTTP 200が使われます。
-
-# 13. 現在まだ実装していないこと
-
-- 参考画像の永続保存とサーバーへのアップロード
-- 本番用画像ストレージへ身体写真を保存する処理
-- AI回答のMarkdownをスマホ画面で見やすく表示する処理
-- API利用回数、連続送信、入力文字数などの本番用制限
-- TypeScriptバックエンドの開発用デプロイと公開URLへの切り替え
-- 全機能の実端末通しテストとエラー処理の最終確認
-- App Store用ビルド、プライバシー表示、審査準備
-- 必要に応じた課金機能
-
-現在の次工程は、AI回答のMarkdown表示と本番用の利用制限です。
-
-## 12-13. 身長・体重をNeon側でも必須にする
-
-対象ファイル：`drizzle-postgres/0002_luxuriant_sprite.sql`
-
-このファイルは、`db/schema.ts`で身長と体重へ追加した`.notNull()`と、Neonの実テーブルとの差分からDrizzle Kitが自動生成したマイグレーションです。
-
-```sql
-ALTER TABLE "user_profiles" ALTER COLUMN "height_cm" SET NOT NULL;
-ALTER TABLE "user_profiles" ALTER COLUMN "weight_kg" SET NOT NULL;
-```
-
-`ALTER TABLE "user_profiles"`は、既存の`user_profiles`テーブルの設計を変更します。
-
-`ALTER COLUMN "height_cm" SET NOT NULL`は、身長へ`null`を保存できないようにします。
-
-`ALTER COLUMN "weight_kg" SET NOT NULL`は、体重へ`null`を保存できないようにします。
-
-適用前に、身長または体重が`null`の既存プロフィールを確認し、0件であることを確認しました。
-
-2026年8月9日にNeonの`musclepas`プロジェクトへ適用し、`information_schema.columns`で両方の`is_nullable`が`NO`になったことを確認しました。
-
-これにより、フロントエンド、プロフィールAPI、TypeScriptのスキーマ、Neon PostgreSQLのすべてで「身長・体重のみ必須」という仕様が一致しています。
-
-## 12-14. Clerk認証：ログインした本人とデータを結び付ける
-
-### この章で理解すること
-
-この章では、Clerkでログインした人を確認し、その人専用のデータをNeonから取得するまでの流れを説明します。
-
-最初に大切なのは、ClerkとNeonは同じ仕事をしていないという点です。
-
-| 名前 | 主な役割 | 保存するもの |
-| --- | --- | --- |
-| Clerk | ログインと本人確認 | メール、ログイン方法、セッション |
-| Neon PostgreSQL | アプリデータの保存 | 理想体型、身体情報、記録、分析、AIデータ |
-
-Clerkは「この通信を送ったのは誰か」を確認します。
-
-Neonは「確認できた本人のアプリデータ」を保存・検索します。
-
-したがって、認証の処理は次の2段階に分かれます。
-
-```text
-① Clerkのトークンを検証して本人を確認する
-                 ↓
-② ClerkユーザーIDを使ってNeonから本人の行を探す
-```
-
-これはClerkのIDとNeonのIDが同じか比較しているわけではありません。
-
-ClerkのIDを検索条件として使い、対応するNeon内部のユーザーIDを取得しています。
-
-### 関係する主なファイル
-
-| ファイル | 何をする場所か |
-| --- | --- |
-| `app/lib/auth/clerk-auth.ts` | Clerkのトークン検証を共通化する |
-| `app/api/users/bootstrap/route.ts` | 初回登録と初回設定状況の取得を行う |
-| `db/schema.ts` | Clerk IDを含む`users`テーブルを定義する |
-| `mobile/src/app/_layout.tsx` | Expoアプリ全体でClerkを使えるようにする |
-| `mobile/src/app/sign-in.tsx` | メール、Google、Appleのログイン画面を動かす |
-| `mobile/src/app/bootstrap.tsx` | ログイン後に次の画面を判断する |
-| `mobile/src/lib/api.ts` | ClerkトークンをAPI通信へ付ける |
-
-### ログインから画面移動までの全体像
-
-```text
-利用者がメール・Google・Appleでログインする
-                    ↓
-Clerkがログイン状態とセッションを作る
-                    ↓
-ExpoがClerkのセッショントークンを取得する
-                    ↓
-Authorizationヘッダーにトークンを付けてAPIへ送る
-                    ↓
-バックエンドがトークンをClerkで検証する
-                    ↓
-検証済みのClerkユーザーIDを取得する
-                    ↓
-Neonのusers.clerk_user_idから本人を検索する
-                    ↓
-未登録ならusersへ登録する
-登録済みなら初回設定の進行状況を取得する
-                    ↓
-初回設定またはホームへ移動する
-```
-
-ログインに一度成功しても、API通信ごとにトークンを検証します。
-
-これは毎回ログイン画面を表示するという意味ではありません。
-
-利用者の操作なしで、保存済みセッションが有効かをバックエンドが安全に確認しています。
-
-もし最初の1回しか確認しなければ、別の人がAPIのURLを直接呼んで他人のデータを操作できる可能性があります。
-
-## 12-14-1. ClerkユーザーIDをNeonへ保存する
-
-対象ファイルは`db/schema.ts`です。
-
-使用言語はTypeScriptで、Drizzleを使ってPostgreSQLのテーブル構造を定義しています。
-
-```ts
-clerkUserId: text("clerk_user_id")
-  .unique(),
-```
-
-`clerkUserId`は、TypeScript内で使う項目名です。
-
-`text("clerk_user_id")`は、Neonの`clerk_user_id`列へ文字列を保存する指定です。
-
-`.unique()`は、同じClerkユーザーIDを2人分の行へ保存できないようにします。
-
-ClerkユーザーIDは、`user_...`のようなClerkが発行する固定の文字列です。
-
-Neonの`users.id`は、プロフィールや記録をつなぐためにアプリ内部で発行するUUIDです。
-
-2種類のIDは次のように使い分けます。
-
-```text
-Clerk userId
-  → ログインした本人をNeonで検索するためのID
-
-Neon users.id
-  → プロフィール、記録、分析などを関連付けるためのID
-```
-
-たとえば、トレーニング記録へClerkのIDを毎回直接保存するのではありません。
-
-最初にClerkのIDから`users.id`を取得し、その`users.id`を記録の外部キーとして使います。
-
-## 12-14-2. Clerkの環境変数
-
-バックエンド側の対象ファイルは`.env.local`です。
-
-```env
-NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=ClerkのPublishable Key
-CLERK_SECRET_KEY=ClerkのSecret Key
-```
-
-`NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`は、どのClerkアプリを使うかを示す公開可能なキーです。
-
-`CLERK_SECRET_KEY`は、バックエンドがClerkの管理機能を使うための秘密鍵です。
-
-秘密鍵はReact画面、Expoアプリ、GitHub、チャットへ載せません。
-
-スマホ側では`mobile/.env.local`へ公開可能キーだけを設定します。
-
-```env
-EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY=ClerkのPublishable Key
-```
-
-`EXPO_PUBLIC_`が付く値は、Expoアプリの中から読み取れる公開設定です。
-
-そのため、`CLERK_SECRET_KEY`へ`EXPO_PUBLIC_`を付けてはいけません。
-
-## 12-14-3. バックエンドの共通認証ファイル
-
-対象ファイルは`app/lib/auth/clerk-auth.ts`です。
-
-このファイルの目的は、難しいClerk認証処理を1か所へまとめることです。
-
-プロフィール、記録、身体分析、AIメニュー、AIチャットの各APIは、この共通関数を呼びます。
-
-同じ認証コードを各`route.ts`へ丸ごと書き直す必要はありません。
-
-### Clerk機能を読み込む
-
-```ts
-import { createClerkClient } from "@clerk/backend";
-```
-
-`import`は、別のパッケージが持つ機能を現在のファイルで使えるようにします。
-
-`createClerkClient`は、バックエンドからClerkへ接続するための機能です。
-
-`@clerk/backend`は画面を作るライブラリではなく、サーバー側で認証を検証するライブラリです。
-
-### 環境変数を読み取る
-
-```ts
-const publishableKey =
-  process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
-
-const secretKey =
-  process.env.CLERK_SECRET_KEY;
-```
-
-`const`は、あとから別の値を代入し直さない名前を定義します。
-
-`process.env`は、サーバーの環境変数を読み取る仕組みです。
-
-実際のキーをTypeScriptへ直接書かないため、GitHubへの秘密漏えいを防げます。
-
-### 必須設定があるか確認する
-
-```ts
-if (!publishableKey || !secretKey) {
-  throw new Error(
-    "Clerkの環境変数が設定されていません。",
-  );
-}
-```
-
-`if`は、条件が成立した場合だけ中の処理を実行します。
-
-`!publishableKey`は、公開可能キーが空または未設定かを確認します。
-
-`||`は、左右のどちらか一方でも成立すればよい「または」です。
-
-`throw new Error()`は、必要な設定がない状態で処理を続けず、原因の分かるエラーで停止します。
-
-### Clerkクライアントを作る
-
-```ts
-const clerkClient = createClerkClient({
-  publishableKey,
-  secretKey,
-});
-```
-
-`createClerkClient()`は、2つのキーを使ってClerkを操作できる接続役を作ります。
-
-`{ publishableKey, secretKey }`は、関数へ設定値をオブジェクトとして渡しています。
-
-これは次の省略記法です。
-
-```ts
-{
-  publishableKey: publishableKey,
-  secretKey: secretKey,
-}
-```
-
-左側は設定項目名で、右側は変数に入っている値です。
-
-## 12-14-4. リクエストのトークンを検証する
-
-対象ファイルは引き続き`app/lib/auth/clerk-auth.ts`です。
-
-### 詳しい認証結果を返す関数
-
-```ts
-export async function getClerkSessionAuth(
-  request: Request,
-) {
-  const requestState =
-    await clerkClient.authenticateRequest(
-      request,
-      {
-        acceptsToken: "session_token",
-      },
-    );
-
-  if (!requestState.isAuthenticated) {
-    return null;
-  }
-
-  return requestState.toAuth();
-}
-```
-
-`export`は、この関数を別のファイルから読み込めるようにします。
-
-`async`は、関数の中で時間のかかる非同期処理を待てるようにします。
-
-`request: Request`は、フロントから届いたHTTP通信全体を受け取るというTypeScriptの型指定です。
-
-`authenticateRequest()`は、通信に付いているClerkトークンが本物で、期限内であるかを検証します。
-
-`await`は、Clerkの検証結果が返るまで次の処理へ進まないように待ちます。
-
-`acceptsToken: "session_token"`は、人がログインしたセッション用トークンを受け付ける指定です。
-
-`isAuthenticated`は、Clerkが認証済みと判断したかを表します。
-
-未ログイン、期限切れ、不正なトークンなら`null`を返します。
-
-`toAuth()`は、検証結果をユーザーIDなどが読みやすい認証情報へ変換します。
-
-### ユーザーIDだけを返す関数
-
-```ts
-export async function getClerkUserId(
-  request: Request,
-): Promise<string | null> {
-  const auth =
-    await getClerkSessionAuth(request);
-
-  return auth?.userId ?? null;
-}
-```
-
-`Promise<string | null>`は、処理完了後に文字列または`null`を返すという型です。
-
-`getClerkSessionAuth(request)`は、先ほどの共通関数へ同じHTTP通信を渡します。
-
-`auth?.userId`は、`auth`が存在するときだけ`userId`を読み取ります。
-
-`?.`があるため、`auth`が`null`でもエラーになりません。
-
-`?? null`は、左側が`null`または`undefined`なら右側の`null`を使います。
-
-この関数により、各APIは次の短い基本形で本人を確認できます。
-
-```ts
-const clerkUserId =
-  await getClerkUserId(request);
-
-if (!clerkUserId) {
-  return Response.json(
-    { error: "ログインが必要です。" },
-    { status: 401 },
-  );
-}
-```
-
-1行目では、リクエストのClerkトークンを検証してユーザーIDを取得します。
-
-`if (!clerkUserId)`は、ユーザーIDを取得できなかった場合を確認します。
-
-`return`は、その場でレスポンスを返して後ろのDB処理へ進ませません。
-
-`Response.json()`は、フロントへJSON形式のレスポンスを返します。
-
-`status: 401`は、ログイン情報がないか無効であることを表します。
-
-## 12-14-5. bootstrap APIでClerkとNeonを結び付ける
-
-対象ファイルは`app/api/users/bootstrap/route.ts`です。
-
-`bootstrap`には「起動時にアプリを使える状態へ初期化する」という意味があります。
-
-このAPIは、ログイン後のユーザーをNeonへ登録または検索し、次に表示する画面の判断材料を返します。
-
-### bootstrap APIの順番
-
-```text
-1. Clerkで本人を確認する
-2. ClerkユーザーIDでNeonを検索する
-3. 登録済みなら初回設定状況を返す
-4. 未登録ならClerkからメールと名前を取得する
-5. Neonのusersへ新規登録する
-6. 初回設定状況をフロントへ返す
-```
-
-### APIの入口
-
-```ts
-export async function POST(
-  request: Request,
-) {
-  try {
-    // 認証・検索・登録を行う
-  } catch (error) {
-    // 予想外のエラーを処理する
-  }
-}
-```
-
-`POST`は、このURLへPOST通信が届いたときに実行される関数です。
-
-`request`には、Clerkトークンを含むHTTP通信が入ります。
-
-`try`は、エラーが起きる可能性のある処理をまとめる場所です。
-
-`catch`は、`try`内で予想外のエラーが起きた場合に受け止める場所です。
-
-### Neonから登録済みユーザーを探す
-
-```ts
-const existingUsers = await db
-  .select()
-  .from(users)
-  .where(
-    eq(
-      users.clerkUserId,
-      clerkUserId,
-    ),
-  )
-  .limit(1);
-
-const existingUser =
-  existingUsers[0] ?? null;
-```
-
-`db`は、Neon PostgreSQLを操作する接続です。
-
-`.select()`は、テーブルからデータを取得します。
-
-`.from(users)`は、検索対象を`users`テーブルにします。
-
-`.where()`は、取得する行の条件を指定します。
-
-`eq(A, B)`は、AとBが等しい行だけに絞ります。
-
-ここではNeonの`users.clerkUserId`と、検証済み本人の`clerkUserId`が一致する行を探しています。
-
-`.limit(1)`は、最大1件だけ取得します。
-
-検索結果は配列で返るため、`[0]`で最初の1件を取り出します。
-
-`?? null`により、0件なら`undefined`ではなく`null`へ統一します。
-
-この部分は本人確認そのものではありません。
-
-本人確認は直前の`getClerkUserId(request)`で完了しており、ここではNeonから本人用データを探しています。
-
-### 登録済みユーザーの進行状況を返す
-
-```ts
-if (existingUser) {
-  return Response.json({
-    userId: clerkUserId,
-    onboardingCompleted:
-      existingUser.onboardingCompleted,
-    goalBodyType:
-      existingUser.goalBodyType,
-    profileCompleted:
-      existingUser.profileCompleted,
-    initialAnalysisCompleted:
-      existingUser.initialAnalysisCompleted,
-  });
-}
-```
-
-`if (existingUser)`は、Neonに登録済みのユーザーが見つかった場合です。
-
-`onboardingCompleted`は、初回設定全体が完了しているかを表します。
-
-`goalBodyType`は、保存済みの理想体型です。
-
-`profileCompleted`は、身長・体重などの身体情報を保存済みかを表します。
-
-`initialAnalysisCompleted`は、初回分析が完了しているかを表します。
-
-ここで`return`するため、登録済みユーザーは下の新規登録処理へ進みません。
-
-### 未登録ユーザーのClerk情報を取得する
-
-```ts
-const clerkUserDetails =
-  await getClerkUserDetails(
-    clerkUserId,
-  );
-
-const email =
-  clerkUserDetails.primaryEmailAddress
-    ?.emailAddress ?? null;
-```
-
-`getClerkUserDetails()`は、Clerkから本人のメールや名前を取得します。
-
-この処理はNeonに未登録のときだけ実行されます。
-
-`primaryEmailAddress`は、Clerkで主要メールに設定された情報です。
-
-`?.emailAddress`は、主要メール情報が存在する場合だけメール文字列を読み取ります。
-
-`?? null`は、取得できなければ`null`へ統一します。
-
-### 表示名を作る
-
-```ts
-const displayName =
-  [
-    clerkUserDetails.firstName,
-    clerkUserDetails.lastName,
-  ]
-    .filter(Boolean)
-    .join(" ") || email;
-```
-
-`[]`は、姓名を順番にまとめる配列です。
-
-`.filter(Boolean)`は、`null`や空文字などの空の値を除きます。
-
-`.join(" ")`は、残った文字列を半角スペースでつなぎます。
-
-`|| email`は、姓名が両方なければメールを表示名として使います。
-
-### Neonへ新規ユーザーを保存する
-
-```ts
-const createdUsers = await db
-  .insert(users)
-  .values({
-    clerkUserId,
-    email,
-    displayName,
-  })
-  .returning();
-
-const createdUser = createdUsers[0];
-```
-
-`.insert(users)`は、`users`テーブルへ新しい行を追加します。
-
-`.values()`は、保存する列と値を指定します。
-
-`clerkUserId`を保存することで、次回から同じログイン利用者を検索できます。
-
-`.returning()`は、保存後の新しい行を結果として返します。
-
-結果は配列なので、`createdUsers[0]`で作成した1人を取り出します。
-
-## 12-14-6. Expoアプリ全体でClerkを使う
-
-対象ファイルは`mobile/src/app/_layout.tsx`です。
-
-このファイルでは、アプリ全体を`ClerkProvider`で囲みます。
+ボタンを押したときの処理を指定します。
 
 ```tsx
-<ClerkProvider
-  publishableKey={publishableKey}
-  tokenCache={tokenCache}
->
-  <UserScopedApp />
-</ClerkProvider>
+<Pressable onPress={() => void sendMessage()}>
+  <Text>送信</Text>
+</Pressable>
 ```
 
-`ClerkProvider`は、内側の全画面からClerkのログイン状態を使えるようにします。
+- `onPress`は押下イベントです。
+- `() =>`は押したときに実行する無名関数です。
+- `sendMessage()`だけを書くと、画面表示中に実行される場合があります。
+- `void`はPromiseの返り値をボタン側では使わないことを表します。
 
-`publishableKey`は、利用するClerkアプリを指定します。
-
-`tokenCache`は、セッショントークンを端末へ安全に保持し、アプリ再起動後もログイン状態を復元するために使います。
+## 条件表示
 
 ```tsx
-const { userId } = useAuth({
-  treatPendingAsSignedOut: false,
+{error ? <Text>{error}</Text> : null}
+```
+
+`error`に文字がある場合だけ`Text`を表示します。
+
+空文字なら`null`になり、何も表示しません。
+
+## `.map()`
+
+配列の各要素を画面部品へ変換します。
+
+```tsx
+entries.map((entry) => (
+  <Text key={entry.id}>{entry.name}</Text>
+))
+```
+
+- `entries`は食事記録の配列です。
+- `.map()`は配列を先頭から1件ずつ処理します。
+- `entry`には処理中の1件が入ります。
+- 各記録を`Text`へ変換します。
+- `key`はReactが各行を区別するIDです。
+
+## `Object.keys()`
+
+オブジェクトの項目名だけを配列で取り出します。
+
+```ts
+Object.keys(exercisesByBodyPart).map((bodyPart) => {
+  // bodyPartには「胸」「背中」などが順番に入る
 });
 ```
 
-`useAuth()`は、Reactコンポーネント内でClerkの認証状態を取得するHookです。
+`map()`の丸括弧の中に`bodyPart`を書く理由は、1件ずつ受け取るためです。
 
-`userId`にはログイン済みならClerkユーザーID、未ログインなら`null`相当の値が入ります。
+変数名は自由ですが、中身が分かるように`bodyPart`と名付けています。
 
-`treatPendingAsSignedOut: false`は、認証確認中を未ログインと決めつけず、確認完了まで待つ設定です。
+## `useEffect`
 
-## 12-14-7. ログイン画面の基本的な流れ
+画面を開いたときや、指定した値が変化したときに処理します。
 
-対象ファイルは`mobile/src/app/sign-in.tsx`です。
-
-この画面では、メール認証コード、Google、Appleのログインを扱います。
-
-メール認証は次の順番です。
-
-```text
-メールアドレスを入力する
-        ↓
-登録済みかClerkへ確認する
-        ↓
-登録済み → signInでコードを送る
-未登録   → signUpでコードを送る
-        ↓
-6桁コードを確認する
-        ↓
-Clerkセッションを確定する
-        ↓
-bootstrap画面へ移動する
-```
-
-### 画面用state
-
-```ts
-const [email, setEmail] = useState("");
-const [code, setCode] = useState("");
-const [isSubmitting, setIsSubmitting] =
-  useState(false);
-```
-
-`email`は現在入力されているメールアドレスです。
-
-`setEmail`は`email`を更新するための関数です。
-
-`useState("")`は、最初の値を空文字にしてReact stateを作ります。
-
-`code`は利用者が入力した6桁の認証コードです。
-
-`isSubmitting`は、現在認証通信中かを`true`または`false`で保存します。
-
-### 二重送信を防ぐ
-
-```ts
-const submissionLock = useRef(false);
-
-if (submissionLock.current) return;
-submissionLock.current = true;
-```
-
-`useRef(false)`は、画面の再描画を起こさずに送信中の状態を保持します。
-
-`.current`は、`useRef`の中に保存された現在値です。
-
-すでに`true`なら`return`して、Enterとボタンによる二重送信を止めます。
-
-React stateが画面へ反映されるより早くロックできるため、使用済みコードを2回送る問題を防げます。
-
-処理の最後では`finally`を使って必ずロックを解除します。
-
-```ts
-finally {
-  submissionLock.current = false;
-  setIsSubmitting(false);
-}
-```
-
-`finally`は、通信が成功しても失敗しても最後に必ず実行されます。
-
-### 登録済みと未登録を分ける理由
-
-登録済みユーザーは`signIn`を使います。
-
-初めて利用するユーザーは`signUp`を使います。
-
-新規登録ではユーザー作成とセッション作成の両方が必要です。
-
-この2つを途中で混ぜると、`Cannot finalize sign-up without a created session.`のようなエラーにつながります。
-
-`authMode`へ`sign-in`または`sign-up`を保存し、コード確認時にも同じ処理を続けます。
-
-## 12-14-8. トークンをバックエンドへ渡す
-
-対象ファイルは`mobile/src/lib/api.ts`です。
-
-```ts
-Authorization: `Bearer ${options.token}`
-```
-
-`Authorization`は、HTTP通信で認証情報を渡すためのヘッダー名です。
-
-`Bearer`は、後ろに続く文字列が認証トークンであることを表します。
-
-`${options.token}`は、テンプレートリテラルの中へトークン文字列を埋め込みます。
-
-実際の通信は次の形になります。
-
-```text
-Authorization: Bearer Clerkのセッショントークン
-```
-
-バックエンドの`authenticateRequest()`は、このヘッダーに入ったトークンを検証します。
-
-トークンから取得したユーザーIDを使うため、フロントが送った任意のユーザーIDを信用する必要がありません。
-
-## 12-14-9. bootstrap画面で次の画面を決める
-
-対象ファイルは`mobile/src/app/bootstrap.tsx`です。
-
-この画面は、ログイン後にNeonの保存状況を読み、どの画面へ進むかを決めます。
-
-### トークンを取得してAPIを呼ぶ
-
-```ts
-const token = await getToken();
-
-const data =
-  await fetchBootstrap(token);
-```
-
-`getToken()`は、現在のClerkセッションから認証トークンを取得します。
-
-`await`は、トークンやAPIレスポンスが返るまで待ちます。
-
-`fetchBootstrap(token)`は、トークンを付けてbootstrap APIを呼びます。
-
-### 保存状態による画面分岐
-
-```text
-onboardingCompletedがtrue
-  → ホーム
-
-goalBodyTypeがnull
-  → 理想体型の設定
-
-profileCompletedがfalse
-  → 身体情報の入力
-
-それ以外
-  → 初回分析
-```
-
-順番が重要です。
-
-先に初回設定全体の完了を確認することで、完了済みユーザーをすぐホームへ移動できます。
-
-理想体型、身体情報、初回分析の順に不足している場所へ案内します。
-
-保存済みの理想体型やプロフィールはReact Contextへ戻すため、画面を切り替えても入力内容を再表示できます。
-
-## 12-14-10. 認証とユーザー検索を混同しない
-
-次の2つは目的が違います。
-
-```ts
-await getClerkUserId(request);
-```
-
-この処理は、Clerkを使って「通信した本人は誰か」を確認します。
-
-```ts
-.where(
-  eq(
-    users.clerkUserId,
-    clerkUserId,
-  ),
-)
-```
-
-この処理は、確認できたClerk IDを使って「Neonのどのユーザー行か」を探します。
-
-つまり、次の認識が正解です。
-
-```text
-Clerk認証
-  = 本人であることを確認する
-
-Neon検索
-  = 本人に対応する保存データを持ってくる
-```
-
-## 12-14-11. APIごとに認証する理由
-
-ログイン状態はClerkが端末へ保持するため、利用者が毎回コードを入力する必要はありません。
-
-一方、バックエンドはAPI通信ごとにトークンを検証します。
-
-理由は、トークンの期限切れ、ログアウト、改ざん、別ユーザーからの通信を毎回判定するためです。
-
-各APIには同じ長い認証処理を書くのではなく、共通関数を呼ぶ短い基本形だけを書きます。
-
-```ts
-const clerkUserId =
-  await getClerkUserId(request);
-
-if (!clerkUserId) {
-  return Response.json(
-    { error: "ログインが必要です。" },
-    { status: 401 },
-  );
-}
-```
-
-この基本形の後で、プロフィールAPIならプロフィールを、記録APIなら記録をNeonから取得します。
-
-## 12-14-12. この章の文法・単語帳
-
-| 文法・単語 | 意味 |
-| --- | --- |
-| `async` | 関数内で非同期処理を待てるようにする |
-| `await` | 通信やDB処理の完了を待つ |
-| `Promise<T>` | 後から`T`型の結果を返す処理 |
-| `Request` | フロントから届いたHTTP通信全体 |
-| `Response.json()` | JSON形式でフロントへ結果を返す |
-| `?.` | 左側が存在するときだけ右側を読む |
-| `??` | 左側が`null`か`undefined`なら右側を使う |
-| `||` | 左側が空や`false`なら右側を使う場合にも使える |
-| `[0]` | 配列の最初の要素を取り出す |
-| `.filter(Boolean)` | 配列から空の値を除く |
-| `.join(" ")` | 配列の文字列を空白でつなぐ |
-| `.where()` | DB検索の条件を指定する |
-| `eq(A, B)` | AとBが等しい行へ絞る |
-| `.limit(1)` | 検索結果を最大1件にする |
-| `return` | 値を返し、その関数の処理を終了する |
-| `try` | エラーが起きる可能性のある処理を書く |
-| `catch` | `try`で起きたエラーを受け止める |
-| `finally` | 成功・失敗に関係なく最後に実行する |
-
-### HTTPステータス
-
-| 数値 | この認証処理での意味 |
-| --- | --- |
-| `200` | 取得や処理に成功した |
-| `201` | Neonへ新しいユーザーを作成した |
-| `400` | 必要なメールなど入力・情報が不足している |
-| `401` | 未ログイン、期限切れ、不正なトークン |
-| `404` | 本人に対応するデータが見つからない |
-| `500` | サーバー内部で予想外のエラーが起きた |
-
-## 12-14-13. フロントエンドとバックエンドの担当範囲
-
-### フロントエンドが行うこと
-
-- ログイン・新規登録画面を表示する
-- メール認証コード、Google、Appleログインを操作する
-- Clerkからセッショントークンを取得する
-- API通信へトークンを付ける
-- 認証確認中、通信中、エラーを画面へ表示する
-- bootstrap結果から初回設定またはホームへ移動する
-- ログアウト操作を用意する
-
-### バックエンドが行うこと
-
-- 届いたClerkトークンを検証する
-- 検証済みClerkユーザーIDからNeonの本人を検索する
-- 初回ユーザーをNeonへ登録する
-- 本人のデータだけを取得・保存・変更・削除する
-- 未認証ならDB処理の前にHTTP 401を返す
-- `CLERK_SECRET_KEY`をサーバーの環境変数で守る
-
-### 絶対にフロントへ置かないもの
-
-- `CLERK_SECRET_KEY`
-- `DATABASE_URL`
-- OpenAIの秘密APIキー
-- 他人のユーザーIDを信用して操作する処理
-
-この章の一番重要な流れは次のとおりです。
-
-```text
-フロントがClerkトークンを送る
-          ↓
-バックエンドがClerkで本人確認する
-          ↓
-ClerkユーザーIDでNeonの本人データを探す
-          ↓
-本人のデータだけを操作する
-```
-
-## トレーニング記録：1回分の親テーブル
-
-### どこに書くコードか
-
-担当ファイルは`db/schema.ts`で、`userProfiles`より下に書きます。
-
-使用言語はTypeScriptで、Drizzleを使ってNeon PostgreSQLのテーブルを定義しています。
-
-TypeScriptで「保存するデータの形」を書き、Drizzleがその内容をPostgreSQL用のテーブル設計へ変換します。
-
-### 何をする場所か
-
-`trainingSessions`は、1回のトレーニング全体を表す親データです。
-
-例えば「8月12日に60分トレーニングして、調子は8、メモは胸の調子が良かった」という情報を1件にまとめます。
-
-ベンチプレスなどの種目や各セットの重量・回数は、後から別の子テーブルとして結び付けます。
-
-### 基本の文の構造
-
-```ts
-export const trainingSessions = pgTable("training_sessions", {
-  // 保存する列を書く
-});
-```
-
-`export`は、別のAPIファイルからこのテーブルを読み込めるようにする命令です。
-
-`const trainingSessions`は、TypeScript内でテーブル定義を使うための名前です。
-
-`pgTable()`は、PostgreSQLのテーブルを定義するDrizzleの関数です。
-
-`"training_sessions"`は、Neon上で実際に作られるテーブル名です。
-
-波括弧`{}`の中には、そのテーブルで保存する列を書きます。
-
-### 各項目の意味
-
-```ts
-id: uuid("id").defaultRandom().primaryKey(),
-```
-
-`id`は、1回ごとのトレーニング記録を重複なく区別する番号です。
-
-`uuid()`は、推測されにくい長いIDを保存する型です。
-
-`defaultRandom()`は、新規保存時にUUIDを自動生成します。
-
-`primaryKey()`は、この列をテーブル内の代表IDにします。
-
-```ts
-userId: uuid("user_id")
-  .notNull()
-  .references(() => users.id, {
-    onDelete: "cascade",
-  }),
-```
-
-`userId`は、この記録を行ったユーザーを表します。
-
-`notNull()`は、ユーザーIDを必須にして空の記録を防ぎます。
-
-`references(() => users.id)`によって、トレーニング記録を`users`テーブルの本人と結び付けます。
-
-`onDelete: "cascade"`は、ユーザーを削除した場合に、そのユーザーのトレーニング記録も一緒に削除する設定です。
-
-```ts
-performedAt: timestamp("performed_at", {
-  withTimezone: true,
-})
-  .notNull()
-  .defaultNow(),
-```
-
-`performedAt`は、トレーニングを実施した日時です。
-
-`timestamp()`は日付と時刻を保存する型です。
-
-`withTimezone: true`は、日本時間などのタイムゾーンの違いを扱えるようにします。
-
-`defaultNow()`は、日時が渡されなかった場合に現在日時を自動保存します。
-
-`durationMinutes`はトレーニング時間、`conditionScore`は当日の調子、`memo`は任意のメモを保存します。
-
-この3項目に`notNull()`がないため、入力しなくても保存できます。
-
-`createdAt`は、このデータがデータベースへ登録された日時です。
-
-### 覚える単語
-
-- `pgTable()`：PostgreSQLのテーブルを定義する
-- `uuid()`：重複しにくいIDを保存する
-- `integer()`：整数を保存する
-- `text()`：文字列を保存する
-- `timestamp()`：日時を保存する
-- `notNull()`：必須項目にする
-- `defaultNow()`：現在日時を初期値にする
-- `references()`：別のテーブルと結び付ける
-- `cascade`：親データ削除時に関連データも削除する
-
-### `pgTable()`とは
-
-`pgTable()`は、PostgreSQLのテーブルをTypeScriptで定義するDrizzleの関数です。
-
-`pg`はPostgreSQL、`Table`はデータを保存する表という意味です。
-
-```ts
-export const bodyAnalyses = pgTable("body_analyses", {
-  // 保存する列
-});
-```
-
-この文は「PostgreSQLへ`body_analyses`というテーブルを用意し、波括弧内で定義した列を保存できるようにする」と読みます。
-
-`bodyAnalyses`はTypeScriptのコード内で使う名前です。
-
-`"body_analyses"`はNeon PostgreSQL上で実際に使われるテーブル名です。
-
-波括弧`{}`の中には、`id`、`userId`、`status`など、テーブルへ保存する項目を定義します。
-
-`pgTable()`自体はデータを保存する処理ではなく、保存できる表の形を決める設計です。
-
-`schema.ts`へ`pgTable()`で設計を書き、`drizzle-kit push`などを実行すると、Neonへ実際のテーブルが作成されます。
-
-```text
-schema.tsでpgTable()を書く
-          ↓
-Drizzle KitでDBへ反映する
-          ↓
-Neonに実際のテーブルが作られる
-          ↓
-route.tsからデータを保存・取得する
-```
-
-### `userId`で分析結果とユーザーを結び付ける文
-
-```ts
-userId: uuid("user_id")
-  .notNull()
-  .references(() => users.id, {
-    onDelete: "cascade",
-  }),
-```
-
-このまとまりは「このデータが誰のものか」を保存し、`users`テーブルの本人と結び付けます。
-
-#### `userId:`
-
-`userId`は、TypeScriptやDrizzleのコード内でこの列を呼ぶときの名前です。
-
-例えば保存処理では`userId: user.id`のように使用します。
-
-#### `uuid("user_id")`
-
-`uuid()`は、この列へUUID形式のIDを保存すると決めます。
-
-`"user_id"`は、Neon PostgreSQL上で実際に作られる列名です。
-
-`users.id`もUUIDなので、結び付ける両方の列を同じ型にします。
-
-#### `.notNull()`
-
-`.notNull()`は、この列を必須にします。
-
-身体分析結果には必ず所有者が必要なため、ユーザーIDが空の分析結果は保存できません。
-
-これは「誰の写真・分析結果か分からないデータ」を作らないためにも重要です。
-
-#### `.references(() => users.id)`
-
-`.references()`は、この列が別テーブルのどの列を参照するかを指定します。
-
-`() => users.id`は、「`users`テーブルの`id`を参照する」という値を返すアロー関数です。
-
-これにより、実際に`users`テーブルへ存在するユーザーIDだけを保存できます。
-
-このように別テーブルのIDを参照する列を外部キーと呼びます。
-
-#### `{ onDelete: "cascade" }`
-
-これは参照先のユーザーが削除された場合の動きを指定する設定オブジェクトです。
-
-`cascade`は、親であるユーザーが削除されたら、そのユーザーに属する身体分析結果も一緒に削除する設定です。
-
-身体写真や分析結果を退会後も所有者不明のまま残さないために使います。
-
-```text
-users.id（親のユーザー）
-   ↓ userIdで結び付く
-body_analyses（子の分析結果）
-
-ユーザー削除
-   ↓ cascade
-そのユーザーの分析結果も削除
-```
-
-#### 最後の`,`
-
-最後のカンマは、`userId`の列定義がここで終わり、次の列定義へ進むことを表します。
-
-### 覚える単語
-
-- 外部キー：別テーブルのデータと結び付けるための列
-- 親テーブル：参照される側のテーブル
-- 子テーブル：親のIDを保存して参照する側のテーブル
-- 参照整合性：存在しないユーザーIDなどを保存させない仕組み
-- 設定オブジェクト：処理方法を`{ 名前: 値 }`で渡すデータ
-
-## 身体分析結果のDB設計
-
-### `bodyAnalyses`親テーブル
-
-`bodyAnalyses`は、Pythonが行う1回分の身体分析全体を保存する親テーブルです。
-
-`userId`で分析結果を本人へ結び付け、`status`で分析待ち・成功・失敗の状態を管理します。
-
-`summary`は身体全体の説明、`goalDifference`は設定中の理想体型との差を保存します。
-
-`analyzedAt`はPythonによる分析が完了した日時です。分析待ちの段階では空にできるため`notNull()`を付けていません。
-
-### `bodyAnalysisAreas`子テーブル
-
-`bodyAnalysisAreas`は、肩・胸・背中・腕・腹部・脚などの部位別結果を保存します。
-
-`analysisId`は`bodyAnalyses.id`を参照し、部位別結果がどの身体分析に属するかを表します。
-
-1件の`bodyAnalyses`に複数件の`bodyAnalysisAreas`を持てるため、親子の1対多関係です。
-
-`bodyPart`は部位名で、分析結果に必ず必要なので`notNull()`を付けています。
-
-`score`は部位の評価点、`priority`は優先度を保存します。
-
-`observation`はPythonが画像から読み取った外見上の傾向、`recommendation`は今後のトレーニング提案です。
-
-これらは分析方法の変更や判定不能に対応するため、現段階では任意項目にしています。
-
-親の身体分析を削除すると、`onDelete: "cascade"`により、その分析に属する全部位の結果も削除されます。
-
-```text
-body_analyses（1回分の分析全体）
-├─ body_analysis_areas（肩）
-├─ body_analysis_areas（胸）
-├─ body_analysis_areas（背中）
-└─ body_analysis_areas（脚）
-```
-
-## Python身体画像分析API
-
-### なぜPythonを分けるのか
-
-Clerk認証・Neon保存・フロントとの通信はTypeScriptバックエンドが担当し、画像処理だけをPythonサービスへ分けます。
-
-PythonはOpenCV・MediaPipe・PyTorchなど、画像処理や機械学習向けのライブラリを利用しやすいためです。
-
-### `main.py`の役割
-
-`python-analysis/app/main.py`は、身体画像分析用Python APIの入口です。
-
-`from fastapi import FastAPI`は、インストールしたFastAPIからAPI本体を作る機能を読み込みます。
-
-`app = FastAPI(...)`はPython API全体を表す`app`を作ります。
-
-`title`はAPIの名前で、処理内容には影響しませんが、自動生成されるAPI説明画面などに表示されます。
-
-`@app.get("/health")`は、GET通信で`/health`へアクセスしたとき、直後の関数を実行する指定です。この`@`から始まる文をデコレーターと呼びます。
-
-`def health_check():`は、サーバーの稼働確認を行うPython関数です。
-
-`return`でPythonの辞書を返すと、FastAPIが自動的にJSONへ変換します。
-
-`/health`は画像を受け取らず、Pythonサービスが起動中かだけを確認する安全な入口です。
-
-### `requirements.txt`
-
-`requirements.txt`は、このPythonサービスに必要な外部ライブラリの一覧です。
-
-`fastapi`はAPIを作り、`uvicorn`は作ったAPIをローカルサーバーとして起動します。
-
-`python-multipart`は、正面・横・背面などの画像ファイルを`multipart/form-data`形式で受け取るためのライブラリです。
-
-`python-multipart`自体をターミナルで直接実行するのではなく、`python -m pip install -r requirements.txt`でPython環境へインストールします。
-
-`multipart/form-data`は、文字だけのJSONではなく、画像などのファイルをHTTP通信で送るときに使うデータ形式です。
-
-### 覚える単語
-
-- FastAPI：PythonでAPIを作るフレームワーク
-- Uvicorn：FastAPIを起動するサーバー
-- python-multipart：FastAPIでアップロードファイルを受け取れるようにするライブラリ
-- multipart/form-data：画像などのファイルを送受信するためのHTTPデータ形式
-- デコレーター：関数へAPIのURLなどの役割を付ける`@`から始まる文
-- 辞書：Pythonの`{ キー: 値 }`形式のデータ
-- ヘルスチェック：サービスが起動しているか確認する処理
-
-### Pydanticで分析結果JSONの形を決める
-
-`from pydantic import BaseModel, Field`は、受信・返却データの型と入力条件を作る機能を読み込みます。
-
-Pydanticは、Pythonのデータが決めた型や範囲に合っているか自動確認するライブラリです。FastAPIに含まれる依存関係として利用できます。
-
-`class BodyAreaResult(BaseModel):`は、肩や胸など1部位分の分析結果の設計図を作ります。
-
-Pythonの`class`は、関連するデータや処理を1つの型としてまとめる仕組みです。
-
-`body_part: str`は部位名を文字列、`priority: str`なども文字列として必須にします。
-
-`score: int = Field(ge=1, le=10)`は、スコアを整数かつ1以上10以下に制限します。
-
-`ge`はgreater than or equal（以上）、`le`はless than or equal（以下）の略です。
-
-`BodyAnalysisResponse`は1回分の分析全体を表し、全体説明、理想との差、部位別結果を持ちます。
-
-`areas: list[BodyAreaResult]`は、`BodyAreaResult`型の部位別結果を複数持つリストです。
-
-この型を決めることで、Pythonが毎回異なる構造を返すことを防ぎ、TypeScript側が安全にNeonへ保存できます。
-
-### 覚える単語
-
-- Pydantic：Pythonデータの型や条件を検証するライブラリ
-- `BaseModel`：Pydanticのデータモデルを作る親クラス
-- `Field()`：数値範囲などの細かい条件を付ける
-- `class`：データや処理をまとめた型を作る
-- `str`：Pythonの文字列型
-- `int`：Pythonの整数型
-- `list`：複数の値を順番に持つPythonの配列
-
-### 仮の身体分析API
-
-`@app.post("/analyze")`は、POST通信で身体分析を開始する入口です。
-
-`response_model=BodyAnalysisResponse`は、返すJSONが決めた分析結果の型に合うかFastAPIに確認させます。
-
-`analyze_body()`は現時点では画像を受け取らず、TypeScriptとの接続確認に使う仮の分析結果を返します。
-
-### 正面・横・背面画像を受け取る基本の型
-
-`from fastapi import FastAPI, File, UploadFile`では、API本体に加えて、送信された画像を受け取る`File`と`UploadFile`を読み込みます。
-
-`async def analyze_body(...):`は、画像の読み込みなど完了まで待つ可能性がある処理を、非同期関数として定義します。
-
-`front_image`、`side_image`、`back_image`は、それぞれ正面・横・背面画像を受け取る変数です。
-
-`UploadFile`は、その値がアップロードされたファイルであることをFastAPIへ伝える型です。
-
-`File(...)`の`File`はフォーム通信からファイルを受け取る指定で、`...`はそのファイルが必須であることを表します。
-
-この段階では画像を受け取る入口を作っただけで、画像の永続保存や本物の身体分析はまだ行いません。
-
-### Python側の画像検査設定
-
-`HTTPException`は、Python APIで入力エラーを見つけたときに、HTTP 400番台のエラーとして処理を中断するFastAPIの機能です。
-
-`ALLOWED_IMAGE_TYPES`は、Pythonが受け付けるJPEG・PNG・WebPのMIMEタイプをPythonの`set`へまとめます。
-
-Pythonでは、途中で変更しない設定値を`ALLOWED_IMAGE_TYPES`のような大文字名で書く慣習があります。
-
-`MAX_IMAGE_SIZE_BYTES = 8 * 1024 * 1024`は、1枚あたり8MBという上限をバイト単位で表します。
-
-`MAX_TOTAL_IMAGE_SIZE_BYTES = 24 * 1024 * 1024`は、正面・横・背面の画像データ3枚を合計24MB以下にする設定です。
-
-TypeScript側だけでなくPython側でも確認することで、Python APIが直接呼ばれた場合にも不正な画像を拒否できます。この考え方を多層防御と呼びます。
-
-### Pythonの画像検査関数
-
-`async def validate_image(image: UploadFile) -> int:`は、アップロード画像1枚を検査する非同期関数です。`-> int`は、正常な画像の容量を整数で返すことを表します。
-
-`image.content_type not in ALLOWED_IMAGE_TYPES`は、送信者が申告した画像形式が許可一覧にないか確認します。
-
-`raise HTTPException(...)`は、その場で通常処理を中断し、FastAPIから指定したHTTPエラーを返します。
-
-`await image.read(MAX_IMAGE_SIZE_BYTES + 1)`は、上限より1バイト多い位置まで読み、8MBを超えたか判定できるようにします。
-
-`len(image_bytes)`は読み取った実際のバイト数を返します。`0`なら空ファイル、上限より大きければ容量超過です。
-
-`await image.seek(0)`は、検査で末尾へ進んだファイルの読み取り位置を先頭へ戻します。これを行わないと、後の画像分析が空の続きから読もうとして失敗します。
-
-`for image in (front_image, side_image, back_image):`は、3枚を順番に取り出し、同じ`validate_image()`を繰り返します。返された容量を`total_image_size_bytes`へ足し、3枚合計も確認します。
-
-現時点ではMIMEタイプと容量を確認しています。ファイルの中身が本物の画像かどうかは、次に画像ライブラリで検証します。
-
-### Pillowで画像の中身を確認する準備
-
-`pillow`は、PythonでJPEG・PNG・WebPなどの画像を開き、形式・縦横サイズ・破損の有無などを確認する画像処理ライブラリです。
-
-`requirements.txt`へ`pillow`を書くことで、このPython分析サービスにPillowが必要であることを記録します。
-
-`python -m pip install -r requirements.txt`は、一覧に書かれたライブラリを現在のPython環境へインストールします。
-
-今回Pillowを使う理由は、`content_type`の申告だけを信用せず、受信データを実際に画像として開けるか確認するためです。
-
-### Pillowで本物の画像か検査する
-
-`from io import BytesIO`は、メモリ上の画像バイト列をファイルのように読み取るための機能を読み込みます。
-
-`from PIL import Image, UnidentifiedImageError`は、画像を開く`Image`と、画像として認識できない場合のエラーを読み込みます。インストール名は`pillow`ですが、コードでは`PIL`からimportします。
-
-`ALLOWED_IMAGE_FORMATS`は、Pillowが画像内部を調べて判定した実際の形式について、JPEG・PNG・WebPだけを許可します。
-
-`MAX_IMAGE_PIXELS = 25_000_000`は、画像の総画素数を最大2500万画素に制限する設定値です。
-
-`Image.open(BytesIO(image_bytes))`は、受信したバイト列を実際の画像として開きます。
-
-`with ... as opened_image:`は、処理が終わったときに画像を自動的に閉じるPythonの書き方です。
-
-`opened_image.format`はファイル内部から判定された実際の画像形式、`opened_image.size`は`(横幅, 高さ)`を返します。
-
-`width, height = opened_image.size`は、2つの値を横幅と高さの変数へ分けるアンパックという書き方です。
-
-`width * height`で総画素数を計算し、2500万画素を超える画像を拒否します。ファイル容量が小さくても、展開すると非常に大きくなる画像による負荷を抑えるためです。
-
-`opened_image.verify()`は画像データが壊れていないか検査します。画像の加工や分析はまだ行いません。
-
-`except (...) as error:`は、画像を開けない・破損している・危険な大きさとしてPillowが拒否した場合のエラーをまとめて受け取ります。
-
-`raise HTTPException(...) from error`は、元の原因を開発者向けに残しながら、利用者には安全な共通エラーメッセージを返します。
-
-### Python画像検査の動作確認結果
-
-ローカルの`POST /analyze`へ正常なJPEGを3枚送信し、HTTP 200と仮の身体分析JSONが返ることを確認しました。
-
-文字ファイルを`image/jpeg`と偽って送信した場合は、Pillowが中身を画像として開けず、HTTP 400の`正常な画像ファイルではありません。`で拒否しました。
-
-未対応の`text/plain`を送信した場合はHTTP 415、容量0の空画像を送信した場合はHTTP 400で拒否しました。
-
-これにより、Python側のMIMEタイプ・空ファイル・画像内部の形式と破損確認が実際に機能していることを確認できました。
-
-## スマホ版から身体画像を送る
-
-### JSON用と画像用のAPI関数を分ける理由
-
-`mobile/src/lib/api.ts`の`apiRequest()`は、プロフィールなどの文字・数値をJSONで送るため、`Content-Type: application/json`を設定します。
-
-画像はJSONではなく`FormData`を使うため、画像送信専用の`apiUploadRequest()`を別に作ります。
-
-`apiUploadRequest<T>(path, token, body)`の`path`はAPIの住所、`token`はClerkのログイン証明、`body`は画像入りの`FormData`です。
-
-戻り値の`Promise<T>`は、通信完了後に呼び出し側が指定した型`T`のJSONを返すことを表します。
-
-`Authorization: Bearer ${token}`は、TypeScriptバックエンドへログイン中の本人であることを伝えます。
-
-画像送信では`Content-Type`を手動設定しません。`fetch()`が`multipart/form-data`と、各データの境界を示す`boundary`を自動的に設定するためです。
-
-`response.ok`が`false`ならエラーJSONを読み、バックエンドのメッセージを`ApiError`として画面側へ渡します。
-
-既存のJSON用関数と画像用関数を分けることで、プロフィールなど他のAPI通信へ影響を与えずに画像送信を追加できます。
-
-### 身体分析画面でClerk認証を使う
-
-`import { useAuth } from '@clerk/expo'`は、Expoスマホ版で現在のログイン状態や認証トークンを扱うClerkのHookを読み込みます。
-
-`import { ApiError, apiUploadRequest } from '@/lib/api'`は、画像送信関数とAPI用エラー型を身体分析画面で使えるようにします。
-
-`const { getToken } = useAuth(...)`は、Clerkの認証機能からトークン取得関数だけを分割代入で取り出します。
-
-`treatPendingAsSignedOut: false`は、Clerkが認証状態を確認している途中の利用者を、すぐ未ログイン扱いにしない設定です。
-
-画像送信直前に`getToken()`を呼び、そのトークンを`Authorization`ヘッダーへ付けることで、TypeScriptバックエンドが画像の所有者を判断できます。
-
-### 身体分析結果の型とstate
-
-`BodyAnalysisApiResponse`は、TypeScriptバックエンドから返る身体分析JSONの構造をスマホ版へ教える型です。
-
-`bodyAnalysisId`はNeonへ保存された1回分の分析ID、`analysis`はPythonが返した分析内容です。
-
-`areas: {...}[]`は、肩・胸・背中などの部位別結果を複数持つ配列です。
-
-`useState<BodyAnalysisApiResponse | null>(null)`は、API結果または未分析を表す`null`を保存できるstateを作ります。
-
-分析前は`null`で、通信成功後に`setAnalysisResult()`へAPI結果を渡すと画面表示に使える状態になります。
-
-### 3枚の画像を身体分析APIへ送る
-
-`async function beginAnalysis()`は、入力確認・認証トークン取得・画像送信・結果保存を順番に行う非同期関数です。
-
-`const frontImage = photos.front`などは、state内の正面・横・背面URIを個別の変数へ取り出します。
-
-3つのうち1つでも空なら、API通信を始めず画面へエラーを表示します。
-
-`setStatus('loading')`は通信中画面へ切り替え、`setAnalysisResult(null)`は前回の分析結果を消します。
-
-`await getToken()`はClerkから現在のログイン証明を取得します。取得できなければHTTP通信を行いません。
-
-`new FormData()`は、3枚の画像をまとめて送るフォーム形式のデータを作ります。
-
-`formData.append('front_image', {...})`は、正面画像のURI・送信用ファイル名・MIMEタイプを追加します。`side_image`と`back_image`も同じ考え方です。
-
-項目名はTypeScriptバックエンドの`requestFormData.get(...)`およびPythonの引数名と完全に一致させます。
-
-`apiUploadRequest<BodyAnalysisApiResponse>(...)`は、画像を認証付きで送信し、返却JSONを指定した型として受け取ります。
-
-成功時は`setAnalysisResult(result)`で結果を保存して結果画面へ進み、失敗時は`catch`で入力画面へ戻してエラーメッセージを表示します。
-
-以前の`useEffect`と`setTimeout`は、API完了と関係なく1.7秒後に仮結果を表示する開発用処理だったため削除します。
-
-### React Nativeの画像オブジェクトとBlob型
-
-Expoのネイティブアプリでは、`FormData.append()`へ`{ uri, name, type }`形式の画像オブジェクトを渡します。
-
-一方、TypeScriptがブラウザ版の`FormData`型を参照すると、文字列または`Blob`しか受け付けないと判定し、画像オブジェクトへ型エラーを出す場合があります。
-
-`} as unknown as Blob`は、値を一度`unknown`として扱い、その後`Blob`型としてTypeScriptへ伝える型アサーションです。
-
-これは実際の画像オブジェクトをBlobへ変換する処理ではありません。実行時にはExpoが`uri・name・type`を使って端末内の画像を送信します。
-
-この指定により、Apple Store向けのReact Native実装を維持しながら、TypeScriptの型検査を通せます。
-
-### API結果を身体分析画面へ表示する
-
-`status === 'result' && analysisResult`は、通信が完了し、実際の結果データも存在するときだけ結果画面を表示します。
-
-`analysisResult.analysis.summary`はPythonが返した分析全体の説明、`goal_difference`は設定済み理想体型との差を表示する場所です。
-
-`analysisResult.analysis.areas.map((area, index) => ...)`は、部位別結果の配列を1件ずつReactのカードへ変換します。
-
-`area`には現在処理中の部位名・点数・観察・提案が入り、`index`には配列内の0から始まる順番が入ります。
-
-`key={`${area.body_part}-${index}`}`は、Reactが各カードを区別するための識別値です。
-
-`String(index + 3).padStart(2, '0')`は、全体結果と理想との差を01・02で表示した続きとして、部位カードを03・04の形式で表示します。
-
-`.padStart(2, '0')`は、文字が2桁未満なら先頭へ`0`を追加します。
-
-この変更により、開発用の固定文章ではなく、TypeScriptバックエンドから返った検品済みJSONが画面へ表示されます。
-
-### ブラウザとiPhoneで画像追加方法を切り替える
-
-`Platform.OS`は、現在アプリが動作している環境を表します。ブラウザでは`web`、iPhoneでは`ios`になります。
-
-`appendPhotoToFormData()`は、実行環境に合わせて画像を`FormData`へ追加する共通関数です。
-
-ブラウザでは画像URIを`fetch(imageUri)`で読み、`response.blob()`で実際の画像データへ変換してから追加します。
-
-iPhoneでは、Expoが扱える`{ uri, name, type }`形式の画像オブジェクトをそのまま追加します。
-
-関数を定義する場所では`formData・fieldName・imageUri・fileName`という汎用的な引数を使い、正面などの具体的な変数は使用しません。
-
-`beginAnalysis()`の中でこの共通関数を3回呼び、正面・横・背面の具体的な画像を渡します。
-
-```text
-appendPhotoToFormData()の定義
-└─ 渡された画像1枚を環境に合わせて追加する
-
-beginAnalysis()の実行
-├─ 正面画像で呼ぶ
-├─ 横画像で呼ぶ
-└─ 背面画像で呼ぶ
-```
-
-これにより、開発中のブラウザ確認とApple Store向けiPhoneアプリの両方で同じ身体分析処理を利用できます。
-
-### 画像送信エラーの詳細を画面へ渡す
-
-画像送信APIは、TypeScriptバックエンドの`error`、一般的なAPIの`message`、FastAPIの`detail`の順番でエラーメッセージを探します。
-
-`errorBody.error ?? errorBody.message ?? errorBody.detail ?? message`は、左から最初に存在する値を採用するNull合体演算子のつながりです。
-
-応答本文がJSONではなく読めない場合にも原因を絞れるよう、初期メッセージへ`response.status`のHTTP番号を含めます。
-
-今回のブラウザテストではHTTP 403が確認され、画像やPythonではなく、TypeScript開発サーバーの送信元チェックで拒否されていると切り分けられました。
-
-### Vinextで3枚入りの通信を受け入れる
-
-Vinextは`multipart/form-data`を受け取る前に、送信元と通信全体の容量を確認します。そのため、`route.ts`より前の入口設定が必要です。
-
-`experimental.serverActions.allowedOrigins`は、開発中に画像フォームを送ってよいブラウザのホストとポートを限定します。
-
-`127.0.0.1:8081`と`localhost:8081`は同じMac上のブラウザ、`192.168.68.54:8081`は現在のローカルネットワーク上のExpo開発画面です。
-
-`bodySizeLimit: "26mb"`は、1枚8MB以下の画像3枚で最大24MBと、FormDataの付加情報を合わせた1通信全体の入口上限です。
-
-これは画像1枚を26MBまで許可する設定でも、画像を保存する設定でもありません。
-
-フロント・TypeScript・Pythonの1枚ごとの検査は引き続き必要で、Vinextの設定はそれらの検査場所まで通信を通す役割です。
-
-`next.config.ts`はサーバー起動時に読み込まれるため、変更後はTypeScriptバックエンドを再起動します。
-
-### VinextへNext設定を明示的に渡す
-
-このプロジェクトではNext.js互換環境としてVinextをViteプラグインから起動しています。
-
-`import nextConfig from "./next.config"`は、画像送信の送信元許可と容量上限をVite設定へ読み込みます。
-
-`vinext({ nextConfig })`は、その設定を実際に動作するVinextへ明示的に渡します。
-
-Next.js本家とVinextでは`NextConfig`の型定義が別なので、`next.config.ts`では`import type { NextConfig } from "vinext"`を使用します。
-
-設定反映後、異なる開発Originから無害なmultipartフォームを送信し、HTTP 403ではなくAPI内のHTTP 401まで進むことを確認しました。これはVinextのCSRF拒否を通過して`route.ts`へ届いたことを表します。
-
-### 身体分析の一連動作確認
-
-ブラウザでテスト画像を正面・横・背面の3枚として設定し、ログイン済み状態で身体分析APIへ送信しました。
-
-TypeScriptバックエンドがClerk認証と画像検査を行い、Python APIが画像内部を確認して仮の分析JSONを返しました。
-
-TypeScriptが返却JSONを検品し、Neonの`body_analyses`へ`completed`状態で分析全体、`body_analysis_areas`へ肩の部位別結果1件を保存しました。
-
-スマホ版では保存済みの仮分析結果・理想との差・肩のスコアと提案が結果画面へ表示されることを確認しました。
-
-このテストで保存したのは分析JSONだけで、テストに使用した画像自体はNeonや画像ストレージへ保存していません。
-
-実際に`POST /analyze`を呼び、HTTP 200と、全体説明・理想との差・肩の部位別結果を含むJSONが返ることを確認しました。
-
-この段階では画像や個人情報をPythonへ送信していません。
-
-## TypeScriptからPython分析APIへ接続する
-
-### なぜTypeScriptを間に置くのか
-
-フロントエンドからPythonへ直接送らず、最初にTypeScriptバックエンドでClerk認証・入力確認・アクセス制御を行います。
-
-Pythonは画像分析へ集中し、ユーザー認証やNeonへの保存はTypeScriptが担当します。
-
-### Python APIの接続先
-
-`process.env.PYTHON_ANALYSIS_URL`は、環境変数からPython分析APIのURLを読み取ります。
-
-環境変数を使うと、開発環境と本番環境で接続先が変わっても、処理コードを書き換えずに対応できます。
-
-`?? "http://127.0.0.1:8000"`は、環境変数が設定されていない開発中だけ、Mac上のPython APIを使用する指定です。
-
-`127.0.0.1`は同じMac自身、`8000`はUvicornで起動したPythonサービスのポート番号です。
-
-```text
-TypeScriptバックエンド
-  ↓ http://127.0.0.1:8000/analyze
-Python FastAPI
-  ↓ 分析結果JSON
-TypeScriptバックエンド
-```
-
-### `fetch()`でPythonへHTTP通信する
-
-TypeScript側の`POST()`は、最初に`getClerkUserId(request)`でClerkトークンを検証します。
-
-未ログインならHTTP 401を返し、Python APIを呼びません。これによりTypeScriptが分析機能の正規の入口になります。
-
-`fetch(`${pythonAnalysisUrl}/analyze`, { method: "POST" })`は、Pythonの`POST /analyze`へHTTPリクエストを送ります。
-
-### TypeScriptで3枚の画像を中継する
-
-`await request.formData()`は、フロントから届いた`multipart/form-data`を読み取り、フォーム内の文字や画像を取り出せる形にします。
-
-`requestFormData.get("front_image")`は、`front_image`という名前で送信された正面画像を1件取り出します。横は`side_image`、背面は`back_image`を使います。
-
-`.get()`の結果には文字列・ファイル・`null`の可能性があるため、`instanceof File`で3つすべてがファイルか確認します。
-
-画像が不足している場合はHTTP 400を返し、Pythonの分析処理を呼びません。
-
-`new FormData()`はPythonへ渡す新しいフォームデータを作ります。
-
-`pythonFormData.append("front_image", frontImage)`は、Python側の引数名と同じ名前を付けて正面画像を追加します。
-
-`body: pythonFormData`は、作成した3枚入りのフォームデータを`fetch()`の通信本文としてPythonへ送ります。
-
-この処理は画像をTypeScriptへ永続保存するものではなく、認証済みの通信からPythonへ画像を中継する処理です。
-
-### 画像形式と容量を送信前に確認する
-
-`allowedImageTypes`は、Pythonへ送信してよいJPEG・PNG・WebPのMIMEタイプを`Set`へまとめます。
-
-`Set`の`.has(image.type)`は、現在の画像形式が許可一覧に含まれているか確認します。
-
-`maxImageSizeBytes = 8 * 1024 * 1024`は、1枚の上限である8MBをバイト単位で表した値です。
-
-`maxTotalImageSizeBytes = 24 * 1024 * 1024`は、画像3枚そのものの合計上限です。`reduce()`で各画像の`size`を足し、24MBを超えた場合はPythonへ送る前にHTTP 413を返します。
-
-`bodyImages`へ正面・横・背面をまとめることで、同じ検査コードを3回書かずに済みます。
-
-`bodyImages.some(...)`は、3枚のうち1枚でも禁止形式・空ファイル・容量超過に当てはまるか確認します。
-
-形式が不正な場合のHTTP 415は「対応していないメディア形式」、容量超過時のHTTP 413は「送信データが大きすぎる」という意味です。
-
-検査は`fetch()`より前へ置きます。先にPythonへ送ってから検査すると、安全確認として機能しないためです。
-
-iPhoneのHEICは初期版では直接許可せず、フロント側でJPEGへ変換してから送る想定です。
-
-`await`はPythonから応答が返るまで次の処理を待ちます。
-
-`pythonResponse.ok`は、PythonのHTTPステータスが200番台なら`true`になります。
-
-`!pythonResponse.ok`ならPython側で失敗しているため、`throw`で通常処理を止めて`catch`へ移動します。
-
-`await pythonResponse.json()`は、Pythonから届いたJSONをTypeScriptで扱えるJavaScriptオブジェクトへ変換します。
-
-最後に`Response.json({ analysis: analysisResult })`で、分析結果をフロントエンドへ中継します。
-
-```text
-フロント → TypeScriptのPOST
-             ↓ Clerk認証
-           fetch()
-             ↓
-           PythonのPOST /analyze
-             ↓ JSON
-           pythonResponse.json()
-             ↓
-           フロントへ返却
-```
-
-### 覚える単語
-
-- `fetch()`：別のAPIへHTTP通信するJavaScriptの機能
-- `response.ok`：HTTP通信が成功したかを表す値
-- `.json()`：JSONをJavaScriptのデータへ変換する
-- 中継：受け取った情報を別の相手へ渡すこと
-
-### TypeScript側でもPythonのJSONを検品する
-
-`type BodyAreaResult`と`type BodyAnalysisResult`は、Pythonから受け取る予定のJSON形式をTypeScriptへ教えます。
-
-ただしTypeScriptの型は実行時に消えるため、外部APIから届いた実物を`isBodyAnalysisResult()`で検査します。
-
-引数を`unknown`にすることで、検査前のデータを安全な型として扱いません。
-
-戻り値の`value is BodyAnalysisResult`は型述語と呼び、関数が`true`を返した後は、TypeScriptがその値を`BodyAnalysisResult`として扱えます。
-
-最初にJSON全体がオブジェクトであり、`null`ではないことを確認します。
-
-`value as Partial<BodyAnalysisResult>`は、各項目が存在しない可能性を残した状態で一時的に分析結果型として扱う指定です。
-
-`.every()`は、配列内のすべての要素が条件を満たした場合だけ`true`を返します。
-
-今回の`areas.every()`では、全部位について部位名・優先度・観察・提案が文字列で、スコアが1〜10の整数か確認します。
-
-`.some()`が「1件でも条件に合うか」なのに対し、`.every()`は「全件が条件に合うか」を確認します。
-
-### 覚える単語
-
-- 型述語：検査後の値の型をTypeScriptへ伝える`value is 型`の書き方
-- `Partial<型>`：その型の全項目を一時的に任意項目として扱う
-- `.every()`：配列の全要素が条件を満たすか確認する
-- 実行時検査：アプリ動作中に実際の値を確認すること
-
-`pythonResponse.json()`の直後に`isBodyAnalysisResult(analysisResult)`を実行し、Pythonの返却JSONを検品します。
-
-先頭の`!`により、検査結果が`false`の場合に`throw`して処理を止めます。
-
-この検査をNeon保存より前に置くことで、不完全な分析結果や想定外の値をDBへ残しません。
-
-### 身体分析保存で使うDB機能
-
-`eq`は、ログイン中のClerk IDとNeonの`users.clerkUserId`が一致する本人を検索するために使います。
-
-`getDb`はNeonへ接続し、`bodyAnalyses`は分析全体、`bodyAnalysisAreas`は部位別結果の保存先として使います。
-
-`users`は、Clerkの認証ユーザーをNeonの内部ユーザーIDへ変換するために使います。
-
-### Python分析結果をNeonへ保存する
-
-Clerk IDからNeonの`users.id`を探す部分は、トレーニング記録APIと同じ共通パターンです。
-
-PythonのJSONを検品した後、`.insert(bodyAnalyses)`で分析全体を本人の親データとして保存します。
-
-`status: "completed"`は分析成功、`analyzedAt: new Date()`は分析完了日時を表します。
-
-`.returning({ id: bodyAnalyses.id })`で作成した分析IDを受け取り、部位別結果の`analysisId`へ使用します。
-
-`analysisResult.areas.map()`は、Python形式の`body_part`などを、Drizzle形式の`bodyPart`などへ変換します。
-
-部位が0件の場合は空配列を一括保存しないよう、`areas.length > 0`のときだけ保存します。
-
-最後にHTTP 201、保存した`bodyAnalysisId`、検品済みの分析結果をフロントへ返します。
-
-```text
-Clerk ID → Neon users.id
-                 ↓
-        body_analysesへ親を保存
-                 ↓ 作成したanalysis.id
-        body_analysis_areasへ部位を保存
-                 ↓
-        IDと分析JSONをフロントへ返す
-```
-
-## トレーニング記録：実施種目の子テーブル
-
-### どこに書くコードか
-
-担当ファイルは`db/schema.ts`で、`trainingSessions`より下に書きます。
-
-使用言語はTypeScriptで、Drizzleを使ってNeon PostgreSQLの`training_exercises`テーブルを定義しています。
-
-### 何をする場所か
-
-`trainingExercises`は、1回のトレーニングで実施した種目を保存します。
-
-例えば1つの`trainingSessions`に、ベンチプレス、インクラインプレス、ケーブルフライの3件を結び付けられます。
-
-### 親テーブルとの結び付き
-
-```ts
-sessionId: uuid("session_id")
-  .notNull()
-  .references(() => trainingSessions.id, {
-    onDelete: "cascade",
-  }),
-```
-
-`sessionId`には、どのトレーニングで実施した種目なのかを表す`trainingSessions.id`を保存します。
-
-1件の親`trainingSessions`に対して、複数件の子`trainingExercises`を持てます。これを1対多の関係と呼びます。
-
-親のトレーニング記録を削除した場合、`cascade`によって関連する実施種目も削除されます。
-
-### 種目情報の意味
-
-`exerciseId`は、フロントエンドの種目一覧にある種目を識別する固定IDです。
-
-`exerciseName`は、「ベンチプレス」などの画面に表示する種目名です。
-
-IDと名前を両方保存することで、種目一覧の名前が将来変更されても、過去に記録した当時の名前を残せます。
-
-`bodyPart`は「胸」「背中」「肩」などの大きな部位を保存します。
-
-`bodyArea`は「上部」「中部」「下部」などの細かい場所を任意で保存します。
-
-`bodyArea`に`notNull()`がないため、細かい場所を持たない種目は空でも保存できます。
-
-### 表示順の意味
-
-```ts
-displayOrder: integer("display_order")
-  .notNull()
-  .default(0),
-```
-
-`displayOrder`は、ユーザーが実施した種目を画面へ並べる順番です。
-
-`default(0)`は、順番が渡されなかった場合に0を初期値として保存します。
-
-### 覚える単語
-
-- 親テーブル：全体を表すデータ
-- 子テーブル：親に含まれる詳細データ
-- 1対多：1件の親に複数件の子が結び付く関係
-- `sessionId`：子から親を特定するためのID
-- `default(0)`：未指定の場合に0を保存する
-
-## トレーニング記録：重量・回数のセットテーブル
-
-### どこに書くコードか
-
-担当ファイルは`db/schema.ts`で、`trainingExercises`より下に書きます。
-
-`trainingSets`はTypeScriptとDrizzleで定義し、Neon PostgreSQLでは`training_sets`テーブルになります。
-
-### 何をする場所か
-
-このテーブルは「ベンチプレスの1セット目・60kg・10回」のような、トレーニング記録の最小単位を保存します。
-
-1件の`trainingExercises`に対して複数件の`trainingSets`を結び付けられます。
-
-### 種目との結び付き
-
-```ts
-trainingExerciseId: uuid("training_exercise_id")
-  .notNull()
-  .references(() => trainingExercises.id, {
-    onDelete: "cascade",
-  }),
-```
-
-`trainingExerciseId`は、このセットがどの実施種目に属するかを表します。
-
-例えば3セットすべてへ同じベンチプレスの`trainingExercises.id`を保存することで、3件を同じ種目としてまとめられます。
-
-種目を削除した場合は、`cascade`によって関連するセットも一緒に削除されます。
-
-### 各入力値の意味
-
-`setNumber`は、1セット目、2セット目のような順番を整数で保存します。
-
-`setNumber`には`notNull()`があるため必須です。
-
-`weightKg`は重量をkg単位で保存し、`real()`を使うため12.5kgのような小数も扱えます。
-
-`reps`は回数を整数で保存します。
-
-`weightKg`と`reps`には`notNull()`がないため、自重種目や記録途中の場合は空でも保存できます。
-
-`createdAt`は、このセットがデータベースへ登録された日時です。
-
-### 3段階の関係
-
-```text
-trainingSessions（1回のトレーニング）
-└─ trainingExercises（実施した種目）
-   └─ trainingSets（各セットの重量・回数）
-```
-
-このようにデータを分けることで、種目数やセット数がユーザーごとに違っても柔軟に保存できます。
-
-### 覚える単語
-
-- `trainingExerciseId`：セットから実施種目を特定するID
-- `setNumber`：セットの順番
-- `real()`：小数を含む数値を保存する型
-- 最小単位：これ以上分けずに1件として保存するデータ
-
-## Drizzleのテーブル設計をNeonへ反映する
-
-### 何をする作業か
-
-`db/schema.ts`へ書いたTypeScriptはデータベースの設計図であり、書いただけではNeonにテーブルは作られません。
-
-Drizzle Kitを使い、設計図と現在のNeonを比較して実際のテーブルを作ります。
-
-### SQLファイルを生成する
-
-```bash
-npm run db:generate
-```
-
-このコマンドは`db/schema.ts`の変更を読み取り、`drizzle-postgres`へPostgreSQL用のSQLファイルを生成します。
-
-今回は`0004_acoustic_metal_master.sql`が生成されました。
-
-### 現在の設計を直接反映する
-
-```bash
-npx drizzle-kit push
-```
-
-`push`は、現在の`db/schema.ts`とNeonの状態を比較し、不足しているテーブルや列を直接反映します。
-
-今回はマイグレーション履歴と実際のDB状態にずれがあったため、`migrate`ではなく`push`を使いました。
-
-`[✓] Pulling schema from database...`は、DrizzleがNeonの現在の設計を読み込めたことを表します。
-
-`[✓] Changes applied`は、必要な変更をNeonへ反映できたことを表します。
-
-`@neondatabase/serverless can only connect... through a websocket`は、リモートDBへWebSocketで接続するという注意であり、今回のエラーではありません。
-
-### コマンドを実行する場所
-
-Drizzleの設定ファイルは`musslepas/drizzle.config.ts`にあるため、`mobile`ではなく`musslepas`直下で実行します。
-
-```bash
-cd /Users/yuuta/Desktop/musslepas
-```
-
-### 今回Neonに作成されたテーブル
-
-- `training_sessions`：1回分のトレーニング
-- `training_exercises`：その日に実施した種目
-- `training_sets`：各セットの重量と回数
-
-### 覚える単語
-
-- スキーマ：データベースの構造を表す設計図
-- SQL：PostgreSQLへテーブル作成などを指示する言語
-- マイグレーション：DBの構造を安全に新しい形へ変更する作業
-- `generate`：スキーマからSQLファイルを生成する
-- `push`：現在のスキーマをDBへ直接反映する
-
-## トレーニング記録保存API：受信JSONの型
-
-### `schema.ts`と`route.ts`の違い
-
-`db/schema.ts`は、データベースへ何をどの形で保存するかを決める設計図です。
-
-例えば、トレーニング記録へ`id`、`userId`、実施日時、時間、調子、メモなどの列を用意すると定義します。
-
-`app/api/training-records/route.ts`は、フロントエンドから通信を受け取り、認証・入力確認・DB保存・結果の返却を行う処理です。
-
-```text
-schema.ts = 記録用紙にどの項目を用意するか設計する
-route.ts  = 記録用紙を受け取り、確認して保管する
-```
-
-今回の処理の流れは次のとおりです。
-
-```text
-フロントエンドからPOSTが届く
-        ↓
-route.tsがログインを確認する
-        ↓
-JSONを受け取って入力値を確認する
-        ↓
-schema.tsで定義したテーブルへ保存する
-        ↓
-route.tsが成功またはエラーをフロントへ返す
-```
-
-`schema.ts`だけでは、フロントエンドから通信を受け取れません。
-
-`route.ts`だけでは、保存先のテーブル構造がないためデータを保存できません。
-
-そのため、データベース機能には「保存場所を決めるschema」と「保存処理を行うroute」の両方が必要です。
-
-### どこに書くコードか
-
-担当ファイルは`app/api/training-records/route.ts`です。
-
-このファイルはTypeScriptで書き、フロントエンドから届くトレーニング記録を受け取ってNeonへ保存するAPIになります。
-
-### 今回何をしたか
-
-まだデータベース保存は行わず、フロントエンドから受け取るJSONの形を3つの`type`で定義しました。
-
-`type`は「このデータには、どの名前の値がどの型で入るか」をTypeScriptへ教える設計図です。
-
-### `TrainingSetInput`
-
-`TrainingSetInput`は1セット分の入力を表します。
-
-`setNumber: number`はセット番号で、`?`がないため必須です。
-
-`weightKg?: number | null`は重量で、数値・未指定・空欄を受け取れます。
-
-`reps?: number | null`は回数で、数値・未指定・空欄を受け取れます。
-
-### `TrainingExerciseInput`
-
-`TrainingExerciseInput`は、ベンチプレスなど1種目分の入力を表します。
-
-`exerciseId`は種目一覧の固定ID、`exerciseName`は画面に表示する種目名です。
-
-`bodyPart`は胸や背中などの部位、`bodyArea`は上部や下部などの細かい場所です。
-
-`sets: TrainingSetInput[]`は、その種目に含まれる複数セットを配列で受け取ります。
-
-### `CreateTrainingRecordInput`
-
-`CreateTrainingRecordInput`は、1回分のトレーニング全体を表します。
-
-`performedAt`は実施日時、`durationMinutes`は時間、`conditionScore`は調子、`memo`はメモです。
-
-`exercises: TrainingExerciseInput[]`は、1回のトレーニングに含まれる複数種目を受け取ります。
-
-### `?`と`null`の違い
-
-`?`は、そのプロパティ自体がJSONになくてもよいことを表します。
-
-`null`は、プロパティはあるが入力値が空であることを表します。
-
-```ts
-weightKg?: number | null;
-```
-
-この形では、重量として数値、プロパティなし、`null`の3種類を受け取れます。
-
-### 覚える単語
-
-- `type`：データの形を定義するTypeScriptの文法
-- `string`：文字列
-- `number`：数値
-- `?`：省略可能なプロパティ
-- `null`：値が空であることを明示する値
-- `[]`：複数の値を並べる配列
-- JSON：フロントエンドとバックエンド間でデータを渡す形式
-
-### トレーニング記録APIのimport
-
-`import`は、別ファイルやライブラリにある機能を現在の`route.ts`で使えるようにするTypeScriptの文法です。
-
-`import { eq } from "drizzle-orm"`は、データベースの列と値が等しいかを比較する`eq()`を読み込みます。
-
-`desc()`は、日時や数値を大きいものから小さいものへ降順で並べます。トレーニング履歴では、最新の実施日時を先頭に表示するために使います。
-
-例えば`eq(users.clerkUserId, clerkUserId)`は、DBのClerkユーザーIDとログイン中のIDが同じユーザーを検索します。
-
-`getClerkUserId`は、フロントエンドから届いたClerkトークンを確認し、ログイン中のユーザーIDを取得します。
-
-`getDb`は、APIからNeon PostgreSQLを操作するための共通接続を取得します。
-
-`trainingSessions`は1回分全体、`trainingExercises`は実施種目、`trainingSets`は各セットの保存に使います。
-
-`users`は、Clerkでログインしている人に対応するNeonユーザーを検索するために使います。
-
-波括弧を使った`import { A, B }`は、同じファイルから必要な機能だけを複数読み込む書き方です。
-
-### 数値を保存前に確認する共通関数
-
-フロントエンドから届く値は改ざんや入力ミスの可能性があるため、TypeScriptの型だけを信用せず、APIでも実際の値を確認します。
-
-`isOptionalNumberInRange`は、重量など小数を許可する数値に使います。
-
-`value: unknown`の`unknown`は、受け取った時点では型を信用していないことを表します。
-
-`value === undefined`はプロパティが送信されなかった場合、`value === null`は空欄として送信された場合を許可します。
-
-`typeof value === "number"`は、文字列の`"60"`ではなく数値の`60`であることを確認します。
-
-`Number.isFinite(value)`は、通常の数値ではない`NaN`や`Infinity`を除外します。
-
-`value >= minimum && value <= maximum`は、値が最小値以上かつ最大値以下であることを確認します。
-
-`isOptionalIntegerInRange`は、回数・セット番号・時間・調子など整数だけを許可する値に使います。
-
-`Number.isInteger(value)`は、`10`なら`true`、`10.5`なら`false`を返します。
-
-重量には12.5kgのような小数があるため`isOptionalNumberInRange`を使い、回数には10.5回を保存しないため`isOptionalIntegerInRange`を使います。
-
-`return`の中で使う`||`は「どれか1つが正しい」、`&&`は「すべて正しい」という意味です。
-
-### 覚える単語
-
-- バリデーション：保存前に入力値が正しいか確認する処理
-- `unknown`：まだ型を信用していない値
-- `Number.isFinite()`：通常の有限な数値か確認する
-- `Number.isInteger()`：整数か確認する
-- `||`：または
-- `&&`：かつ
-
-### トレーニング全体の入力チェック
-
-`Array.isArray(input.exercises)`は、`exercises`が本当に配列か確認します。
-
-先頭の`!`は結果を反対にするため、`!Array.isArray(...)`は「配列ではない」という意味です。
-
-`input.exercises.length === 0`は、配列の中に種目が1件もない状態を表します。
-
-`durationMinutes`は1〜300分、`conditionScore`は1〜10だけを許可します。どちらも任意入力なので、`undefined`と`null`も許可されます。
-
-メモは、未送信と空欄を許可し、値がある場合だけ文字列かつ1000文字以内か確認します。
-
-複数のエラー条件を`||`でつないでいるため、どれか1つでも問題があれば処理を止めます。
-
-`Response.json(..., { status: 400 })`は、フロントエンドへ「通信は届いたが、送信内容が正しくない」と返します。
-
-この確認をDB保存より前に置くことで、不正な値をNeonへ保存しません。
-
-コードの字下げは処理結果を変えませんが、どの括弧に含まれるコードか見やすくするために使います。最後にフォーマッターで整えられます。
-
-### `some()`で不正な種目を探す
-
-`input.exercises.some(...)`は、種目配列を先頭から確認し、条件に当てはまる種目が1件でもあれば`true`を返します。
-
-今回は条件の中へ「不正な状態」を並べているため、変数名を`hasInvalidExercise`（不正な種目がある）にしています。
-
-`(exercise) =>`の`exercise`には、確認中の種目が1件ずつ順番に入ります。
-
-`typeof exercise.exerciseName !== "string"`は、種目名が文字列ではない場合を検出します。
-
-`exercise.exerciseName.trim() === ""`は、前後の空白を取り除いた結果が空文字か確認します。空白だけの名前も保存しません。
-
-`Number.isInteger(exercise.displayOrder)`は、表示順が整数か確認します。
-
-`exercise.displayOrder < 0`は、表示順がマイナスになっていないか確認します。
-
-`Array.isArray(exercise.sets)`はセット一覧が配列か、`exercise.sets.length === 0`はセットが0件ではないかを確認します。
-
-`hasInvalidExercise`が`true`なら、HTTP 400を返してDB保存へ進みません。
-
-この処理は`input`を作った`try`の中、全体チェックより下、成功レスポンスより上へ置きます。`catch`はエラー発生後の処理なので、通常の入力チェックは置きません。
-
-### 覚える単語
-
-- `.some()`：配列内に条件を満たす要素が1件でもあるか調べる
-- `.trim()`：文字列の前後にある空白を取り除く
-- `""`：文字が1つもない空文字
-- スコープ：変数を使用できる範囲
-
-### 二重の`some()`で全種目の全セットを確認する
-
-トレーニングのJSONは「種目の配列」の中に「セットの配列」が入る入れ子構造です。
-
-外側の`input.exercises.some()`は、ベンチプレスなどの種目を1件ずつ確認します。
-
-内側の`exercise.sets.some()`は、現在確認している種目のセットを1件ずつ確認します。
-
-`set`には、1セット目・60kg・10回のようなセットデータが1件ずつ入ります。
-
-`!Number.isInteger(set.setNumber) || set.setNumber < 1`は、セット番号が整数ではない場合と、1未満の場合を不正と判断します。
-
-重量は小数を許可して0〜1000kg、回数は整数だけを許可して0〜1000回にしています。
-
-内側の`some()`が不正なセットを1件見つけると`true`になり、外側の`some()`も`true`になります。
-
-その結果を`hasInvalidSet`へ保存し、`true`ならHTTP 400を返します。
-
-```text
-全種目を確認
-└─ 現在の種目の全セットを確認
-   └─ 不正なセットを1件でも発見 → 保存を中止
-```
-
-### 覚える単語
-
-- 入れ子：データや処理の中に別のデータや処理が入っている構造
-- 外側の配列：今回の場合は種目一覧
-- 内側の配列：今回の場合は各種目のセット一覧
-
-### ClerkユーザーをNeonユーザーへ変換する検索
-
-ClerkのユーザーIDは認証サービス側のIDで、トレーニング記録の外部キーにはNeonの`users.id`を使用します。
-
-そのため、保存前に`users.clerkUserId`とログイン中の`clerkUserId`が一致するユーザーを検索します。
-
-`const db = getDb()`は、Neonを操作するDrizzleの接続を取得します。
-
-`.select({ id: users.id })`は、ユーザー情報すべてではなく、今回必要な`id`だけを取得します。
-
-`.from(users)`は、検索対象を`users`テーブルに指定します。
-
-`.where(eq(users.clerkUserId, clerkUserId))`は、DBに保存されたClerk IDとログイン中のClerk IDが等しい行だけに絞ります。
-
-`.limit(1)`は、検索結果を最大1件に制限します。Clerk IDはユーザーごとに一意なので1件だけで十分です。
-
-Drizzleの検索結果は配列で返るため、`matchedUsers[0]`で先頭のユーザーを取り出します。
-
-`matchedUsers[0] ?? null`は、先頭のデータが存在すればそのデータ、存在しなければ`null`に統一します。
-
-`if (!user)`はユーザーが見つからなかった場合で、HTTP 404を返して保存を中止します。
-
-```text
-Clerkのuser ID
-      ↓ users.clerkUserIdと比較
-Neonのusers.idを取得
-      ↓
-本人のトレーニング記録へ保存
-```
-
-### 覚える単語
-
-- `.select()`：取得する列を指定する
-- `.from()`：検索するテーブルを指定する
-- `.where()`：検索条件を指定する
-- `eq()`：2つの値が等しいか比較する
-- `.limit(1)`：取得件数を最大1件にする
-- `404`：対象のデータが見つからないことを表すHTTPステータス
-
-### 実施日時を`Date`へ変換する
-
-JSONから届く日時は文字列なので、PostgreSQLの`timestamp`へ保存する前にJavaScriptの`Date`へ変換します。
-
-`input.performedAt === undefined ? new Date() : ...`は三項演算子です。
-
-三項演算子は`条件 ? 条件が正しい場合 : 条件が違う場合`の順番で読みます。
-
-日時が送信されなかった場合は、`new Date()`で現在日時を作ります。
-
-日時が文字列なら、`new Date(input.performedAt)`で日時データへ変換します。
-
-文字列でもなく未指定でもない場合は、異常な値として`null`にします。
-
-`performedAt.getTime()`は日時をミリ秒の数値へ変換します。不正な日時の場合は`NaN`になります。
-
-`Number.isNaN()`で`NaN`か確認し、不正な日時ならHTTP 400を返します。
-
-### 覚える単語
-
-- `Date`：JavaScriptで日時を扱うオブジェクト
-- `new Date()`：現在日時を作る
-- 三項演算子：条件によって2つの値から1つを選ぶ書き方
-- `.getTime()`：日時をミリ秒の数値に変換する
-- `NaN`：正しい数値へ変換できなかった状態
-- `Number.isNaN()`：値が`NaN`か確認する
-
-### `training_sessions`へ親記録を保存する
-
-`db.insert(trainingSessions)`は、保存先を`training_sessions`テーブルに指定します。
-
-`.values({...})`の波括弧内には、各列へ保存する値を書きます。
-
-`userId: user.id`によって、ログイン中の本人とトレーニング記録を結び付けます。
-
-`input.durationMinutes ?? null`は、左側が`undefined`または`null`なら右側の`null`を使用します。
-
-`??`はNull合体演算子と呼び、未入力値を統一するときに使います。数値の`0`はそのまま残ります。
-
-`input.memo?.trim()`の`?.`はオプショナルチェーンです。メモが存在するときだけ`trim()`を実行し、未入力ならエラーにせず`undefined`を返します。
-
-`input.memo?.trim() || null`は、メモが未入力または空文字なら`null`を保存します。
-
-`.returning({ id: trainingSessions.id })`は、保存して作られた親記録のIDだけを返すようPostgreSQLへ指示します。
-
-Drizzleの`returning()`も配列で返るため、`createdSessions[0] ?? null`で先頭を取り出します。
-
-作成結果がなければ`throw new Error()`で処理を中断し、外側の`catch`へ移動します。
-
-取得した`session.id`は、次に実施種目を親トレーニングへ結び付けるために使用します。
-
-### 覚える単語
-
-- `.insert()`：データの保存先テーブルを指定する
-- `.values()`：保存する値を指定する
-- `.returning()`：保存後にDBから値を返してもらう
-- `??`：左側が`undefined`か`null`なら右側を使う
-- `?.`：値が存在する場合だけ後ろの処理を行う
-- `throw`：エラーを発生させて通常処理を中断する
-
-### `for...of`で複数種目を保存する
-
-`for (const exercise of input.exercises)`は、`input.exercises`の種目を1件ずつ`exercise`へ入れて処理を繰り返します。
-
-例えば3種目ある場合、波括弧内の保存処理が3回実行されます。
-
-`await`をループ内で使うことで、現在の種目保存が完了してから次の種目へ進みます。
-
-`sessionId: session.id`は、保存中の全種目を先ほど作った同じ親トレーニングへ結び付けます。
-
-種目ID・種目名・部位には`trim()`を使い、前後の不要な空白を取り除いて保存します。
-
-`bodyArea`は任意入力なので、空文字の場合は`null`へ統一します。
-
-`.returning({ id: trainingExercises.id })`で作成された実施種目のIDを受け取ります。
-
-この`createdExercise.id`を使い、次にその種目のセットを`training_sets`へ結び付けます。
-
-```text
-session.id
-  └─ 種目を保存 → createdExercise.id
-                      └─ 次にセットを保存
-```
-
-### 覚える単語
-
-- `for...of`：配列の要素を1件ずつ取り出して繰り返す
-- ループ：同じ処理を繰り返す仕組み
-- `const exercise`：現在処理している1種目を入れる変数
-
-### `.map()`でセットをDB保存用の形へ変換する
-
-`exercise.sets.map((set) => ({ ... }))`は、現在の種目に含まれる各セットを、DBへ保存するオブジェクトへ変換します。
-
-`.map()`は元の配列を1件ずつ処理し、同じ件数の新しい配列を作るメソッドです。
-
-`set`には、現在変換している1セット分のデータが入ります。
-
-丸括弧で囲んだ`({ ... })`は、アロー関数からオブジェクトをそのまま返す書き方です。
-
-`trainingExerciseId: createdExercise.id`を全セットへ入れることで、作成した実施種目と各セットを結び付けます。
-
-`setNumber`はセット番号、`weightKg`は重量、`reps`は回数として保存します。
-
-重量と回数は任意入力なので、`?? null`で未入力値を`null`へ統一します。
-
-`.values()`へオブジェクトの配列を渡すと、複数セットを1回のDB通信でまとめて保存できます。
-
-```text
-元のセット配列
-[1セット目, 2セット目, 3セット目]
-          ↓ map()
-DB保存用配列
-[{...}, {...}, {...}]
-          ↓ insert().values()
-3セットをまとめて保存
-```
-
-### 覚える単語
-
-- `.map()`：配列の各要素を変換して新しい配列を作る
-- アロー関数：`(値) => 処理`の形で書く関数
-- オブジェクト：名前と値を組み合わせたデータ
-- 一括保存：複数件を1回のDB通信で保存すること
-
-### トレーニング記録APIの成功レスポンス
-
-すべての保存が完了すると、`trainingSessionId: session.id`をフロントエンドへ返します。
-
-HTTPステータス`201`は、新しいデータの作成に成功したことを表します。
-
-受信した`input`全体は返さず、フロントエンドが保存完了を確認するために必要な親記録IDだけを返します。
-
-### 認証なしのAPI動作確認
-
-認証トークンを付けずに`POST /api/training-records`を呼ぶと、HTTP 401と`ログインが必要です`が返ることを確認しました。
-
-これはAPIに接続できており、未ログインの人がトレーニング記録を保存できないよう認証処理が機能している状態です。
-
-## トレーニング履歴取得API
-
-### `GET()`の役割
-
-同じ`app/api/training-records/route.ts`に`GET()`を書くと、`GET /api/training-records`で本人の履歴を取得できます。
-
-`POST()`は新しい記録の保存、`GET()`は保存済み記録の取得を担当します。
-
-どちらも最初に`getClerkUserId(request)`を実行し、本人のデータだけを扱います。
-
-### 本人の履歴を検索する
-
-`.innerJoin(users, eq(trainingSessions.userId, users.id))`は、トレーニング記録とユーザーを共通のIDで結び付けます。
-
-その後、`.where(eq(users.clerkUserId, clerkUserId))`でログイン中のClerkユーザーに属する記録だけへ絞ります。
-
-`.orderBy(desc(trainingSessions.performedAt))`は実施日時を新しい順に並べます。
-
-`.limit(50)`は1回の取得を最大50件に制限し、データが増えた場合の通信量を抑えます。
-
-### 各履歴に種目を追加する
-
-`sessions.map(async (session) => {...})`は、各トレーニング履歴を1件ずつ処理し、それぞれに属する種目を検索します。
-
-`async`を付ける理由は、関数内でDB検索の`await`を使うためです。
-
-非同期の`map()`が返すものは、完成データではなくPromiseの配列です。
-
-`Promise.all(...)`は、配列内にあるすべてのPromiseが完了するまで待ち、完成したデータの配列を返します。
-
-`...session`はスプレッド構文で、元の履歴が持つID・日時・時間・調子・メモを新しいオブジェクトへ展開します。
-
-その後に`exercises`を書くことで、元の履歴情報へ種目一覧を追加します。
-
-```text
-session
-{ id, performedAt, memo }
-        ↓ ...session と exercises
-record
-{ id, performedAt, memo, exercises }
-```
-
-最後は`records: sessions`ではなく`records`を返します。`sessions`は種目追加前、`records`は種目追加後だからです。
-
-### 覚える単語
-
-- `GET`：データを取得するHTTP通信
-- `innerJoin()`：共通する値で2つのテーブルを結ぶ
-- `desc()`：大きい順・新しい順に並べる
-- `Promise`：まだ完了していない非同期処理の結果
-- `Promise.all()`：複数の非同期処理がすべて終わるまで待つ
-- スプレッド構文`...`：オブジェクトや配列の中身を展開する
-
-### HTTPメソッドの基本
-
-`GET`は、Neonに保存されている情報を取得し、バックエンドからフロントエンドへ渡します。
-
-`POST`は、フロントエンドから新しい情報を受け取り、バックエンドがNeonへ保存します。
-
-`PATCH`は、すでに保存されている情報の一部を変更します。
-
-`DELETE`は、保存済みの情報を削除します。
-
-```text
-GET    : Neon → バックエンド → フロント
-POST   : フロント → バックエンド → Neonへ新規保存
-PATCH  : フロント → バックエンド → Neonの既存データを変更
-DELETE : フロント → バックエンド → Neonの既存データを削除
-```
-
-GETでもフロントからClerkトークンを受け取り、誰のデータを取得するか判断します。
-
-### 各種目へセット一覧を追加する
-
-種目を取得した後、`exercises.map(async (exercise) => {...})`で種目を1件ずつ処理します。
-
-現在の`exercise.id`と`trainingSets.trainingExerciseId`が一致するセットだけを`.where(eq(...))`で取得します。
-
-`.orderBy(trainingSets.setNumber)`は、セットを1セット目、2セット目、3セット目の順に並べます。
-
-`return { ...exercise, sets }`は、種目ID・種目名・部位などの情報へセット一覧を追加します。
-
-完成したセット付き種目の配列を`exercisesWithSets`へ保存します。
-
-最後に`return { ...session, exercises: exercisesWithSets }`で、トレーニング全体へセット付きの種目一覧を追加します。
-
-```text
-トレーニング全体
-└─ 種目一覧
-   ├─ 種目1
-   │  └─ セット一覧
-   └─ 種目2
-      └─ セット一覧
-```
-
-外側の`Promise.all()`は全トレーニングの処理完了を待ち、内側の`Promise.all()`は現在のトレーニングに含まれる全種目の処理完了を待ちます。
-
-## Python身体分析からOpenAIを使う準備
-
-### 使用するライブラリ
-
-`openai`は、PythonからOpenAI APIへ画像を送り、分析結果を受け取る公式ライブラリです。
-
-`python-dotenv`は、秘密情報をコードへ直接書かず、`.env.local`から`OPENAI_API_KEY`を読み込むために使います。
-
-Pythonを使う理由は、`Pillow`による画像検査や、将来のOpenCV・独自AIモデルなど、画像処理向けの機能を追加しやすいからです。
-
-### `.env.local`の読み込み
-
-`Path(__file__)`は、現在実行している`main.py`の場所を表します。
-
-`.resolve()`は、その場所を省略のない絶対パスへ変換します。
-
-`.parents[2]`は、`python-analysis/app/main.py`からプロジェクト直下の`musslepas`まで戻ります。
-
-`/ ".env.local"`は、戻った場所へ`.env.local`というファイル名をつなげます。
-
-`load_dotenv(ENV_FILE_PATH)`は、`.env.local`内の環境変数をPythonから利用できる状態にします。
-
-`openai_client = OpenAI()`は、読み込んだ`OPENAI_API_KEY`を使うOpenAI APIの受付窓口を作ります。この行だけではAPI通信を行わないため、まだ分析料金は発生しません。
-
-### 画像をBase64データURLへ変換する
-
-`image_to_data_url(image)`は、検査済み画像をOpenAIへ直接送れる文字列へ変換する関数です。
-
-`await image.read()`は、アップロード画像の中身をバイトデータとして読み込みます。
-
-`await image.seek(0)`は、読み取り位置を先頭へ戻し、後続処理でも同じ画像を読めるようにします。
-
-`base64.b64encode(image_bytes)`は、画像のバイトデータをBase64形式へ変換します。
-
-`.decode("utf-8")`は、変換結果をPythonの文字列として扱えるようにします。
-
-`f"data:{image.content_type};base64,..."`は、画像形式とBase64本体を組み合わせ、OpenAIが画像として認識できるデータURLを作ります。
-
-`front_image_url`、`side_image_url`、`back_image_url`には、正面・横・背面をそれぞれ変換した結果が入ります。この段階では変換のみで、まだOpenAI APIへの送信は行いません。
-
-```text
-UploadFile
-   ↓ read()
-画像のバイトデータ
-   ↓ base64.b64encode()
-Base64文字列
-   ↓ data:画像形式;base64, を追加
-OpenAIへ渡せる画像データURL
-```
-
-### 覚える単語
-
-- `Path`：ファイルやフォルダの場所を安全に扱うPythonの機能
-- 環境変数：APIキーなど、コードから分けて管理する設定値
-- APIクライアント：外部APIへリクエストを送るための窓口
-- `Base64`：画像などのバイナリデータを文字列で表現する形式
-- データURL：ファイル内容とファイル形式を1本の文字列にまとめた形式
-
-## 旧仕様：身体分析を1ユーザー1日1回に制限する
-
-この節は以前の仕組みを理解するための記録です。現在の仕様は、このファイル末尾の「月額プランと現在の利用制限」が正解です。
-
-### なぜTypeScriptバックエンドで判定するのか
-
-`app/api/body-analysis/route.ts`はClerk認証後のユーザーIDを取得できるため、誰が分析しようとしているかを判定できます。
-
-PythonやOpenAIへ画像を送る前にNeonを確認すれば、当日2回目のリクエストでOpenAI料金が発生するのを防げます。
-
-現在のルールは、日本時間の0時から翌日の0時までを同じ1日として扱います。
-
-### 日本時間の範囲を作る
-
-`japanTimeOffsetMilliseconds`は、日本時間がUTCより9時間進んでいることをミリ秒で表します。
-
-`getJapanDayRange(now)`は、現在日時を受け取り、日本時間の今日0時を表す`start`と翌日0時を表す`end`を返します。
-
-Neonの`timestamp with time zone`は世界共通の時刻として比較するため、日本時間の境界をUTCの`Date`へ変換してから検索します。
-
-### 今日の完了済み分析を検索する
-
-`and(...)`は、中に書いたすべての条件を満たす分析だけを探します。
-
-`eq(bodyAnalyses.userId, user.id)`は、ログイン中の本人の分析だけへ絞ります。
-
-`eq(bodyAnalyses.status, "completed")`は、正常に完了した分析だけを1回として数えます。
-
-`gte(bodyAnalyses.analyzedAt, start)`は、今日の0時以降という条件です。
-
-`lt(bodyAnalyses.analyzedAt, end)`は、翌日の0時より前という条件です。
-
-`.limit(1)`は、分析済みか判断するには1件見つかれば十分なので、取得量を抑えます。
-
-### 2回目を止める
-
-`todayAnalyses.length > 0`は、今日すでに完了した分析が1件以上あることを表します。
-
-その場合はHTTP 429とエラーメッセージを返し、画像読込・Python・OpenAIの処理へ進みません。
-
-`nextAvailableAt`は、次に分析できる日本時間の翌日0時をUTC形式でフロントへ伝えます。
-
-`Retry-After`ヘッダーは、次に試せるまでの秒数を通信上の情報として返します。
-
-```text
-Clerkで本人確認
-   ↓
-Neonで今日の完了済み分析を検索
-   ├─ あり → HTTP 429で終了
-   └─ なし → 画像検査 → Python → OpenAI
-```
-
-### 覚える単語
-
-- `gte`：greater than or equalの略で、指定値以上
-- `lt`：less thanの略で、指定値より小さい
-- HTTP 429：利用回数が制限を超えたことを示すステータス
-- `Retry-After`：次に再試行できるまでの時間を示すレスポンスヘッダー
-
-## OpenAIによる実際の身体画像分析
-
-### OpenAIへ画像3枚を送る
-
-`openai_client = AsyncOpenAI()`は、OpenAI APIとの通信を行う非同期クライアントです。
-
-同期版ではなく`AsyncOpenAI`を使う理由は、OpenAIの返答を待っている間もFastAPIがほかの処理を扱えるようにするためです。
-
-`await openai_client.responses.parse(...)`が、実際にOpenAIへ画像分析を依頼する中心処理です。この処理が実行された時点でAPI利用が発生します。
-
-`model="gpt-5.6"`は、画像を理解できるOpenAIモデルを指定しています。
-
-`instructions=BODY_ANALYSIS_INSTRUCTIONS`は、身体分析の目的、評価方法、医療診断をしないことなどのルールをAIへ渡します。
-
-`input`の`content`には、正面・横・背面の説明と、それぞれのBase64データURLを順番に入れます。
-
-`type: "input_text"`は、次の画像がどの方向から撮影されたものかを説明する文章です。
-
-`type: "input_image"`は、OpenAIへ画像入力を渡す項目です。
-
-`detail: "low"`は、最初の運用で画像処理コストを抑える設定です。筋肉の細部が不足する場合は、費用とのバランスを確認して`high`へ変更します。
-
-`text_format=BodyAnalysisResponse`は、自由な文章ではなく、`summary`、`goal_difference`、`areas`を持つ決まった形式で結果を返すよう指定します。
-
-`store=False`は、APIレスポンスを後から取得する用途でOpenAI側に保存しない設定です。
-
-### 分析結果を安全に返す
-
-`response.output_parsed`には、`BodyAnalysisResponse`の形として検査された分析結果が入ります。
-
-`output_parsed is None`は、AIから決まった形式の結果を取得できなかった状態です。その場合はHTTP 502として処理を止めます。
-
-正常な場合は`return response.output_parsed`で、PythonからTypeScriptバックエンドへ分析結果JSONを返します。
-
-```text
-検査済み画像3枚
-   ↓ Base64データURL
-OpenAI Responses API
-   ↓ BodyAnalysisResponseで形式を指定
-Pydantic検査済みJSON
-   ↓
-TypeScriptバックエンド
-```
-
-### 実通信テスト
-
-2026年8月13日に、個人の身体写真ではなくプロジェクト内の生成済み体型画像3枚を使って実通信を1回確認しました。
-
-Pythonの`POST /analyze`はHTTP 200を返し、要約・理想体型との差・部位別評価が`BodyAnalysisResponse`形式で返りました。
-
-テスト画像は本当の正面・横・背面の組み合わせではなかったため、AIは横面・背面を確認できないことを結果内に明記しました。これは、不足している画像情報を勝手に断定しないルールが機能していることを示します。
-
-### スマホからNeon保存までの通し確認
-
-2026年8月13日に、スマホ版の身体分析画面から生成済み画像3枚を選択し、TypeScript、Python、OpenAI、Neon、スマホ表示までを通して確認しました。
-
-以前の仮結果は削除せず、`status`を`mock`へ変更してテスト記録として残しました。1日1回判定は`completed`だけを数えるため、本物の分析を新しく1件実行できました。
-
-新しい分析はNeonの`body_analyses`へ`completed`として保存され、分析IDは`dab3a674-3d1d-41cf-b00c-06b35f84376d`です。
-
-部位別結果も`body_analysis_areas`へ6件保存され、スマホ画面に要約・理想体型との差・各部位のスコア・観察結果・おすすめが表示されました。
-
-身体写真そのものはNeonへ保存しておらず、OpenAIが返した構造化分析結果だけを保存しています。
-
-```text
-スマホで画像3枚を選択
-   ↓ Clerkトークン付きPOST
-TypeScriptバックエンド
-   ↓ 1日1回判定・画像検査
-Python FastAPI
-   ↓ 画像検査・OpenAI分析
-構造化された分析JSON
-   ↓
-TypeScriptで形式確認
-   ↓
-Neonへ分析全体と部位別結果を保存
-   ↓
-スマホへ表示
-```
-
-## 身体分析用に本人の理想体型と身体情報を取得する
-
-### 使用するテーブル
-
-理想体型は`users.goalBodyType`、身長・体重・体脂肪率は`user_profiles`に保存されています。
-
-身体分析APIでは既存のClerk本人確認後に、同じ本人の2テーブルを結合して必要な項目だけ取得します。新しいログイン処理を作っているのではありません。
-
-### `userProfiles`をimportする理由
-
-`userProfiles`を`@/db/schema`からimportすると、身体分析の`route.ts`からプロフィールテーブルの列を指定できます。
-
-### `.select({...})`の役割
-
-`id: users.id`は、分析結果を本人へ結び付けて保存するNeon内のユーザーIDです。
-
-`goalBodyType: users.goalBodyType`は、細マッチョ・逆三角形・フィジーク・バルクアップなどの目標です。
-
-`heightCm`、`weightKg`、`bodyFatPercentage`は、身体画像だけでは分からない本人の入力情報です。
-
-### `leftJoin()`の役割
-
-`.leftJoin(userProfiles, eq(userProfiles.userId, users.id))`は、`users.id`と`user_profiles.user_id`が同じデータを1件へまとめます。
-
-`leftJoin`を使うと、プロフィールがまだ存在しない場合でもユーザー自体は取得できます。その後の処理で「プロフィールが未登録です」という分かりやすいエラーを返せます。
-
-```text
-users
-・id
-・goalBodyType
-       ＋ user_idで結合
-user_profiles
-・heightCm
-・weightKg
-・bodyFatPercentage
-       ↓
-身体分析に必要な本人情報
-```
-
-### 覚える単語
-
-- `leftJoin()`：左側のデータを残したまま、共通IDを持つ別テーブルを結合する
-- 別名指定：`heightCm: userProfiles.heightCm`のように、取得結果の名前とDB列を対応させる書き方
-- 必要な列だけ取得：通信量と扱う個人情報を必要最小限にする考え方
-
-### AI分析前の必須確認
-
-`user.goalBodyType === null`、`user.heightCm === null`、`user.weightKg === null`は、AI分析に必要な本人情報が未設定か確認します。
-
-条件を`||`でつなぐと、3項目のうち1つでも不足している場合にHTTP 400を返し、Python・OpenAIを呼びません。
-
-体脂肪率は任意入力なので必須確認には含めません。
-
-### 画像と本人情報を同じFormDataへ入れる
-
-`pythonFormData`には正面・横・背面画像だけでなく、理想体型・身長・体重・任意の体脂肪率も追加します。
-
-`FormData.append("goal_body_type", user.goalBodyType)`は、Pythonが`goal_body_type`という名前で理想体型を取り出せるようにします。
-
-`FormData`へ画像以外の数値を入れる場合は、`String(user.heightCm)`のように文字列へ変換します。
-
-体脂肪率は`!== null`で登録済みか確認し、登録されている場合だけ追加します。未入力時に空文字を送らないためです。
-
-```text
-pythonFormData
-├─ front_image
-├─ side_image
-├─ back_image
-├─ goal_body_type
-├─ height_cm
-├─ weight_kg
-└─ body_fat_percentage（任意）
-```
-
-### 覚える単語
-
-- `FormData`：画像と文字列を同じHTTPリクエストで送る形式
-- `String()`：数値などを文字列へ変換するJavaScriptの関数
-- `!== null`：値が未設定の`null`ではないことを確認する比較
-
-## Pythonで理想体型と身体情報を受け取る
-
-### `File`と`Form`の違い
-
-FastAPIの`File(...)`は、正面・横・背面の画像ファイルを受け取ります。
-
-`Form(...)`は、同じ`FormData`に入っている理想体型・身長・体重などの文字列を受け取ります。
-
-TypeScript側では数値を`String()`で送っていますが、Python側で型を`float`にするとFastAPIが数値へ自動変換します。
-
-### 引数の型と制限
-
-`goal_body_type: str`は理想体型を文字列として受け取ります。
-
-`height_cm: float`と`weight_kg: float`は身長・体重を小数として受け取ります。
-
-`body_fat_percentage: float | None`は、体脂肪率が数値または未入力の`None`であることを表します。
-
-`Form(...)`内の`...`は必須項目です。`Form(None)`は未入力を許可します。
-
-`ge`は指定数値以上、`le`は指定数値以下だけを許可します。
-
-FastAPIが型変換や範囲確認に失敗した場合はHTTP 422を返し、画像検査やOpenAI分析へ進みません。
-
-### 覚える単語
-
-- `Form()`：multipart/form-data内の画像以外の項目を受け取るFastAPIの機能
-- `float`：小数を扱うPythonの数値型
-- `None`：Pythonで値がない状態
-- `ge`：greater than or equalの略で、指定値以上
-- `le`：less than or equalの略で、指定値以下
-
-## PythonでAIへ渡すユーザー情報を文章にまとめる
-
-対象ファイルは`python-analysis/app/main.py`です。
-
-この部分は、TypeScriptバックエンドから受け取った理想体型・身長・体重・体脂肪率を、OpenAIが理解しやすい1つの文章へまとめます。
-
-### 任意の体脂肪率を表示用の文字列にする
-
-```python
-body_fat_text = (
-    f"{body_fat_percentage}%"
-    if body_fat_percentage is not None
-    else "未入力"
-)
-```
-
-`body_fat_text = (`は、AIへ渡す体脂肪率の文章を`body_fat_text`へ保存します。
-
-`f"{body_fat_percentage}%"`は、数値の後ろへ`%`を付けた文字列を作ります。
-
-`if body_fat_percentage is not None`は、体脂肪率が入力されているか確認します。
-
-`else "未入力"`は、体脂肪率が任意項目で未入力だった場合に`未入力`という文章を使います。
-
-この書き方は、`条件が成立した場合の値 if 条件 else 成立しない場合の値`というPythonの条件式です。
-
-### 身体情報を1つの文章へまとめる
-
-```python
-user_body_context = (
-    "今回分析するユーザー情報です。\n"
-    f"理想体型: {goal_body_type}\n"
-    f"身長: {height_cm}cm\n"
-    f"体重: {weight_kg}kg\n"
-    f"体脂肪率: {body_fat_text}\n"
-    "画像とこの情報を比較して、"
-    "理想体型との差を説明してください。"
-)
-```
-
-`user_body_context = (`は、ユーザーごとに内容が変わる身体情報を1つの変数へ保存します。
-
-`f"理想体型: {goal_body_type}\n"`は、`{}`の位置へ実際の理想体型を入れます。
-
-身長・体重・体脂肪率も同じ方法で実際の値を文章へ入れます。
-
-`\n`は改行を表し、各情報を別の行にしてAIが読み取りやすい形にします。
-
-丸括弧の中で文字列を続けて書くと、Pythonがそれらを自動的に1つの文字列としてつなぎます。
-
-最後の2行は、画像だけを見るのではなく、設定済みの理想体型と比較する目的をAIへ伝えます。
-
-### `instructions`と`input`の役割の違い
-
-分析方法や出力時の禁止事項など、全ユーザーで共通する固定ルールは`instructions`へ書きます。
-
-理想体型・身長・体重など、分析するたびに変わる本人情報は`input`の`content`へ入れます。
-
-```text
-instructions
-└─ 全ユーザー共通の分析ルール
-
-input.content
-├─ user_body_context（本人の目標・身体情報）
-├─ 正面画像
-├─ 横画像
-└─ 背面画像
-```
-
-OpenAIの画像入力では、1つの`content`配列へ`input_text`と複数の`input_image`を並べられます。
-
-そのため、身体情報の文章と3枚の画像を同じリクエストに入れると、AIが同じ分析対象の情報として比較できます。
-
-### `user_body_context`をOpenAIへ実際に渡す部分
-
-```python
-{
-    "type": "input_text",
-    "text": user_body_context,
-},
-```
-
-この辞書は、`responses.parse()`の`input`にある`content`配列の先頭へ入れます。
-
-`"type": "input_text"`は、この項目が画像ではなく文章であることをOpenAIへ伝えます。
-
-`"text": user_body_context`は、理想体型・身長・体重・体脂肪率をまとめた文章を実際の入力として指定します。
-
-この後ろへ正面・横・背面の`input_image`が続くため、身体情報と3枚の画像が1回のOpenAI APIリクエストで送信されます。
-
-ここでデータをNeonへ保存しているわけではありません。PythonからOpenAIへ分析材料を送っている部分です。
-
-OpenAIから返った分析結果は、後続のTypeScriptバックエンドが受け取り、本人の分析結果としてNeonへ保存します。
-
-```text
-Python
-├─ user_body_context
-├─ 正面画像
-├─ 横画像
-└─ 背面画像
-        ↓ 1回のAPIリクエスト
-OpenAI
-        ↓ 構造化された分析結果
-Python → TypeScriptバックエンド → Neon → フロントエンド
-```
-
-### 覚える単語
-
-- `f"..."`：変数の値を`{}`へ埋め込めるPythonの文字列
-- `is not None`：値が未入力の`None`ではないことを確認する
-- Pythonの条件式：条件によって保存する値を1行で切り替える書き方
-- `\n`：文字列内の改行
-- `instructions`：AIが常に守る固定ルール
-- `input`：今回のリクエストでAIへ渡す内容
-- `input_text`：OpenAIへ文章を渡す入力形式
-- `input_image`：OpenAIへ画像を渡す入力形式
-
-## 理想体型を含めた身体分析の動作確認
-
-### 確認した処理の流れ
-
-```text
-Neon
-├─ 理想体型：細マッチョ
-├─ 身長：175cm
-└─ 体重：70kg
-        ↓ TypeScriptバックエンドが取得
-FormData
-├─ goal_body_type
-├─ height_cm
-├─ weight_kg
-├─ front_image
-├─ side_image
-└─ back_image
-        ↓
-Python FastAPI
-        ↓ user_body_contextと画像3枚
-OpenAI
-        ↓ 決められたJSON形式
-Python → TypeScript → Neon保存 → 画面表示
-```
-
-生成した架空人物の正面・横・背面画像を使い、通信全体を確認しました。
-
-分析結果には`理想の「細マッチョ」と比べると`という比較が入り、`goal_body_type`がOpenAIまで届いていることを確認できました。
-
-結果画面への表示と`body_analyses`・`body_analysis_areas`への保存も成功しました。
-
-身体写真そのものはNeonへ保存せず、分析結果の文章と部位別評価だけを保存しています。
-
-### Pythonサーバーを再起動する理由
-
-`main.py`を変更しても、以前から動いているPythonプロセスが古いコードを読み込んだままの場合があります。
-
-その状態では新しく追加した`Form()`や`user_body_context`が実行されず、理想体型が未設定として分析される可能性があります。
-
-サーバーを停止して`uvicorn app.main:app --reload`で起動し直すと、最新の`main.py`が読み込まれます。
-
-`--reload`は、開発中にPythonファイルの変更を検知してサーバーを自動再起動する指定です。
-
-`Address already in use`は、同じ8000番ポートですでに別のPythonサーバーが動いていることを表します。
-
-### テスト結果と1日1回制限
-
-最初の古いコードによる生成画像テスト結果は削除せず、`status`を`test`として保存しました。
-
-本番の1日1回判定は`status = "completed"`の結果だけを数えるため、開発用テストを本番分析として数えないようにしています。
-
-最新コードによる成功結果は`completed`として保存され、同じ日本日付での通常分析はここから制限されます。
-
-### 覚える単語
-
-- プロセス：現在コンピューター上で動いているプログラム
-- ポート：サーバーへ接続するための番号。このPython APIでは8000番
-- `--reload`：ファイル変更時に開発サーバーを自動再起動する指定
-- `status = "test"`：開発用の分析結果であることを区別する状態
-- E2Eテスト：画面からAPI・AI・DB・画面表示まで全体を通して確認するテスト
-
-## AIへ渡す共通データの型
-
-対象ファイルは`app/lib/ai/getUserAiContext.ts`です。
-
-このファイルはOpenAIを直接呼ぶ場所ではなく、Neonに分かれている本人情報をAIが使いやすい1つのデータへまとめる場所です。
-
-`export type UserAiContext`は、AIメニューAPIとAIチャットAPIが共通で使用するデータの設計図です。
-
-`userId: string`は、Neon内で本人を識別する内部IDです。
-
-`goalBodyType: string | null`は、理想体型が文字列または未設定の`null`であることを表します。
-
-`profile: { ... } | null`は、プロフィールが作成済みなら中の身体情報を持ち、未作成なら`null`になることを表します。
-
-身長と体重はプロフィール内では必須なので`number`です。
-
-体脂肪率・週の回数・可能時間・場所・苦手部位は任意入力なので、それぞれの型へ`| null`を付けます。
-
-`weakBodyParts: string[] | null`の`string[]`は、`["胸", "背中"]`のように複数の文字列を持つ配列です。
-
-### 覚える単語
-
-- `type`：データがどんな項目と型を持つか決めるTypeScriptの設計図
-- `export`：別ファイルからもその型や機能を使えるようにする指定
-- `string`：文字列の型
-- `number`：数値の型
-- `string[]`：文字列を複数持つ配列の型
-- `| null`：値が未設定の場合も許可する型
-- ネスト：オブジェクトの中へ別のオブジェクトを入れて情報をまとめる構造
-
-### 最新の身体分析結果の型
-
-`latestBodyAnalysis`は、AIへ渡す最新の身体分析1件を表します。
-
-一度も分析していない利用者もいるため、分析全体へ`| null`を付けます。
-
-`summary`は身体全体の分析、`goalDifference`は理想体型との差です。
-
-`analyzedAt: Date | null`は、分析日時または日時未登録の`null`を表します。
-
-`areas: { ... }[]`は、肩・胸・背中など同じ形の部位別評価を複数持つ配列です。
-
-各部位には、部位名・1〜10の評価・優先度・観察内容・おすすめを入れます。
-
-これによりAIメニューは、最新分析で評価が低い部位や`priority = "high"`の部位を候補として使えます。
-
-### 覚える単語
-
-- `Date`：JavaScript・TypeScriptで日時を扱う型
-- `latest`：最新という意味
-- `areas`：複数の部位別評価をまとめる配列
-- `}[]`：同じオブジェクトの形を複数持つ配列型
-
-### 最近のトレーニング履歴の型
-
-`recentTrainingSessions`は、AIが参考にする最近のトレーニング記録を複数持つ配列です。
-
-履歴がない場合は異常ではないため、`null`ではなく空配列`[]`として扱います。
-
-1回のトレーニングには、実施日時・所要時間・調子・メモを入れます。
-
-その中の`exercises`には、その日に実施した複数の種目を入れます。
-
-さらに各種目の`sets`へ、セット番号・重量・回数を入れます。
-
-```text
-recentTrainingSessions
-└─ 1回のトレーニング
-   ├─ 実施日時・時間・調子・メモ
-   └─ exercises
-      └─ 1種目
-         ├─ 種目名・部位・細分部位
-         └─ sets
-            └─ セット番号・重量・回数
-```
-
-この入れ子構造により、AIは前回鍛えた部位だけでなく、ベンチプレスを何kgで何回行ったかまで確認できます。
-
-### 覚える単語
-
-- `recent`：最近のという意味
-- `session`：1回分のトレーニング記録
-- `exercise`：トレーニング種目
-- `set`：1種目の中で行った重量・回数のまとまり
-- 空配列`[]`：対象データが0件であることを安全に表す配列
-
-## NeonからAI用の本人データを取得する関数
-
-`getUserAiContext(clerkUserId)`は、認証後に取得したClerkユーザーIDを使い、Neonから本人のAI用データを集める非同期関数です。
-
-本人認証そのものは各APIの`route.ts`で行います。
-
-この関数は認証済みのClerk IDを受け取り、そのIDと一致する本人データをNeonから取得します。
-
-```text
-route.ts
-└─ Clerkトークンを検証してClerk IDを取得
-        ↓
-getUserAiContext.ts
-└─ Clerk IDと一致するNeonの本人データを取得
-```
-
-`Promise<UserAiContext | null>`は、非同期処理の完了後に`UserAiContext`または`null`を返すという型です。
-
-`Promise`は非同期処理後の結果、`|`は「または」、`null`は本人が見つからない状態を表します。
-
-`const db = getDb()`は、Drizzleを使ってNeon PostgreSQLを操作する接続を取得します。
-
-`.select({ ... })`は、本人データから必要な列だけを選びます。
-
-`.from(users)`は`users`テーブルを検索の中心にします。
-
-`.leftJoin(userProfiles, ...)`は、プロフィールが未作成でも`users`の本人情報を残しながら身体情報を結合します。
-
-`.where(eq(users.clerkUserId, clerkUserId))`は、認証済みClerk IDと一致する本人だけに絞ります。
-
-`.limit(1)`は取得件数を最大1件にします。
-
-`matchedUsers[0] ?? null`は、検索結果の先頭を取り出し、0件なら`null`へ統一します。
-
-`if (!user) return null`は、本人がNeonに存在しない場合に後続の検索を行わず終了します。
-
-現在の関数末尾にある`return null`は、関数が未完成の間だけTypeScriptエラーを防ぐ仮の返却です。
-
-### 本人認証と本人データ取得の違い
-
-- 本人認証：Clerkトークンが正しいかAPIの`route.ts`で確認する
-- 本人データ取得：認証済みIDと一致する情報をNeonから取得する
-
-この分担により、共通データ取得関数へ認証処理を何度も書く必要がありません。
-
-### 覚える単語
-
-- `async`：`await`を使える非同期関数にする指定
-- `Promise<T>`：非同期処理後に`T`型の結果を返すことを表す型
-- `await`：非同期処理が完了するまで待つ指定
-- 返り値：関数が`return`で呼び出し元へ渡す値
-- `.select()`：DBから取得する列を指定する処理
-- `.where()`：条件に一致するデータへ絞る処理
-- `.limit()`：取得する最大件数を決める処理
-
-### 最新の身体分析を取得するNeon検索
-
-本人検索と身体分析検索は同じDrizzleの基本形を使いますが、対象テーブルと取得内容が異なります。
-
-```text
-users＋user_profiles
-└─ 本人の目標・身体情報
-
-body_analyses
-└─ 本人の最新身体分析
-```
-
-`.from(bodyAnalyses)`は、身体分析全体を保存している`body_analyses`テーブルを検索対象にします。
-
-`and()`は、複数の条件をすべて満たす分析へ絞ります。
-
-1つ目の`eq()`は、分析の`userId`と本人の`userId`が一致することを確認します。
-
-2つ目の`eq()`は、`status`が`completed`の正常に完了した分析だけに絞ります。
-
-`.orderBy(desc(bodyAnalyses.analyzedAt))`は、分析日時を新しい順に並べます。
-
-`.limit(1)`によって、AIが使用する最新分析1件だけを取得します。
-
-`matchedAnalyses[0] ?? null`は、最新分析があれば先頭を取り出し、一度も分析していなければ`null`にします。
-
-### 覚える単語
-
-- `and()`：複数の条件をすべて満たすデータへ絞る
-- `.orderBy()`：取得結果の並び順を決める
-- `desc()`：大きい値・新しい日時から順番に並べる
-- `completed`：正常に処理が完了した分析の状態
-
-### 最新分析の部位別評価を取得する
-
-`body_analyses`には1回分の分析全体が保存され、`body_analysis_areas`には肩・胸・背中などの部位別評価が保存されています。
-
-`latestAnalysis.id`と`bodyAnalysisAreas.analysisId`を一致させることで、最新分析に属する部位だけを取得します。
-
-```text
-body_analyses.id
-        ＝
-body_analysis_areas.analysis_id
-```
-
-`latestAnalysis ? 検索 : []`はTypeScriptの三項演算子です。
-
-最新分析がある場合だけNeonを検索し、分析がない場合は安全な空配列`[]`を使用します。
-
-部位別評価からは、部位名・点数・優先度・観察内容・おすすめを取得します。
-
-これにより、AIは身体全体の文章だけでなく、評価が低い部位や優先度が高い部位を具体的に参照できます。
-
-### 三項演算子の基本形
-
-```ts
-条件 ? 条件が成立した場合 : 成立しない場合
-```
-
-### 覚える単語
-
-- 三項演算子：条件によって使用する値や処理を切り替える書き方
-- `analysisId`：部位別評価がどの分析に属するかを示すID
-- 空配列：対象が0件のときに使う、要素を持たない配列
-
-### 最近10回のトレーニング記録を取得する
-
-`.from(trainingSessions)`は、1回分の実施日時・時間・調子・メモを保存する`training_sessions`テーブルを検索します。
-
-`.where(eq(trainingSessions.userId, user.userId))`は、本人のトレーニング記録だけに絞ります。
-
-`.orderBy(desc(trainingSessions.performedAt))`は、実施日時が新しい順に並べます。
-
-`.limit(10)`は、共通AIデータへ入れる履歴を直近10回に制限します。
-
-過去の全履歴はNeonへ残しますが、毎回AIへ全件を渡すと料金・処理時間・不要な情報が増えるためです。
-
-```text
-Neonには全履歴を保存
-        ↓
-getUserAiContextでは最近10回を取得
-        ↓
-AIは最近のトレーニング傾向を判断
-```
-
-この段階の`recentSessions`には1回分の基本情報だけが入り、種目とセットは後続処理で結び付けます。
-
-### 覚える単語
-
-- `recentSessions`：最近のトレーニング記録を入れる配列
-- `performedAt`：トレーニングを実施した日時
-- `durationMinutes`：トレーニングに使った時間
-- `conditionScore`：その日の調子を表す数値
-- `.limit(10)`：取得結果を最大10件に制限する
-
-### 各トレーニング記録へ種目を追加する
-
-`recentSessions.map(async (session) => ...)`は、最近の記録を1件ずつ取り出し、それぞれに属する種目を検索します。
-
-`.map()`は配列の各要素を順番に処理し、処理後の新しい配列を作るメソッドです。
-
-今回の`session`には、現在処理している1回分のトレーニング記録が入ります。
-
-`eq(trainingExercises.sessionId, session.id)`は、現在のトレーニングIDと一致する種目だけに絞ります。
-
-`.orderBy(trainingExercises.displayOrder)`は、ユーザーが記録した種目順に並べます。
-
-`return { session, exercises }`は、1回分の基本情報とその日に行った種目を1つにまとめます。
-
-`async`を使った`.map()`の結果は、処理途中の`Promise`を複数持つ配列になります。
-
-`Promise.all()`は、そのすべての非同期検索が完了するまで待ち、通常の結果配列としてまとめます。
-
-```text
-recentSessions.map()
-├─ 1件目の種目を検索するPromise
-├─ 2件目の種目を検索するPromise
-└─ 3件目の種目を検索するPromise
-        ↓ Promise.all()
-すべての種目検索が完了した配列
-```
-
-### 覚える単語
-
-- `.map()`：配列の各要素を処理して新しい配列を作る
-- `async (session) =>`：1件ずつ非同期処理するアロー関数
-- `Promise.all()`：複数の非同期処理がすべて完了するまで待つ
-- `displayOrder`：種目を表示・記録した順番
-
-### セット取得を小さな関数へ分ける
-
-`getSetsForExercise(trainingExerciseId)`は、1種目のIDを受け取り、その種目に属するセット番号・重量・回数をNeonから取得します。
-
-長い入れ子処理からセット検索だけを分離することで、関数名を見るだけで目的を判断しやすくなります。
-
-`getDb()`は新しいデータベースを作る処理ではなく、同じ`DATABASE_URL`が示す既存のNeonを操作する接続を取得します。
-
-`.from(trainingSets)`は、Neon内に保存済みの`training_sets`テーブルを検索します。
-
-`eq(trainingSets.trainingExerciseId, trainingExerciseId)`は、関数へ渡された1種目に属するセットだけに絞ります。
-
-`return sets`は、検索したセット配列を呼び出し元へ返します。
-
-```text
-getSetsForExercise(種目ID)
-        ↓
-Neonのtraining_setsを検索
-        ↓
-その種目のセット配列を返す
-```
-
-### 覚える単語
-
-- ヘルパー関数：大きな処理の一部分を担当する小さな関数
-- 引数：関数を呼ぶときに渡す値
-- `return sets`：取得したセット配列を関数の呼び出し元へ返す
-
-### 集めた本人情報をAI用データとして返す
-
-`getUserAiContext()`の最後では、Neonから取得したプロフィール・身体分析・トレーニング履歴を1つのオブジェクトにまとめて返します。
-
-この`return`はOpenAIやフロントへ直接送信する処理ではなく、`getUserAiContext()`を呼び出したAIメニューAPIやAIチャットAPIへ結果を渡す処理です。
-
-- `userId: user.userId`：データが誰のものか識別するためのユーザーIDを入れる
-- `goalBodyType: user.goalBodyType`：細マッチョなど、設定済みの理想体型を入れる
-- `profileId !== null`：本人のプロフィールがNeonに存在するか確認する
-- `heightCm !== null && weightKg !== null`：必須の身長と体重が取得できたか確認する
-- `? { ... } : null`：プロフィールがそろっていれば中身を返し、なければ`null`を返す
-- `...latestAnalysis`：最新分析のID・概要・理想との差・分析日時をまとめて展開する
-- `areas: latestAnalysisAreas`：最新分析へ肩・胸・背中などの部位別評価を追加する
-- `recentTrainingSessions`：最近10回分の種目・重量・回数・セットを入れる
-
-```text
-Neonから本人情報を取得
-        ↓
-getUserAiContext()で1つにまとめる
-        ↓ return
-AIメニューAPIまたはAIチャットAPI
-        ↓
-必要な情報をOpenAIへ送る
-```
-
-`Promise<UserAiContext | null>`は、「成功時は`UserAiContext`形式のデータを返し、ユーザーが見つからない場合は`null`を返す非同期関数」という意味です。
-
-### AIメニューAPIで本人データを取得する
-
-`app/api/ai-menu/route.ts`は、フロントから今日のメニュー生成依頼を受け取るTypeScriptバックエンドの入口です。
-
-- `POST(request: Request)`：フロントから届いたPOST通信を受け取る
-- `getClerkUserId(request)`：通信に含まれるClerk認証情報を検証し、本人のClerkユーザーIDを取得する
-- `if (!clerkUserId)`：本人確認ができなければ、NeonやOpenAIを操作せず処理を止める
-- `status: 401`：ログインが必要であることをフロントへ伝える
-- `getUserAiContext(clerkUserId)`：本人のプロフィール・身体分析・トレーニング履歴をNeonから集める
-- `if (!aiContext)`：Neonに本人情報がなければ処理を止める
-- `status: 404`：必要なユーザー情報が見つからなかったことを伝える
-- `Response.json({ aiContext })`：OpenAI接続前の動作確認として、取得した本人データを一時的にJSONで返す
-- `try`：正常に実行したい認証・データ取得処理を囲む
-- `catch`：途中で起きた予想外のエラーを受け取る
-- `status: 500`：サーバー内部で問題が発生したことを伝える
-
-```text
-フロントからPOST
-        ↓
-Clerkの認証情報を検証
-        ↓
-Neonから本人のaiContextを取得
-        ↓
-現在は確認用JSONを返す
-        ↓
-今後はOpenAIへ渡して生成メニューを返す
-```
-
-ここで行う認証は再ログインではなく、ログイン済みの利用者が送った認証情報をAPI側でも検証し、他人のデータへアクセスさせないための本人確認です。
-
-### Clerkの利用者とNeonの利用者を紐づける仕組み
-
-Clerkのユーザー情報とNeonのユーザー情報を、メールアドレス・名前・プロフィールなどですべて比較しているわけではありません。
-
-Clerkで本人確認したあと、ClerkとNeonの両方に保存されている共通の`clerkUserId`を使って、Neonから本人のデータだけを検索します。
-
-```text
-フロントから認証情報付きの通信
-        ↓
-Clerkが認証情報を検証
-        ↓
-clerkUserId = "user_abc123"を取得
-        ↓
-Neonのusers.clerkUserIdから同じIDを検索
-        ↓
-一致したNeonユーザーの本人データを取得
-```
-
-```ts
-const clerkUserId =
-  await getClerkUserId(request);
-```
-
-このコードは、Clerkが検証したログイン中の本人のIDを取得します。
-
-```ts
-eq(users.clerkUserId, clerkUserId)
-```
-
-このコードは、Neonの`users.clerkUserId`と、Clerkから取得した`clerkUserId`が同じユーザーを検索する条件です。
-
-- Clerk：ログイン・新規登録・認証情報の検証を担当する
-- Neon：プロフィール・身体分析・トレーニング履歴などのアプリデータを保存する
-- `clerkUserId`：Clerkの利用者とNeonの利用者を結ぶ共通の識別番号
-- `eq(A, B)`：AとBが等しいデータだけに検索結果を絞るDrizzleの機能
-
-つまり、「Clerkで本人を確認し、そのClerk IDと一致するNeonユーザーの情報を取得する」という仕組みです。
-
-### AIメニューとAIチャットでのデータ取得方法の違い
-
-AIメニューは毎回必要な情報と返す内容がほぼ決まっているため、`getUserAiContext()`で本人情報を先にまとめ、`aiContext`としてOpenAIへ渡します。
-
-```text
-AIメニュー
-NeonからaiContextをまとめて取得
-        ↓
-OpenAIへ最初から渡す
-        ↓
-今日の部位・種目・重量・回数・セットを生成
-```
-
-AIチャットは利用者の質問によって必要な情報が異なるため、AIが質問内容を判断し、必要なツールだけを選んで実行する構成にします。
-
-```text
-AIチャット
-利用者から質問
-        ↓
-AIが必要な情報を判断
-        ↓
-必要な検索ツールを実行
-        ↓
-取得結果を使って回答
-```
-
-- AIメニュー：決まった本人情報を`aiContext`としてまとめて渡す
-- AIチャット：プロフィール・分析・履歴などを必要なときだけツールで取得する
-- `getUserAiContext()`：OpenAIのToolそのものではなく、AI用の本人情報をまとめるTypeScriptバックエンドの共通関数
-- Tool：AI自身が必要性を判断し、決められた入力でバックエンド機能を呼び出す仕組み
-
-AIチャット用ツールは、共通情報取得、履歴検索、最新分析取得、記録集計、設定変更の順に1つずつ作成します。
-
-### AIメニューをOpenAIへ送り、返信を受け取る
-
-`aiInput`は、`aiContext`からOpenAIの判断に必要な情報だけを選び、送信前の1つのオブジェクトへまとめたものです。
-
-この時点ではまだ送信しておらず、内部ユーザーIDのようにメニュー作成に不要な情報を除外しています。
-
-- `goalBodyType`：利用者の理想体型
-- `profile`：身長・体重・体脂肪率・回数・時間・場所・苦手部位
-- `latestBodyAnalysis`：最新の身体分析と部位別評価
-- `recentTrainingSessions`：最近10回の種目・重量・回数・セット
-
-`JSON.stringify(aiInput, null, 2)`は、TypeScriptのオブジェクトをOpenAIへ送れるJSON文字列へ変換します。
-
-`null`は値を置き換える特別な処理を使わない指定で、`2`は2文字分の字下げを入れてJSONを読みやすくする指定です。
-
-```ts
-const aiResponse =
-  await openai.responses.parse({
-    model: "gpt-5.6-luna",
-    instructions: menuPrompt,
-    input: JSON.stringify(aiInput),
-    text: {
-      format: zodTextFormat(
-        aiMenuSchema,
-        "training_menu",
-      ),
-    },
-  });
-```
-
-- `openai.responses.parse()`：OpenAIへ送信し、決めた形式として回答を受け取る
-- `instructions: menuPrompt`：メニューを作る目的・判断基準・安全ルールを送る
-- `input`：Neonから取得して整理した本人情報を送る
-- `text.format`：Zodで作ったAIメニューの出力形式を指定する
-- `await`：OpenAIの生成処理が完了して返信されるまで待つ
-- `const aiResponse =`：OpenAIから返った結果全体を変数へ保存する
-- `aiResponse.output_parsed`：形式確認を通過したAIメニューデータを取り出す
-- `Response.json({ menu: ... })`：生成されたメニューをJSON通信でフロントへ返す
-
-つまり、`await openai.responses.parse()`という1つの式が「OpenAIへ送信する」「返信を待つ」「決めた形式で返信を受け取る」の3つを担当します。
-
-```text
-aiInputを準備
-        ↓
-openai.responses.parse()で送信
-        ↓
-awaitで返信を待つ
-        ↓
-aiResponseへ返信を保存
-        ↓
-output_parsedをフロントへ返す
-```
-
-## AIメニューの決まったJSON形式
-
-### なぜ自由な文章ではなくJSON形式にするのか
-
-OpenAIが自由な文章だけを返すと、フロントは文章のどこが部位・種目・重量・回数なのかを安定して判別できません。
-
-`menuSchema.ts`で返却形式を決めると、フロントは`menu.recommendedBodyPart`や`exercise.targetWeightKg`のように、必要な項目を直接指定して表示できます。
-
-```text
-自由な文章
-「今日は胸がおすすめで、ベンチプレスを…」
-        ↓ 分解しにくい
-フロントのカード表示が不安定
-
-決まったJSON
-recommendedBodyPart: "胸"
-exercises: [...]
-        ↓ 項目を直接指定できる
-フロントのカードへ安定して表示
-```
-
-### `menuSchema.ts`の役割
-
-`app/lib/ai/menuSchema.ts`は、フロントから受け取る入力とOpenAIから受け取る出力の設計図を管理するTypeScriptファイルです。
-
-このファイルはOpenAIを呼び出さず、データの形を定義・検証することだけを担当します。
-
-#### フロント入力の設計図
-
-`aiMenuRequestSchema`は、AIメニュー生成時にフロントから任意で受け取る値を検証します。
-
-- `conditionScore`：今日の調子を1〜10の整数で受け取る
-- `.int()`：小数を許可しない
-- `.min(1)`：1未満を許可しない
-- `.max(10)`：10を超える値を許可しない
-- `.nullable()`：明示的な`null`を許可する
-- `.optional()`：項目自体が送られない場合も許可する
-- `note`：今日の痛み・疲労・希望などの任意メモ
-- `.trim()`：文字列の前後にある不要な空白を除く
-- `.max(500)`：極端に長い入力を防ぐため500文字までにする
-- `requestedBodyPart`：部位別トレーニングで今日選んだ胸・背中・肩・腕・脚・腹筋
-- `z.enum([ ... ])`：一覧に書いた文字だけを許可し、存在しない部位名を防ぐ
-
-#### OpenAI出力の設計図
-
-`aiMenuExerciseSchema`は、AIが返す1種目分の形を決めます。
-
-- `exerciseName`：ベンチプレスなどの種目名
-- `bodyPart`：胸・背中・脚などの大きな部位
-- `bodyArea`：上部・中部・下部などの細かい部位。不要な場合は`null`
-- `targetWeightKg`：重量目安。安全に判断できない場合は`null`
-- `targetReps`：`8〜10回`のような回数範囲を表せる文字列
-- `sets`：実施するセット数
-- `restSeconds`：セット間の休憩秒数
-- `note`：フォームや安全上の注意点
-
-`aiMenuSchema`は、今日のメニュー全体の形を決めます。
-
-- `recommendedBodyPart`：今日優先して鍛える部位
-- `reason`：その部位と内容を選んだ理由
-- `estimatedMinutes`：メニュー全体の推定時間
-- `exercises`：`aiMenuExerciseSchema`形式の種目配列
-- `advice`：利用者へ表示する複数の助言
-
-### Zodで覚える基本文法
-
-- `z.object({ ... })`：複数項目を持つオブジェクトの形を作る
-- `z.string()`：文字列だけを許可する
-- `z.number()`：数値だけを許可する
-- `z.array(設計図)`：同じ設計図のデータが複数並ぶ配列を作る
-- `z.infer<typeof 設計図>`：Zodの設計図からTypeScript型を自動で作る
-- `safeParse(value)`：値を検証し、成功・失敗を例外ではなく結果として返す
-- `parsedRequest.success`：入力検証が成功したかを表す真偽値
-- `parsedRequest.data`：検証に成功した安全な入力データ
-
-`AiMenu`と`AiMenuRequest`は、同じ項目をTypeScriptでもう一度手書きせず、Zodの設計図から自動作成した型です。
-
-### `menuPrompt.ts`と`menuSchema.ts`の違い
-
-```text
-menuPrompt.ts
-「何を考え、どんなルールで作るか」をAIへ指示
-
-menuSchema.ts
-「どの項目・データ型で返すか」を固定
-
-route.ts
-本人確認・データ取得・OpenAI送信・フロント返却
-```
-
-`menuPrompt`だけでもJSON形式をお願いできますが、AIの文章生成だけに任せると形式が崩れる可能性があります。
-
-そこで`menuPrompt`で内容の判断基準を伝え、`menuSchema`で機械的なデータ形式も固定します。
-
-### Structured Outputsで決まった形の回答を受け取る
-
-`zodTextFormat(aiMenuSchema, "training_menu")`は、Zodで作った`aiMenuSchema`をOpenAIが理解できる出力形式へ変換します。
-
-`"training_menu"`は、OpenAIへ渡すこの出力形式の識別名です。
-
-```ts
-const aiResponse =
-  await openai.responses.parse({
-    model: "gpt-5.6-luna",
-    instructions: menuPrompt,
-    input: JSON.stringify(aiInput),
-    text: {
-      format: zodTextFormat(
-        aiMenuSchema,
-        "training_menu",
-      ),
-    },
-  });
-```
-
-- `responses.create()`：主に文章として回答を生成する
-- `responses.parse()`：決めたデータ形式として回答を生成・解析する
-- `text.format`：OpenAIに守らせる出力形式を指定する
-- `output_parsed`：Zodの形式確認を通過した完成データを取得する
-- `if (!generatedMenu)`：有効な形式の結果がなければ、不完全なメニューをフロントへ返さない
-- `status: 502`：外部サービスであるOpenAIから有効な結果を得られなかったことを表す
-
-### AIメニューAPIの現在の処理順
-
-```text
-フロントからPOST
-        ↓
-Clerkで本人確認
-        ↓
-今日の調子とメモをZodで検証
-        ↓
-getUserAiContext()でNeonから本人情報を取得
-        ↓
-不要なuserIdを除いてaiInputを準備
-        ↓
-menuPrompt・aiInput・aiMenuSchemaをOpenAIへ送信
-        ↓
-決まったJSON形式のメニューを受け取る
-        ↓
-メニュー本体と全種目をNeonへまとめて保存
-        ↓
-保存済みIDとメニューをフロントへ返す
-```
-
-入力形式が不正な場合はOpenAIを呼ばないため、不正リクエストによる不要なAPI料金も防ぎます。
-
-内部の`userId`や身体画像そのものはOpenAIへ送らず、メニュー判断に必要なプロフィール・分析結果・履歴だけを送ります。
-
-### フロントから送るJSON
-
-どちらの項目も任意です。
-
-```json
-{
-  "conditionScore": 7,
-  "note": "少し肩に疲れがあります",
-  "requestedBodyPart": "胸"
-}
-```
-
-何も入力しない場合は空のJSONでも生成できます。
-
-```json
-{}
-```
-
-### バックエンドからフロントへ返すJSON
-
-```json
-{
-  "menu": {
-    "id": "保存済みメニューのUUID",
-    "recommendedBodyPart": "胸",
-    "reason": "最近の履歴と身体分析を考慮したため",
-    "estimatedMinutes": 45,
-    "exercises": [
-      {
-        "exerciseName": "ベンチプレス",
-        "bodyPart": "胸",
-        "bodyArea": "中部",
-        "targetWeightKg": 60,
-        "targetReps": "8〜10回",
-        "sets": 3,
-        "restSeconds": 120,
-        "note": "肩甲骨を寄せて行う"
-      }
-    ],
-    "advice": [
-      "痛みが出た場合は中止してください"
-    ],
-    "conditionScore": 7,
-    "requestNote": null,
-    "createdAt": "2026-08-20T06:00:00.000Z"
-  }
-}
-```
-
-フロント担当は、このレスポンス形式をAPI接続の共通仕様として使用できます。
-
-### 現在のAIメニュー機能の完成範囲
-
-- Clerkによる本人確認：完成
-- NeonからAI用本人情報を取得：完成
-- プロフィール・最新身体分析・最近10回の履歴を統合：完成
-- 今日の調子と任意メモの入力検証：完成
-- AIメニュー専用プロンプト：完成
-- Zodによる決まった出力形式：完成
-- OpenAI Responses APIとの接続コード：完成
-- 生成結果のNeon保存：完成
-- 今日の最新メニュー取得API：完成
-- ExpoのAIメニュー画面との接続：完成
-- 保存済みメニューの画面復元：完成
-- AIメニューから記録画面への種目引き継ぎ：完成
-- 実際のOpenAI APIによるZod形式の生成：テストデータで確認済み
-- Neonへのメニュー本体・種目の保存と再取得：テストデータで確認済み・確認後削除済み
-- ログイン状態で画面から生成する一連の確認：ログイン済み端末での最終確認が必要
-- API利用回数制限：今後追加
-- 再生成ルール：今後仕様を決めて追加
-
-## AIメニューをNeonへ保存・取得する仕組み
-
-### 使用言語とファイルの担当
-
-この機能は、PythonではなくTypeScriptで実装しています。
-
-- `db/schema.ts`：Neonへ何を保存するか決める
-- `app/api/ai-menu/route.ts`：本人確認、OpenAI生成、Neon保存、最新取得を行う
-- `app/lib/ai/menuSchema.ts`：フロント入力とOpenAI出力の形式・範囲を検証する
-- `mobile/src/lib/aiMenus.ts`：Expo画面とTypeScriptバックエンドを通信でつなぐ
-- `mobile/src/app/ai-coach.tsx`：利用者の操作、読み込み、結果、エラーを画面へ表示する
-
-Pythonは身体写真の画像検査・身体分析に使い、AIメニューはすでにNeonへ集めた文字・数値データを扱うためTypeScriptで完結させています。
-
-### なぜテーブルを2つに分けるのか
-
-1つのAIメニューには複数の種目が入ります。
-
-```text
-ai_generated_menus
-└─ 今日のメニュー本体 1件
-   ├─ おすすめ部位
-   ├─ 理由
-   ├─ 推定時間
-   └─ アドバイス
-
-ai_generated_menu_exercises
-└─ 本体に所属する種目 複数件
-   ├─ 種目名
-   ├─ 部位・細かい部位
-   ├─ 重量・回数・セット
-   ├─ 休憩時間
-   └─ 注意点
-```
-
-`ai_generated_menus`が親、`ai_generated_menu_exercises`が子です。
-
-子テーブルの`menuId`へ親メニューの`id`を保存することで、「この種目はどのメニューに含まれるか」を判断できます。
-
-```ts
-menuId: uuid("menu_id")
-  .notNull()
-  .references(() => aiGeneratedMenus.id, {
-    onDelete: "cascade",
-  })
-```
-
-- `uuid("menu_id")`：UUIDを保存する列を作る
-- `.notNull()`：所属先がない種目を保存させない
-- `.references(...)`：親メニューのIDだけを許可する
-- `onDelete: "cascade"`：親メニューを削除した場合、所属する種目も一緒に削除する
-
-### POSTは生成して保存する
-
-`POST /api/ai-menu`は、新しいAIメニューを作る処理です。
-
-```ts
-const menuId = crypto.randomUUID();
-const createdAt = new Date();
-```
-
-- `crypto.randomUUID()`：保存するメニュー専用の重複しにくいIDを作る
-- `new Date()`：生成・保存した現在日時を作る
-
-```ts
-await db.batch([
-  db.insert(aiGeneratedMenus).values({ ... }),
-  db.insert(aiGeneratedMenuExercises).values([ ... ]),
-]);
-```
-
-- `db.insert(テーブル)`：指定テーブルへ新しい行を追加する
-- `.values(...)`：実際に保存する値を渡す
-- `.map(...)`：OpenAIが返した全種目を、子テーブルへ保存する形に1件ずつ変換する
-- `displayOrder`：AIが返した種目の並び順を保存する
-- `db.batch([ ... ])`：メニュー本体と全種目を1まとまりでNeonへ送る
-- `await`：Neonへの保存が終わるまで待つ
-
-この保存が成功してから`Response.json()`を返すため、フロントに成功結果が届いた時点でNeon保存も完了しています。
-
-### GETは最後に保存した本人のメニューを取得する
-
-`GET /api/ai-menu`はOpenAIを呼びません。すでにNeonへ保存されている本人の最新メニューを読み取ります。
-
-```ts
-.where(eq(users.clerkUserId, clerkUserId))
-.orderBy(desc(aiGeneratedMenus.createdAt))
-.limit(1);
-```
-
-- `.where(...)`：ログイン中のClerk IDと一致する本人データだけに絞る
-- `eq(A, B)`：AとBが同じデータを探す
-- `desc(createdAt)`：新しい日時から古い日時の順へ並べる
-- `.limit(1)`：最も新しい1件だけを取得する
-
-本体を取得したあと、その`latestMenu.id`と同じ`menuId`を持つ種目を取得します。
-
-```ts
-.where(
-  eq(
-    aiGeneratedMenuExercises.menuId,
-    latestMenu.id,
-  ),
-)
-.orderBy(aiGeneratedMenuExercises.displayOrder);
-```
-
-まだ一度も生成していない場合は、エラーではなく次を返します。
-
-```json
-{
-  "menu": null
-}
-```
-
-`null`ならフロントは「まだ保存済みメニューがない」と判断し、今日の調子を選ぶ画面を表示できます。
-
-### Expo画面で保存済みメニューが残る理由
-
-以前の仮メニューはReactの`useState`にしか入っていなかったため、画面更新やアプリ再起動で消えていました。
-
-現在は次の順番です。
-
-```text
-AIメニュー画面を開く
-        ↓
-ClerkのgetToken()で本人の認証トークンを取得
-        ↓
-GET /api/ai-menu
-        ↓
-TypeScriptバックエンドがNeonから本人の最新メニューを取得
-        ↓
-toGeneratedMenuPreview()で画面用の形へ変換
-        ↓
-画面へ表示し、React Contextにも入れる
-```
-
-`mobile/src/lib/aiMenus.ts`は、バックエンドの保存形式を既存画面の表示形式へ変換します。
-
-```ts
-const savedMenu =
-  toGeneratedMenuPreview(response.menu);
-```
-
-- `response.menu`：GET APIから届いたNeonの最新メニュー
-- `toGeneratedMenuPreview(...)`：項目名や数値を既存画面が使える形へ変える関数
-- `const savedMenu =`：変換後のメニューを変数へ保存する
-
-### `useEffect()`を使う理由
-
-```ts
+```tsx
 useEffect(() => {
-  // 最新AIメニューを取得する処理
-}, [getToken, isLoaded, isSignedIn]);
+  void loadHome();
+}, [loadHome]);
 ```
 
-`useEffect()`は、画面が表示されたことや認証状態が準備できたことに合わせて通信を始めるために使います。
+この例は、画面表示時と`loadHome`が変わったときにホーム情報を取得します。
 
-- `isLoaded`：Clerkの認証状態を読み込み終えたか
-- `isSignedIn`：利用者がログイン済みか
-- `getToken()`：バックエンドが本人確認に使う認証トークンを取得する
-- 依存配列`[ ... ]`：この中の値が変わったときに処理を見直す
-- `cancelled`：画面を閉じたあとに古い通信結果で画面を更新しないための印
+## `useCallback`
 
-Reactの一時状態とNeonの違いは次のとおりです。
+関数を再利用し、不要な作り直しを減らします。
 
-```text
-useState / React Context
-画面を動かすための一時データ
-
-Neon
-アプリを閉じても残す長期データ
-```
-
-AIメニューはNeonへ保存するため、画面を切り替えたりアプリを再起動したりしても、ログイン中の本人の最新メニューを再取得できます。
-
-## AIメニュー履歴：一覧・詳細・削除・実施済み保存
-
-### 何をする機能か
-
-この機能は、本人が過去に生成したAIメニューを後から確認・削除し、実際に行ったメニューをトレーニング記録と結び付けます。
-
-最新の1件だけを返す`GET /api/ai-menu`とは役割が違います。
-
-```text
-GET /api/ai-menu
-→ ホームやAIメニュー画面で最新の1件を表示する
-
-GET /api/ai-menu/history
-→ 過去のメニューを複数件、ページ単位で表示する
-```
-
-### 使用言語と担当ファイル
-
-使用言語はTypeScriptです。
-
-| ファイル | 役割 |
-| --- | --- |
-| `db/schema.ts` | 実施日時とトレーニング記録IDを保存する列を定義する |
-| `app/api/ai-menu/history/route.ts` | 一覧・詳細・削除・実施状態更新を行う |
-
-Pythonは身体画像の分析に使いますが、この機能はNeonの文字・数値データを扱うためTypeScriptで実装します。
-
-### 処理の全体像
-
-```text
-フロントがClerkトークンを付けて通信する
-                  ↓
-バックエンドがClerkで本人確認する
-                  ↓
-Clerk IDからNeonの本人を探す
-                  ↓
-GET    → 本人の一覧または詳細を返す
-DELETE → 本人のメニューだけを削除する
-PATCH  → 本人の記録と結び付けて実施済みにする
-```
-
-## AIメニューの実施状態を保存する列
-
-対象ファイルは`db/schema.ts`です。
-
-```ts
-trainingSessionId: uuid(
-  "training_session_id",
-)
-  .unique()
-  .references(
-    () => trainingSessions.id,
-    {
-      onDelete: "set null",
-    },
-  ),
-```
-
-`trainingSessionId`は、このAIメニューを使って保存したトレーニング記録のIDです。
-
-`uuid("training_session_id")`は、NeonへUUID形式の記録IDを保存します。
-
-`.unique()`は、同じトレーニング記録を複数のAIメニューへ結び付けられないようにします。
-
-`.references(() => trainingSessions.id)`は、実在するトレーニング記録IDだけを許可します。
-
-`onDelete: "set null"`は、トレーニング記録が削除された場合にAIメニューまで削除せず、結び付きだけを`null`へ戻します。
-
-```ts
-performedAt: timestamp(
-  "performed_at",
-  {
-    withTimezone: true,
-  },
-),
-```
-
-`performedAt`は、そのAIメニューを実際に行った日時です。
-
-`.notNull()`がないため、まだ実施していないメニューでは`null`にできます。
-
-`performedAt !== null`なら実施済み、`performedAt === null`なら未実施と判断できます。
-
-## AIメニュー履歴のGET
-
-対象ファイルは`app/api/ai-menu/history/route.ts`です。
-
-同じ`GET()`で一覧と詳細の2種類を扱います。
-
-```text
-/api/ai-menu/history?page=1&limit=20
-→ 一覧取得
-
-/api/ai-menu/history?menuId=UUID
-→ 1件の詳細取得
-```
-
-### URLの値を取得する
-
-```ts
-const requestUrl = new URL(
-  request.url,
-);
-
-const menuId =
-  requestUrl.searchParams.get(
-    "menuId",
-  );
-```
-
-`new URL(request.url)`は、届いたURLを検索しやすいURLオブジェクトへ変えます。
-
-`searchParams.get("menuId")`は、URLの`?menuId=...`から値を取得します。
-
-指定がなければ`menuId`は`null`になります。
-
-### 一覧をページ単位で取得する
-
-`page`は現在のページ番号、`limit`は1ページに表示する最大件数です。
-
-```ts
-const offset =
-  (page - 1) * limit;
-```
-
-`offset`は、先頭から何件飛ばすかを表します。
-
-1ページ目なら0件、2ページ目で1ページ20件なら20件飛ばします。
-
-```ts
-.orderBy(
-  desc(aiGeneratedMenus.createdAt),
-  desc(aiGeneratedMenus.id),
-)
-.limit(limit)
-.offset(offset)
-```
-
-`desc(createdAt)`は、新しい作成日時から古い順へ並べます。
-
-同じ日時のデータは`desc(id)`を第2条件にして、ページ間の並びを安定させます。
-
-`.limit(limit)`は現在ページで取得する最大件数です。
-
-`.offset(offset)`は前ページまでの件数を飛ばします。
-
-```ts
-const totalPages =
-  total === 0
-    ? 0
-    : Math.ceil(total / limit);
-```
-
-`total`は本人が保存しているAIメニューの総件数です。
-
-`Math.ceil()`は小数点以下を切り上げ、必要な全ページ数を計算します。
-
-`条件 ? A : B`は三項演算子で、条件が成立すればA、成立しなければBを使います。
-
-### 詳細では種目も取得する
-
-詳細取得では、先に本人のAIメニュー本体を検索します。
-
-```ts
-.where(
-  and(
-    eq(aiGeneratedMenus.id, menuId),
-    eq(users.clerkUserId, clerkUserId),
-  ),
-)
-```
-
-`and()`は、メニューIDと本人のClerk IDの両方を必須条件にします。
-
-本人のメニューだと確認できた後、そのメニューIDに所属する種目を取得します。
-
-他人のメニューと存在しないメニューには同じHTTP 404を返します。
-
-これにより、他人のメニューが存在することを外部から推測されにくくします。
-
-## AIメニュー履歴のDELETE
-
-`DELETE()`は、指定された本人のAIメニューを削除します。
-
-```ts
-const deletedMenus = await db
-  .delete(aiGeneratedMenus)
-  .where(
-    eq(
-      aiGeneratedMenus.id,
-      matchedMenu.id,
-    ),
-  )
-  .returning({
-    id: aiGeneratedMenus.id,
-  });
-```
-
-`.delete(aiGeneratedMenus)`は、AIメニュー本体を削除する命令です。
-
-`matchedMenu.id`は、直前の検索で本人の所有物だと確認できたIDです。
-
-`.returning()`は、実際に削除されたメニューIDを返します。
-
-メニュー本体を削除すると、種目テーブルの`onDelete: "cascade"`により所属種目も一緒に削除されます。
-
-AIメニューを削除しても、実際に行ったトレーニング記録は削除しません。
-
-## AIメニューを実施済みにするPATCH
-
-フロントから次のJSONを受け取ります。
-
-```json
-{
-  "menuId": "AIメニューのUUID",
-  "trainingSessionId": "トレーニング記録のUUID"
-}
-```
-
-`menuId`は実施したAIメニューを表します。
-
-`trainingSessionId`は、そのメニューを使って保存した実際のトレーニング記録を表します。
-
-### `unknown`で受け取る理由
-
-```ts
-type MarkAiMenuPerformedInput = {
-  menuId?: unknown;
-  trainingSessionId?: unknown;
-};
-```
-
-フロントから届く値は、文字列とは限らないため最初は`unknown`として扱います。
-
-`isValidUuid()`でUUID形式を確認した後だけDB検索へ使います。
-
-### 両方が本人のデータか確認する
-
-AIメニューだけでなく、結び付けるトレーニング記録も本人の所有物か確認します。
-
-```text
-AIメニューID + 本人のusers.id
-→ 両方一致するメニューを検索
-
-トレーニング記録ID + 本人のusers.id
-→ 両方一致する記録を検索
-```
-
-片方でも他人のデータならHTTP 404で処理を終了します。
-
-### 二重送信を安全に扱う
-
-同じメニューと同じ記録がすでに結び付いている場合は、エラーにせず成功済みの結果を返します。
-
-同じメニューを別の記録へ上書きする操作はHTTP 409で拒否します。
-
-同じ記録を別のAIメニューへ結び付ける操作もHTTP 409で拒否します。
-
-`409`は、現在のデータ状態と更新内容が競合していることを表します。
-
-### 実施日時と記録IDを更新する
-
-```ts
-const updatedMenus = await db
-  .update(aiGeneratedMenus)
-  .set({
-    trainingSessionId:
-      trainingSession.id,
-    performedAt: new Date(),
-  })
-  .where(
-    and(
-      eq(aiGeneratedMenus.id, menu.id),
-      eq(aiGeneratedMenus.userId, user.id),
-      isNull(
-        aiGeneratedMenus.trainingSessionId,
-      ),
-    ),
-  )
-  .returning();
-```
-
-`.update(aiGeneratedMenus)`は、保存済みAIメニューを更新します。
-
-`.set()`は、更新後に保存する値を指定します。
-
-`new Date()`は、実施済みにした現在日時を作ります。
-
-`isNull(trainingSessionId)`は、まだトレーニング記録と結び付いていないメニューだけを更新します。
-
-本人IDも更新条件へ入れるため、別ユーザーのメニューは更新できません。
-
-### AIメニュー履歴で覚える単語
-
-| 単語・文法 | 意味 |
-| --- | --- |
-| ページネーション | 大量の履歴を複数ページへ分ける仕組み |
-| `offset` | 検索結果の先頭から飛ばす件数 |
-| `Math.ceil()` | 小数点以下を切り上げる |
-| `.returning()` | 保存・更新・削除後の行を返してもらう |
-| `isNull()` | DB列が`null`の行へ絞る |
-| `db.batch()` | 複数のDB命令を1回のまとまりで送る |
-| idempotent | 同じ通信を複数回送っても結果が壊れない性質 |
-| HTTP 409 | すでに別状態になっているデータとの競合 |
-| `cascade` | 親を削除したとき所属する子も削除する |
-| `set null` | 参照先削除時に結び付きだけを`null`へ戻す |
-
-この機能で重要なのは、URLやJSONで送られたIDだけを信用しないことです。
-
-必ずClerkで本人確認し、AIメニューとトレーニング記録の両方へ本人の`users.id`条件を付けてから操作します。
-
-## 同じAIメニューが続きすぎない調整
-
-### 何をする機能か
-
-AIが毎回ほぼ同じ部位・種目・順番を返すことを減らすため、本人が直近に生成した3件のAIメニューを比較材料としてOpenAIへ渡します。
-
-ただし、変化を作ることだけが目的ではありません。
-
-ベンチプレスなど成長の確認に必要な基本種目は残し、補助種目・順番・回数帯などを必要に応じて調整します。
-
-```text
-Neonから本人の直近3メニューを取得する
-                 ↓
-各メニューに含まれる種目を取得する
-                 ↓
-recentAiMenusとしてAI用データへ追加する
-                 ↓
-OpenAIが今日の状態と過去メニューを比較する
-                 ↓
-継続性を残しながら完全な繰り返しを減らす
-```
-
-### 関係するファイル
-
-| ファイル | 役割 |
-| --- | --- |
-| `app/lib/ai/getUserAiContext.ts` | Neonから直近3メニューと種目を取得する |
-| `app/api/ai-menu/route.ts` | 取得結果をOpenAIへ送るデータへ入れる |
-| `app/lib/ai/menuPrompt.ts` | どのように重複を避けるかAIへ指示する |
-
-### AI用データの型
-
-```ts
-recentAiMenus: {
-  id: string;
-  recommendedBodyPart: string;
-  reason: string;
-  createdAt: Date;
-
-  exercises: {
-    exerciseName: string;
-    bodyPart: string;
-    bodyArea: string | null;
-  }[];
-}[];
-```
-
-`recentAiMenus`は、最近生成したメニューを複数持つ配列です。
-
-`recommendedBodyPart`は、そのメニューでおすすめされた大きな部位です。
-
-`reason`は、その部位と構成をAIが選んだ理由です。
-
-`createdAt`は、メニューを生成した日時です。
-
-`exercises`は、各メニューに含まれる種目一覧です。
-
-外側の`[]`はメニューが複数あることを表し、内側の`exercises`の`[]`は1メニューに種目が複数あることを表します。
-
-### Neonから直近3件を取得する
-
-```ts
-const recentMenus = await db
-  .select({
-    id: aiGeneratedMenus.id,
-    recommendedBodyPart:
-      aiGeneratedMenus.recommendedBodyPart,
-    reason: aiGeneratedMenus.reason,
-    createdAt: aiGeneratedMenus.createdAt,
-  })
-  .from(aiGeneratedMenus)
-  .where(
-    eq(
-      aiGeneratedMenus.userId,
-      user.userId,
-    ),
-  )
-  .orderBy(
-    desc(aiGeneratedMenus.createdAt),
-    desc(aiGeneratedMenus.id),
-  )
-  .limit(3);
-```
-
-`.select({...})`は、比較に必要な項目だけをNeonから取得します。
-
-`.where(eq(...))`は、ログイン中の本人に対応する`users.id`のメニューだけへ絞ります。
-
-`desc(createdAt)`は、新しい生成日時から古い順へ並べます。
-
-`desc(id)`は、生成日時が同じ場合でも並び順を安定させます。
-
-`.limit(3)`は、取得件数を直近3件へ制限します。
-
-3件に制限する理由は、比較に必要な情報を確保しながらOpenAIへ送る文字数と料金を増やしすぎないためです。
-
-### 各メニューへ種目を追加する
-
-```ts
-const recentAiMenus =
-  await Promise.all(
-    recentMenus.map(
-      async (menu) => {
-        const exercises = await db
-          .select({
-            exerciseName:
-              aiGeneratedMenuExercises.exerciseName,
-            bodyPart:
-              aiGeneratedMenuExercises.bodyPart,
-            bodyArea:
-              aiGeneratedMenuExercises.bodyArea,
-          })
-          .from(aiGeneratedMenuExercises)
-          .where(
-            eq(
-              aiGeneratedMenuExercises.menuId,
-              menu.id,
-            ),
-          );
-
-        return {
-          ...menu,
-          exercises,
-        };
-      },
-    ),
-  );
-```
-
-`.map()`は、取得した3件のメニューを1件ずつ処理します。
-
-各メニューの`id`と同じ`menuId`を持つ種目だけを取得します。
-
-`return { ...menu, exercises }`は、元のメニュー情報へ種目一覧を追加した新しいオブジェクトを返します。
-
-`Promise.all()`は、複数メニューの種目取得がすべて完了するまで待ちます。
-
-### OpenAIへ渡す場所
-
-対象ファイルは`app/api/ai-menu/route.ts`です。
-
-```ts
-const aiInput = {
-  goalBodyType:
-    aiContext.goalBodyType,
-  profile:
-    aiContext.profile,
-  latestBodyAnalysis:
-    aiContext.latestBodyAnalysis,
-  recentTrainingSessions:
-    aiContext.recentTrainingSessions,
-  recentAiMenus:
-    aiContext.recentAiMenus,
-  todayCondition,
-};
-```
-
-`getUserAiContext()`で集めた`recentAiMenus`を、他の本人情報と同じ`aiInput`へ入れます。
-
-この`aiInput`がJSON文字列へ変換され、OpenAIへ送られます。
-
-直近メニューがまだない新規ユーザーでは、`recentAiMenus`は空配列`[]`になります。
-
-### プロンプトでの判断ルール
-
-`menuPrompt.ts`では、完全に同じ部位・種目・順番が続きすぎないよう指示します。
-
-同時に、基本種目を変化だけのために毎回外さないよう指示します。
-
-同じ部位を続ける合理的な理由がある場合は、補助種目・順番・回数帯の一部を調整するか、同じ構成が必要な理由を回答へ含めます。
-
-つまり「必ず違うメニューにする」のではなく、「過去を見たうえで継続か変化かを判断する」仕組みです。
-
-### この機能で覚える単語
-
-| 文法・単語 | 意味 |
-| --- | --- |
-| `recent` | 最近の、直近の |
-| `context` | AIの判断材料としてまとめた周辺情報 |
-| `.limit(3)` | DB取得を最大3件へ制限する |
-| `.map()` | 配列の各要素を処理して新しい配列を作る |
-| `Promise.all()` | 複数の非同期処理がすべて終わるまで待つ |
-| `...menu` | メニューの既存項目を新しいオブジェクトへ展開する |
-| 空配列`[]` | 対象データが0件であることを表す配列 |
-
-## このアプリでNeonを使う理由
-
-### Neon・PostgreSQL・Drizzleの関係
-
-Neonは、このアプリのデータをインターネット上で長期間保存するデータベースサービスです。
-
-Neonの中では、一般的なリレーショナルデータベースであるPostgreSQLが動いています。
-
-Drizzleは、TypeScriptからPostgreSQLのテーブルを定義・検索・保存するための道具です。
-
-```text
-route.ts
-   ↓ Drizzleで検索・保存
-Neon
-└─ PostgreSQL
-   ├─ users
-   ├─ user_profiles
-   ├─ training_sessions
-   ├─ body_analyses
-   └─ 今後のAIチャット履歴
-```
-
-### データを長期間保存できる
-
-ReactやPythonのサーバーを停止・再起動しても、Neonへ保存したユーザー情報やトレーニング記録は消えません。
-
-そのため、身体分析結果、過去の重量、AIチャット履歴などをユーザーごとの長期記憶として利用できます。
-
-### 小規模開発時の費用を抑えやすい
-
-Neonには、一定時間アクセスがない場合にデータベースの計算部分を停止するScale to Zeroがあります。
-
-停止中も保存データは残り、次のアクセス時に自動で再開します。
-
-開発中や利用者が少ない初期段階で、常にサーバーを動かし続ける費用を抑えやすくなります。
-
-ただし、自動停止後の最初のアクセスは、再開のため少し遅くなる場合があります。
-
-### 利用者が増えた場合に対応しやすい
-
-Autoscalingは、データベースの利用量に応じて計算能力を調整する仕組みです。
-
-利用者が増えた場合は、接続プールを使って大量の接続を効率よくまとめることもできます。
-
-### データ同士を安全に結び付けられる
-
-PostgreSQLでは、ユーザーIDを共通のキーとして本人の情報を結び付けられます。
-
-```text
-本人のusers.id
-├─ プロフィール
-├─ 理想体型
-├─ トレーニング記録
-├─ 身体分析結果
-├─ AI生成メニュー
-└─ AIチャット履歴
-```
-
-外部キーや本人確認を組み合わせることで、別ユーザーのデータが混ざるのを防ぎます。
-
-### データベースのブランチを作れる
-
-Neonのブランチは、本番データベースとは分離された環境でテーブル変更などを試す機能です。
-
-変更を安全に確認してから本番側へ反映できるため、利用者が増えた後の機能追加にも役立ちます。
-
-### PostgreSQLなので将来移行しやすい
-
-Neon独自形式だけに依存するデータベースではなくPostgreSQLなので、必要になった場合は別のPostgreSQL環境へ移行しやすい構成です。
-
-### セキュリティ上の注意
-
-`DATABASE_URL`はデータベースへ直接接続できる秘密情報なので、フロントエンドやGitHubへ公開してはいけません。
-
-フロントエンドは必ずTypeScriptバックエンドのAPIを経由し、本人確認後に必要なデータだけを取得・保存します。
-
-### 覚える単語
-
-- Neon：クラウド上でPostgreSQLを利用するサービス
-- PostgreSQL：表同士を関連付けて保存できるデータベース
-- Drizzle：TypeScriptからPostgreSQLを操作するORM
-- Scale to Zero：未使用時に計算部分を停止して費用を抑える仕組み
-- Autoscaling：利用量に合わせて計算能力を調整する仕組み
-- 接続プール：多数のDB接続をまとめて効率よく再利用する仕組み
-- DBブランチ：本番と分離したデータベース環境で変更を試す仕組み
-
-### 覚える単語
-
-- `AsyncOpenAI`：OpenAI APIを非同期で呼び出すPythonクライアント
-- `responses.parse()`：入力をモデルへ送り、指定した構造で結果を受け取る処理
-- Structured Outputs：AIの出力を決められたJSON構造へそろえる機能
-- `output_parsed`：指定したPydantic型として検査・変換された結果
-- HTTP 502：外部サービスから正常な結果を受け取れなかったことを示すステータス
-
-## 初回設定の完了状態を保存するAPI
-
-担当ファイルは`app/api/users/onboarding-complete/route.ts`です。
-
-このAPIは、理想体型・必須の身体情報・初回身体分析がすべて完了したことを確認し、次回起動時に初回設定を繰り返さないようにするTypeScriptバックエンドです。
-
-```text
-フロントからPOST通信
-↓
-Clerkでログイン本人を確認
-↓
-Neonから理想体型・身長・体重を取得
-↓
-完了済みの身体分析があるか確認
-↓
-initialAnalysisCompletedをtrueへ更新
-↓
-onboardingCompletedをtrueへ更新
-↓
-完了状態をJSONでフロントへ返す
-```
-
-### なぜこのAPIが必要なのか
-
-Reactの`useState`だけに保存した値は、画面の再読み込みやアプリの再起動によって失われます。
-
-Neonの`users.onboardingCompleted`へ`true`を保存すると、サーバーやアプリを再起動しても初回設定を完了した事実が残ります。
-
-次回起動時は`POST /api/users/bootstrap`がこの値を取得し、`true`ならホーム、`false`なら初回設定へ進む判断に使います。
-
-このAPIが保存するのは理想体型や身長そのものではなく、「初回設定全体が完了した」という状態です。
-
-- 理想体型の保存：`PATCH /api/users/goal`
-- 身長・体重などの保存：`PATCH /api/users/profile`
-- 身体分析結果の保存：`POST /api/body-analysis`
-- 初回設定完了状態の保存：`POST /api/users/onboarding-complete`
-
-### 本人データの取得
-
-```typescript
-const matchedUsers = await db
-  .select({
-    userId: users.id,
-    goalBodyType: users.goalBodyType,
-    heightCm: userProfiles.heightCm,
-    weightKg: userProfiles.weightKg,
-  })
-  .from(users)
-  .leftJoin(
-    userProfiles,
-    eq(userProfiles.userId, users.id),
-  )
-  .where(eq(users.clerkUserId, clerkUserId))
-  .limit(1);
-```
-
-`.select({...})`は、確認に必要な項目だけを取得します。
-
-`.from(users)`は、`users`テーブルを検索の中心にします。
-
-`.leftJoin(userProfiles, ...)`は、同じ利用者の身体プロフィールを`users`へ結び付けます。
-
-`.where(eq(users.clerkUserId, clerkUserId))`は、Clerkで確認した本人のデータだけへ絞り込みます。
-
-`.limit(1)`は、取得件数を最大1件にします。
-
-### 必須情報の確認
-
-```typescript
-if (
-  user.goalBodyType === null ||
-  user.heightCm === null ||
-  user.weightKg === null
-) {
-  return Response.json(
-    { error: "理想体型と身長・体重を先に設定してください。" },
-    { status: 400 },
-  );
-}
-```
-
-`=== null`は、Neonに値がまだ保存されていないかを確認します。
-
-`||`は、どれか一つでも未設定なら条件が成立する「または」です。
-
-この確認により、不完全な状態で初回設定が完了扱いになることを防ぎます。
-
-### 完了済み身体分析の確認
-
-```typescript
-.where(
-  and(
-    eq(bodyAnalyses.userId, user.userId),
-    eq(bodyAnalyses.status, "completed"),
-  ),
-)
-```
-
-`and()`は、複数の条件をすべて満たすデータだけを検索します。
-
-1つ目の`eq()`は、分析結果がログイン中の本人のものか確認します。
-
-2つ目の`eq()`は、分析処理が`completed`まで完了しているか確認します。
-
-### 初回設定状態の更新
-
-```typescript
-const updatedUsers = await db
-  .update(users)
-  .set({
-    initialAnalysisCompleted: true,
-    onboardingCompleted: true,
-    updatedAt: new Date(),
-  })
-  .where(eq(users.id, user.userId))
-  .returning({
-    userId: users.id,
-    onboardingCompleted: users.onboardingCompleted,
-    initialAnalysisCompleted: users.initialAnalysisCompleted,
-  });
-```
-
-`.update(users)`は、`users`テーブルを更新対象にします。
-
-`.set({...})`は、変更する列と新しい値を指定します。
-
-`initialAnalysisCompleted: true`は、初回分析が完了した状態です。
-
-`onboardingCompleted: true`は、初回設定全体が完了した状態です。
-
-`updatedAt: new Date()`は、最後に更新した日時を現在時刻へ変更します。
-
-`.where(eq(users.id, user.userId))`は、本人の1件だけを更新します。
-
-`.returning({...})`は、Neonで更新された後の値を受け取ります。
-
-### 覚える単語
-
-- オンボーディング：利用開始時に行う初回設定
-- 完了フラグ：完了したかを`true`または`false`で保存する値
-- `and()`：複数の検索条件をすべて満たすようにつなぐ
-- `.update()`：既存のデータを変更する
-- `.set()`：変更後の値を指定する
-- `.returning()`：保存・更新後の値をデータベースから受け取る
-- HTTP 400：入力や現在の設定状態に問題がある
-- HTTP 401：ログインを確認できない
-- HTTP 404：対象のユーザーが見つからない
-- HTTP 500：サーバー内で予想外のエラーが起きた
-
-### 現在の確認状況
-
-`npm run build`で`/api/users/onboarding-complete`がAPIルートとして認識され、ビルドに成功することを確認済みです。
-
-実際のClerk認証・Neonデータを使ったフロントからの通し確認は、フロント接続後に行います。
-
-## 保存済みの理想体型を取得するGET API
-
-担当ファイルは`app/api/users/goal/route.ts`です。
-
-同じURLでも、HTTPメソッドによって役割が分かれます。
-
-```text
-GET /api/users/goal
-→ Neonに保存済みの理想体型を取得する
-
-PATCH /api/users/goal
-→ 理想体型を新しく保存または変更する
-```
-
-`GET()`は、画面の再表示やアプリ再起動後に以前の選択内容を復元するために使います。
-
-```typescript
-const matchedUsers = await db
-  .select({
-    userId: users.id,
-    goalBodyType: users.goalBodyType,
-  })
-  .from(users)
-  .where(eq(users.clerkUserId, clerkUserId))
-  .limit(1);
-```
-
-`.select({...})`で、本人のアプリ内IDと理想体型だけを取得します。
-
-`.where(eq(...))`で、Clerk認証を通過した本人のデータだけに絞ります。
-
-```typescript
-const user = matchedUsers[0] ?? null;
-```
-
-Neonの検索結果は配列なので、`[0]`で最初の1件を取り出します。
-
-`?? null`は、検索結果が存在しない場合の値を`null`へ統一します。
-
-```typescript
-return Response.json({
-  goalBodyType: user.goalBodyType,
-});
-```
-
-取得できた理想体型をJSONとしてフロントエンドへ返します。
-
-理想体型がまだ未設定の場合は、`goalBodyType`が`null`として返ります。
-
-### 覚える単語
-
-- GET：保存済みデータを取得するためのHTTPメソッド
-- PATCH：既存データの一部を変更するためのHTTPメソッド
-- 復元：以前保存した値を取得して画面へ戻すこと
-- `[0]`：配列の最初の要素を取り出す指定
-- `?? null`：左側に値がなければ`null`を使う書き方
-
-`npm run build`で、GET追加後もビルドに成功することを確認済みです。
-
-## bootstrap APIで初回設定の途中経過を返す
-
-担当ファイルは`app/api/users/bootstrap/route.ts`です。
-
-bootstrapは、アプリを使い始めるための状態を最初に準備・確認する処理です。
-
-このアプリでは、Clerkログイン後に本人をNeonへ登録または検索し、次に表示する画面を決める情報を返します。
-
-```text
-アプリ起動
-↓
-Clerkでログイン本人を確認
-↓
-Neonに未登録ならusersへ新規登録
-↓
-登録済みなら初回設定の進行状態を取得
-↓
-進行状態をJSONでフロントへ返す
-```
-
-現在は次の形式で返します。
-
-```typescript
-return Response.json({
-  userId: clerkUserId,
-  onboardingCompleted: existingUser.onboardingCompleted,
-  goalBodyType: existingUser.goalBodyType,
-  profileCompleted: existingUser.profileCompleted,
-  initialAnalysisCompleted: existingUser.initialAnalysisCompleted,
-});
-```
-
-`userId`は、Clerkで確認した利用者を識別するIDです。
-
-`goalBodyType`は、以前選択した理想体型です。未設定なら`null`です。
-
-`profileCompleted`は、必須の身長・体重が保存済みかを示します。
-
-`initialAnalysisCompleted`は、初回身体分析が完了済みかを示します。
-
-`onboardingCompleted`は、初回設定全体が完了済みかを示します。
-
-これらは今回Neonへ保存する処理ではなく、Neonにすでに保存されている状態をフロントへ返す処理です。
-
-フロントは次の順番で画面を判断できます。
-
-```text
-onboardingCompletedがtrue
-→ ホーム
-
-goalBodyTypeがnull
-→ 理想体型設定
-
-profileCompletedがfalse
-→ 身体情報入力
-
-initialAnalysisCompletedがfalse
-→ 初回身体分析
-```
-
-これにより、初回設定の途中でアプリを閉じても、完了済み画面を飛ばして続きから再開できます。
-
-### 覚える単語
-
-- bootstrap：アプリ起動時に利用開始の状態を準備・確認する処理
-- 進行状態：利用者が各設定をどこまで完了したかを表す値
-- 真偽値：`true`または`false`の2種類を持つ値
-- `Response.json()`：フロントへJSON形式のデータを返す処理
-
-返却項目の追加後に`npm run build`が成功することを確認済みです。
-
-## スマホ側でbootstrap APIの返却型を定義する
-
-担当ファイルは`mobile/src/lib/bootstrap.ts`です。
-
-バックエンドが返すJSONをTypeScriptが正しく理解できるように、`BootstrapResponse`へ初回設定の各状態を定義しています。
-
-```typescript
-export type BootstrapResponse = {
-  userId: string;
-  onboardingCompleted: boolean;
-  goalBodyType: string | null;
-  profileCompleted: boolean;
-  initialAnalysisCompleted: boolean;
-};
-```
-
-`type`は、データがどの項目と型を持つかを表すTypeScriptの設計図です。
-
-`string`は文字列、`boolean`は`true`または`false`を表します。
-
-`string | null`は、文字列が入る場合と、まだ未設定で`null`になる場合の両方を許可します。
-
-ここはNeonへ保存したり画面を移動したりする処理ではありません。
-
-APIから受け取るデータの形をTypeScriptへ教え、項目名の間違いや型の不一致を開発中に見つけるための部分です。
-
-変更後にスマホ版で`npx tsc --noEmit`を実行し、TypeScriptエラーがないことを確認済みです。
-
-## bootstrapの進行状態で続きの画面へ移動する
-
-担当ファイルは`mobile/src/app/bootstrap.tsx`です。
-
-`fetchBootstrap(token)`でバックエンドから進行状態を取得し、最初に見せるべき画面を判断します。
-
-```typescript
-if (data.onboardingCompleted) {
-  router.replace('/home');
-  return;
-}
-
-if (data.goalBodyType === null) {
-  router.replace('/ideal-body');
-  return;
-}
-
-if (!data.profileCompleted) {
-  router.replace('/profile-setup');
-  return;
-}
-
-router.replace('/initial-analysis');
-```
-
-最初の`if`は、初回設定全体が完了済みならホームへ移動します。
-
-2番目の`if`は、理想体型が未設定なら理想体型選択へ移動します。
-
-3番目の`if`は、身体プロフィールが未完了なら身体情報入力へ移動します。
-
-ここまでに該当しなければ理想体型とプロフィールは保存済みなので、初回分析へ移動します。
-
-`return`は、移動先が決まった後に下の条件を続けて実行しないために使います。
-
-`router.replace()`は現在の画面を履歴上で置き換えるため、戻る操作で起動確認画面へ戻りにくくします。
-
-この分岐により、アプリを途中で閉じても、Neonに保存された進行状態から続きの画面を判断できます。
-
-変更後にスマホ版の`npx tsc --noEmit`が成功することを確認済みです。
-
-## 初回設定の保存・復元を画面まで接続する
-
-### 全体の役割
-
-今回の接続により、初回設定はReactの`useState`だけではなくNeonへ長期保存されます。
-
-```text
-理想体型画面
-↓ PATCH /api/users/goal
-Neonへ理想体型を保存
-↓
-身体情報画面
-↓ PATCH /api/users/profile
-Neonへプロフィールを保存
-↓
-初回分析画面
-↓ 身体写真分析画面
-↓ POST /api/body-analysis
-Python・OpenAIで分析してNeonへ結果を保存
-↓ POST /api/users/onboarding-complete
-初回設定完了をNeonへ保存
-↓
-ホーム
-```
-
-次回起動時は`bootstrap API`の後に保存済みデータを取得し、React Contextへ戻します。
-
-### プロフィール通信ファイル
-
-担当ファイルは`mobile/src/lib/profiles.ts`です。
-
-`fetchUserProfile(token)`は`GET /api/users/profile`を呼び、Neonに保存済みの身体プロフィールを取得します。
-
-`saveUserProfile(token, profile)`は`PATCH /api/users/profile`を呼び、入力したプロフィールを保存します。
-
-```typescript
-export function profileDraftToApiInput(
-  profile: ProfileDraft,
-) {
-  return {
-    heightCm: Number(profile.heightCm),
-    weightKg: Number(profile.weightKg),
-    bodyFatPercentage:
-      profile.bodyFatPercentage === ''
-        ? null
-        : Number(profile.bodyFatPercentage),
-  };
-}
-```
-
-React Nativeの入力欄は値を文字列として持つため、`Number()`でバックエンドが保存できる数値へ変換します。
-
-任意の体脂肪率が空欄なら、存在しない値を表す`null`へ変換します。
-
-```typescript
-export function userProfileToDraft(
-  profile: UserProfile,
-): ProfileDraft
-```
-
-この関数は反対に、Neonから取得した数値を入力欄で再表示できる文字列へ戻します。
-
-### 起動時のReact Context復元
-
-担当ファイルは`mobile/src/app/bootstrap.tsx`です。
-
-```typescript
-if (data.goalBodyType !== null) {
-  const restoredGoal =
-    goalBodyTypeToSelection(
-      data.goalBodyType,
-    );
-
-  if (restoredGoal) {
-    setGoalBody(restoredGoal);
-  }
-}
-```
-
-Neonの`細マッチョ`などの日本語名を、理想体型画面が使用する`lean-muscle`などのIDへ変換してContextへ戻します。
-
-```typescript
-if (data.profileCompleted) {
-  const profileResponse =
-    await fetchUserProfile(token);
-
-  if (profileResponse.profile) {
-    setProfile(
-      userProfileToDraft(
-        profileResponse.profile,
-      ),
-    );
-  }
-}
-```
-
-身体情報が保存済みの場合だけプロフィールGET APIを呼び、取得結果を入力フォーム用の形へ変換してContextへ戻します。
-
-これにより、ホームやマイページなどContextを読む画面でも再起動前の値を利用できます。
-
-### 身体情報画面の保存
-
-担当ファイルは`mobile/src/app/profile-setup.tsx`です。
-
-`continueToAnalysis()`を`async`関数にして、Clerkトークン取得とプロフィールAPIの完了を待つように変更しました。
-
-```typescript
-const token = await getToken();
-await saveUserProfile(token, form);
-setProfile(form);
-router.push('/initial-analysis');
-```
-
-`await saveUserProfile()`によって、Neon保存が終わるまで画面移動を待ちます。
-
-保存成功後だけContextを更新して初回分析画面へ進みます。
-
-保存失敗時は`catch`でエラーを画面へ表示し、入力内容を残したまま再試行できます。
-
-身長と体重だけを必須とし、体脂肪率・場所・週の回数・1回の時間・苦手部位・トレーニング形式は任意です。
-
-### 初回分析と定期分析の分岐
-
-担当ファイルは`mobile/src/app/initial-analysis.tsx`と`mobile/src/app/body-analysis.tsx`です。
-
-初回分析画面は次のURLパラメータを付けて身体写真分析へ移動します。
-
-```typescript
-router.push({
-  pathname: '/body-analysis',
-  params: {
-    initial: 'true',
-  },
-});
-```
-
-`params`は、同じ身体分析画面へ「今回は初回分析である」という追加情報を渡します。
-
-身体分析画面ではExpo Router v57の`useLocalSearchParams()`を使って値を受け取ります。
-
-```typescript
-const { initial } =
-  useLocalSearchParams<{
-    initial?: string;
-  }>();
-
-const isInitialAnalysis =
-  initial === 'true';
-```
-
-初回分析の場合は、分析結果を確認した後に`completeOnboarding(token)`を呼びます。
-
-定期分析の場合は初回設定状態を変更せず、分析履歴画面へ移動します。
-
-### 初回設定完了の通信ファイル
-
-担当ファイルは`mobile/src/lib/onboarding.ts`です。
-
-```typescript
-export function completeOnboarding(
-  token: string,
-) {
-  return apiRequest(
-    '/api/users/onboarding-complete',
-    {
-      method: 'POST',
-      token,
-    },
-  );
-}
-```
-
-この関数は初回設定を直接完了させるのではなく、バックエンドへ完了確認を依頼します。
-
-バックエンドは理想体型・身長・体重・完了済み身体分析を確認してから、Neonの完了状態を`true`へ更新します。
-
-## 身体分析履歴をNeonから取得して表示する
-
-### バックエンドGET API
-
-担当ファイルは`app/api/body-analysis/route.ts`です。
-
-同じURLで役割を分けています。
-
-```text
-GET /api/body-analysis
-→ 本人の保存済み分析履歴を取得
-
-POST /api/body-analysis
-→ 画像3枚を分析し、結果を保存
-```
-
-GETではClerkユーザーIDから本人の`users.id`を取得し、`body_analyses`を新しい順で最大50件取得します。
-
-```typescript
-.where(
-  and(
-    eq(bodyAnalyses.userId, user.id),
-    eq(bodyAnalyses.status, 'completed'),
-  ),
-)
-.orderBy(desc(bodyAnalyses.analyzedAt))
-.limit(50)
-```
-
-`and()`によって、本人のデータかつ完了済みの分析だけに限定します。
-
-`desc()`は日時を降順に並べ、最新の分析を先頭にします。
-
-各分析について`body_analysis_areas`を検索し、肩・胸などの部位別評価を結び付けて返します。
-
-### スマホ側の履歴通信
-
-担当ファイルは`mobile/src/lib/bodyAnalyses.ts`です。
-
-`BodyAnalysisHistoryItem`は、バックエンドから受け取る分析全体・日時・理想との差・部位別評価のTypeScript設計図です。
-
-`fetchBodyAnalysisHistory(token)`は認証トークンを付けてGET APIを呼びます。
-
-### 分析履歴画面
-
-担当ファイルは`mobile/src/app/analysis-history.tsx`です。
-
-Expo Routerの`useFocusEffect()`を使い、分析画面から戻って再び履歴画面が表示されたときも最新データを取得します。
-
-履歴画面には次を表示します。
-
-- 保存済み分析の回数
-- 最新分析の部位別平均スコア
-- 分析日時
-- AIの分析要約
-- 理想体型との差
-- 肩・胸などの部位別スコア
-- 部位別の観察内容とおすすめ
-
-分析時点の体重を保存する列は現在ないため、仮の体重推移やBMIは表示しません。
-
-通信中はローディング、履歴0件なら空状態、通信失敗時はエラーと再試行ボタンを表示します。
-
-### セキュリティ確認
-
-認証トークンなしで次のAPIを呼び、どちらもHTTP 401と`ログインが必要です`を返すことを確認しました。
-
-- `GET /api/body-analysis`
-- `POST /api/users/onboarding-complete`
-
-これにより、ログインしていない通信から身体分析履歴を取得したり初回設定を変更したりできないことを確認しています。
-
-### 検証結果
-
-- スマホ版`npx tsc --noEmit`：成功
-- スマホ版`npm run lint`：成功
-- バックエンド`npm run build`：成功
-- 認証なしAPI確認：HTTP 401
-
-実際のClerkログインユーザー・Neonデータ・Python分析APIを使った通し確認はまだ必要です。
-
-## 理想体型画面とバックエンドAPIをつなぐ通信ファイル
-
-担当ファイルは`mobile/src/lib/goals.ts`です。
-
-このファイルはNeonを直接操作せず、理想体型の取得・保存をTypeScriptバックエンドへ依頼します。
-
-```text
-理想体型画面
-↓ goals.ts
-↓ GETまたはPATCH
-app/api/users/goal/route.ts
-↓ 本人確認
-Neon
-```
-
-`GoalBodyType`は、バックエンドへの保存を許可する4種類の文字列だけを表すTypeScriptの型です。
-
-`fetchGoalBodyType(token)`は`GET /api/users/goal`を呼び、保存済みの理想体型を取得します。
-
-`saveGoalBodyType(token, goalBodyType)`は`PATCH /api/users/goal`を呼び、選択した理想体型の保存を依頼します。
-
-```typescript
-body: JSON.stringify({
-  goalBodyType,
-})
-```
-
-`JSON.stringify()`は、JavaScript・TypeScriptのオブジェクトをHTTP通信で送れるJSON文字列へ変換します。
-
-`token`はバックエンド側でClerkのログイン本人を確認するために送ります。
-
-スマホからNeonへ直接接続しない理由は、`DATABASE_URL`などの秘密情報をアプリ利用者へ公開しないためです。
-
-参考画像はこのAPIの対象ではなく、画像ストレージと専用アップロード処理を作成した後に接続します。
-
-変更後にスマホ版の`npx tsc --noEmit`が成功することを確認済みです。
-# 身体分析を任意にする仕組み
-
-初回設定で必須なのは、理想体型・身長・体重です。身体写真による分析は任意で、利用者は初回分析画面から「今は分析せずホームへ進む」を選べます。
-
-## フロントエンド：`mobile/src/app/initial-analysis.tsx`
-
-`skipBodyAnalysis()` は、身体写真を送らずに初回設定を完了するための関数です。
-
-- `getToken()`：現在ログインしている本人のClerk認証トークンを取得します。
-- `completeOnboarding(token)`：認証トークンを付けて、初回設定完了APIを呼びます。
-- `router.replace('/home')`：保存に成功した後、初回分析画面へ戻れない形でホームへ移動します。
-- `isSkipping`：保存処理中の二重送信を防ぎ、処理中の表示へ切り替えるStateです。
-- `skipError`：保存に失敗した場合のメッセージを画面へ表示するStateです。
-
-## バックエンド：`app/api/users/onboarding-complete/route.ts`
-
-このAPIは、理想体型・身長・体重がNeonに保存済みか確認し、そろっていれば `onboardingCompleted` を `true` にします。
-
-```ts
-initialAnalysisCompleted:
-  completedAnalyses.length > 0,
-```
-
-`completedAnalyses.length > 0` は、完了済みの身体分析が1件以上あるかを調べています。分析済みなら `true`、スキップした場合は `false` です。身体分析をスキップしても `onboardingCompleted` は `true` になるため、次回起動時はホームへ進めます。
-# Renderへ公開したPython身体分析API
-
-身体分析用FastAPIをRenderのStarterプランへ公開しています。
-
-```text
-https://musclepas-body-analysis.onrender.com
-```
-
-ローカル開発では以前、TypeScriptバックエンドから `http://127.0.0.1:8000` のPythonへ接続していました。現在は `.env.local` の次の設定により、Render上のPythonへ接続します。
-
-```env
-PYTHON_ANALYSIS_URL=https://musclepas-body-analysis.onrender.com
-```
-
-処理の流れは次のとおりです。
-
-```text
-スマホ画面
-→ TypeScriptバックエンド
-→ Render上のPython FastAPI
-→ OpenAI画像分析
-→ Pythonが分析結果JSONを返す
-→ TypeScriptがNeonへ保存
-→ スマホ画面へ結果を返す
-```
-
-Renderには `OPENAI_API_KEY` を環境変数として保存しています。秘密鍵はGitHubやアプリのフロントエンドへ書いてはいけません。`/health` はOpenAIを呼ばず、Pythonサービスが起動しているかだけを確認するURLです。
-
-# スマホ版AIチャットとバックエンドの接続
-
-今回の担当ファイルは次の3つです。
-
-- `mobile/src/lib/chatApi.ts`：チャットAPIとの通信だけを担当します。
-- `mobile/src/app/chat.tsx`：質問の入力とAI回答の表示を担当します。
-- `mobile/src/contexts/ChatHistoryContext.tsx`：画面内のチャットとNeon側のチャットIDを紐づけます。
-
-処理の流れは次のとおりです。
-
-```text
-スマホのチャット入力欄
-→ Clerkの認証トークンを取得
-→ chatApi.tsからPOST /api/chatを呼ぶ
-→ TypeScriptバックエンドが本人確認
-→ OpenAIが回答を生成
-→ バックエンドがNeonへ会話を保存
-→ replyをスマホへ返す
-→ chat.tsxがAIの吹き出しへ表示
-```
-
-## `sendChatMessage()`
-
-`sendChatMessage()`は、利用者の質問・Clerkトークン・会話IDをバックエンドへ送る関数です。
-
-```ts
-sendChatMessage(
-  token,
-  content,
-  serverConversationId,
-)
-```
-
-- `token`：ログイン中の本人だと証明する値です。
-- `content`：入力欄に書かれた質問です。
-- `serverConversationId`：Neonに保存されているチャットルームのIDです。新規チャットでは`null`になります。
-
-バックエンドからは次の形で結果が返ります。
-
-```ts
-{
-  conversationId: string;
-  reply: string;
-}
-```
-
-`conversationId`はNeon側のチャットID、`reply`はOpenAIが生成した回答です。
-
-## スマホ内IDとNeon側ID
-
-`id`は、スマホ画面上でチャットを見分けるための仮IDです。
-
-`serverConversationId`は、Neonに保存された本物のチャットルームIDです。
-
-最初の送信では`serverConversationId`が`null`なので、バックエンドが新しいチャットルームを作ります。返されたIDを`setServerConversationId()`で画面内のチャットへ保存し、2回目以降の質問を同じ会話へ追加します。
-
-未ログインの場合は`Redirect`で`/sign-in`へ移動し、認証なしでチャットAPIを利用できないようにしています。
-
-実通信テストでは、スマホ画面から送った「接続テストです。短く返答してください。」に対して、AIから「接続できています。」と回答が表示されることを確認済みです。
-
-現在は、画面を開いている間の表示だけでなく、アプリを再読み込みした後にNeonから過去のチャット一覧とメッセージを読み戻すところまで完成しています。
-
-## Neonからチャット履歴を取得する通信関数
-
-担当ファイルは`mobile/src/lib/chatApi.ts`です。
-
-`fetchChatHistory()`は、Clerkトークンを付けて`GET /api/chat`を呼び、ログイン中の本人のチャット履歴を取得します。
-
-```ts
-fetchChatHistory(
-  token,
-  conversationId,
-)
-```
-
-- `conversationId`なし：本人のチャットルーム一覧を取得します。
-- `conversationId`あり：一覧に加えて、指定したチャットのメッセージを取得します。
-
-```ts
-const query = conversationId
-  ? `?conversationId=${encodeURIComponent(
-      conversationId,
-    )}`
-  : '';
-```
-
-三項演算子`条件 ? A : B`を使い、チャットIDがある場合だけURLへ検索条件を追加しています。
-
-`encodeURIComponent()`は、値にURLで特別な意味を持つ文字が含まれても壊れないよう、安全なURL用文字列へ変換します。
-
-```text
-スマホのfetchChatHistory()
-→ GET /api/chat
-→ Clerkで本人確認
-→ Neonから本人のチャットだけを検索
-→ conversationsとmessagesをJSONで返す
-```
-
-通信関数・TypeScriptのデータ型・`ChatHistoryContext`への保存・画面を開いたときの自動取得まで実装済みです。
-
-## 取得したチャット履歴をStateへ保存する
-
-担当ファイルは`mobile/src/contexts/ChatHistoryContext.tsx`です。
-
-`replaceConversations()`は、現在のチャット一覧をNeonから取得した一覧へ丸ごと置き換えます。
-
-`setConversationMessages()`は、`map()`で全チャットを確認し、指定したIDのチャットだけ`messages`を取得結果へ変更します。
-
-```text
-fetchChatHistory()が履歴を取得
-→ replaceConversations()が一覧をStateへ保存
-→ 利用者がチャットを選択
-→ setConversationMessages()がその会話のメッセージをStateへ保存
-→ chat.tsxがStateを吹き出しとして表示
-```
-
-この2つはNeonへ直接接続する関数ではありません。APIから受け取ったデータを、Reactの画面が利用できるStateへ入れる役割です。
-
-## チャット画面を開いたときの履歴復元
-
-担当ファイルは`mobile/src/app/chat.tsx`です。
-
-チャット画面では、次の2段階で履歴を取得します。
-
-```text
-1回目：チャットルームの一覧だけを取得
-↓
-最初のチャット、または利用者が選んだチャットを決める
-↓
-2回目：選ばれたチャットのメッセージだけを取得
-↓
-質問とAI回答を吹き出しで表示
-```
-
-一覧と全メッセージを一度に取得しない理由は、過去の会話が増えたときに大量の文章を毎回ダウンロードしないためです。最初はタイトルなどの軽い情報だけを取得し、開く会話の本文だけを後から取得します。
-
-### 日付を画面用の数値へ変換する
-
-```ts
-function toTimestamp(value: string) {
-  const timestamp = Date.parse(value);
-  return Number.isNaN(timestamp) ? Date.now() : timestamp;
-}
-```
-
-`value`にはAPIから届いた日付文字列が入ります。
-
-`Date.parse(value)`は日付文字列を、React側で比較や並び替えに使いやすいミリ秒の数値へ変換します。
-
-`Number.isNaN(timestamp)`は、変換結果が正しい数値ではないかを確認します。
-
-`条件 ? A : B`は三項演算子です。変換に失敗した場合は現在時刻の`Date.now()`、成功した場合は変換済みの`timestamp`を返します。
-
-### チャット一覧を取得する`useEffect`
-
-```ts
-useEffect(() => {
-  if (!isLoaded || !isSignedIn) return;
-
-  // この中でfetchChatHistory(token)を実行する
-}, [isLoaded, isSignedIn, replaceConversations]);
-```
-
-`useEffect()`は、画面表示後に通信などの処理を実行するReactの機能です。
-
-`!isLoaded`はClerkのログイン状態をまだ確認中、`!isSignedIn`は未ログインという意味です。本人確認前には履歴APIを呼びません。
-
-`fetchChatHistory(token)`は`conversationId`を渡していないため、本人のチャットルーム一覧だけを取得します。
-
-取得した`response.conversations`へ`.map()`を使い、APIのデータを画面用の`ChatConversation`へ1件ずつ変換します。
-
-```ts
-const loadedConversations = response.conversations.map((conversation) => ({
-  id: conversation.id,
-  serverConversationId: conversation.id,
-  title: conversation.title,
-  messages: [],
-  updatedAt: toTimestamp(conversation.updatedAt),
-}));
-```
-
-`conversation`は、`.map()`が現在処理しているチャット1件です。そのため、かっこの中では`conversation.id`や`conversation.title`を使用します。
-
-`messages: []`が空なのは、この段階では一覧だけを取得しているためです。本文は選ばれたチャットに対して次の`useEffect`が取得します。
-
-`replaceConversations(loadedConversations)`は、React Context内の一覧をNeonから取得した最新の一覧へ置き換えます。
-
-`setActiveId()`は、今まで選んでいたチャットが一覧に残っていればそのIDを使い、なければ一覧の先頭を選びます。
-
-### 選択したチャットのメッセージを取得する`useEffect`
-
-```ts
-const localConversationId = activeConversation?.id ?? null;
-const serverConversationId = activeConversation?.serverConversationId ?? null;
-```
-
-`activeConversation?.id`の`?.`は、チャットが存在するときだけ`id`を読むという意味です。存在しない場合にエラーを起こさず`undefined`になります。
-
-`?? null`は、左側が`null`または`undefined`なら`null`を使うという意味です。
-
-```ts
-const response = await fetchChatHistory(
-  token,
-  selectedServerConversationId,
-);
-```
-
-今回は`conversationId`を渡すため、`GET /api/chat?conversationId=...`となり、選択した会話のメッセージも取得します。
-
-`await`はAPIの返事が届くまで、この非同期処理の続きだけを待たせます。アプリ全体を停止する命令ではありません。
-
-```ts
-const loadedMessages: ChatMessage[] = response.messages.map((message) => ({
-  id: message.id,
-  role: message.role,
-  content: message.content,
-  createdAt: toTimestamp(message.createdAt),
-}));
-```
-
-ここでも`.map()`を使い、Neonから届いたメッセージをReact画面で使う`ChatMessage`形式へ1件ずつ変換します。
-
-`role`は発言者です。`user`なら利用者の吹き出し、`assistant`ならAIの吹き出しとして表示します。
-
-`setConversationMessages(selectedLocalConversationId, loadedMessages)`は、選択中のチャットだけへ取得した本文を保存します。
-
-### `useRef`で二重取得を防ぐ
-
-```ts
-const loadedMessageConversationIds = useRef(new Set<string>());
-```
-
-`useRef()`は、画面が再描画されても値を残しつつ、その値を変更しても再描画を起こさないReactの機能です。
-
-`Set<string>`は、同じ文字列を重複して持たない入れ物です。ここには取得済みのNeonチャットIDを保存します。
-
-すでにIDが`Set`へ入っているチャットは再通信しないため、同じメッセージを何度も取得することを防ぎます。
-
-```ts
-const messageRequestId = useRef(0);
-```
-
-これはメッセージ取得通信へ順番の番号を付ける値です。利用者がすぐ別チャットへ切り替えた場合でも、古い通信ではなく現在の通信が終わったときだけローディング表示を消します。
-
-### `getTokenRef`が必要な理由
-
-```ts
-const getTokenRef = useRef(getToken);
-
-useEffect(() => {
-  getTokenRef.current = getToken;
-}, [getToken]);
-```
-
-`getToken`はClerkから認証トークンを取得する関数です。
-
-この関数そのものを履歴取得用`useEffect`の監視対象にすると、画面の再描画時に関数が変わったと判断され、通信が途中から繰り返される場合があります。
-
-そこで最新の`getToken`を`getTokenRef.current`へ保持します。認証関数は最新のものを使いながら、履歴通信はログイン状態や選択チャットが本当に変わったときだけ動かします。
-
-今回「保存済みのチャットを読み込んでいます…」が消えなかった主な原因は、この通信の再実行と古い通信の終了処理が重なっていたことです。
-
-### `cancelled`の役割
-
-```ts
-let cancelled = false;
-
-return () => {
-  cancelled = true;
-};
-```
-
-`useEffect`の対象が変わったり画面を閉じたりすると、`return`内の後片付けが実行されます。
-
-古い通信の返事が後から届いても、`cancelled`が`true`なら古い結果で現在の画面を上書きしません。
-
-### `useCallback`をContextで使う理由
-
-担当ファイルは`mobile/src/contexts/ChatHistoryContext.tsx`です。
-
-```ts
-const replaceConversations = useCallback((loadedConversations) => {
-  setConversations(loadedConversations);
+```tsx
+const loadHome = useCallback(async () => {
+  // API通信
 }, []);
 ```
 
-`useCallback()`は関数を再利用し、再描画のたびに別の関数として作り直されることを防ぎます。
+特に`useEffect`から呼ぶ関数で使います。
 
-`replaceConversations`や`setConversationMessages`が毎回別の関数になると、それらを監視する`useEffect`が不要に再実行される可能性があります。チャット一覧・作成・削除・メッセージ追加・サーバーID保存の各関数を`useCallback`で安定させています。
+## `useRef`
 
-## チャット履歴復元の動作確認結果
+再描画しても保持したい値を保存します。
 
-ブラウザでチャット画面を再読み込みし、次を確認しました。
+```tsx
+const savingLock = useRef(false);
+```
 
-- Neonに保存された4件のチャットタイトルが履歴メニューへ表示される。
-- 最初の保存済みチャットの利用者メッセージとAI回答が自動表示される。
-- 履歴メニューから別のチャットを選ぶと、そのチャットのメッセージだけを取得して表示できる。
-- 読み込み完了後に「保存済みのチャットを読み込んでいます…」が消える。
-- TypeScriptの型チェック`npx tsc --noEmit`が成功する。
+`savingLock.current`を使って、保存ボタンの連打を防ぎます。
 
-チャットの保存・取得・画面復元・Neonからの削除まで完成です。
+Stateと違い、`.current`を変更しても画面は再描画されません。
 
-## チャットをNeonから削除する機能
+---
 
-この機能の目的は、画面で削除したチャットがアプリ再読み込み後に復活しないようにすることです。
+# 6. 画面遷移
 
-担当ファイルは次の3つです。
+このアプリはExpo Routerを使います。
 
-- `app/api/chat/route.ts`：本人確認を行い、Neonからチャットを削除します。
-- `mobile/src/lib/chatApi.ts`：スマホから削除APIを呼びます。
-- `mobile/src/app/chat.tsx`：削除ボタンと通信中・失敗時の表示を管理します。
-
-処理の流れは次のとおりです。
+ファイル名がURLと画面名になります。
 
 ```text
-利用者が削除ボタンを押す
-↓
-スマホがClerkトークンとチャットIDを送る
-↓
-DELETE /api/chatがログイン中の本人を確認
-↓
-Neonで「チャットID」と「本人のClerk ID」が両方一致する行を探す
-↓
-一致した本人のチャットだけを削除
-↓
-子テーブルのメッセージも自動削除
-↓
-成功した場合だけReactの画面から削除
+mobile/src/app/home.tsx
+→ /home
+
+mobile/src/app/chat.tsx
+→ /chat
 ```
 
-### バックエンドの`DELETE()`
+## `push`と`replace`の違い
+
+```tsx
+router.push('/subscription');
+```
+
+`push`は今の画面を履歴に残します。
+
+戻る操作で前の画面へ戻れます。
+
+```tsx
+router.replace('/home');
+```
+
+`replace`は今の画面を置き換えます。
+
+ログイン後や初回設定完了後など、戻ってほしくない場面で使います。
+
+---
+
+# 7. Contextと長期保存の違い
+
+## Context
+
+複数画面で一時的に同じ値を使う仕組みです。
+
+例：`mobile/src/contexts/TrainingDraftContext.tsx`
+
+AIメニュー画面からトレーニング記録画面へ、作成途中のメニューを渡します。
+
+アプリを完全に終了すると消える可能性があります。
+
+## Neon
+
+ユーザーの記録を長期保存します。
+
+ログインし直したり、別端末を使ったりしても取得できます。
+
+## 使い分け
+
+```text
+入力途中・画面間の一時データ → State / Context
+履歴として残すデータ         → Neon
+```
+
+---
+
+# 8. フロントからAPIを呼ぶ流れ
+
+## 共通通信ファイル
+
+ファイル：`mobile/src/lib/api.ts`
+
+すべてのAPI通信で共通して必要な処理をまとめています。
 
 ```ts
-export async function DELETE(request: Request) {
+export async function apiRequest<T>(
+  path: string,
+  options: ApiRequestOptions,
+): Promise<T> {
 ```
 
-`export`はNext.jsのRoute Handlerへ、この関数がHTTPのDELETEリクエストを担当すると伝えます。
+1行ずつ読むと次の意味です。
 
-`async`は、本人確認やNeon通信のような時間のかかる処理で`await`を使える関数にします。
+- `export`は別ファイルから使えるようにします。
+- `async`は通信完了を待つ処理があることを表します。
+- `<T>`はAPIごとに返り値の型を変更できるジェネリクスです。
+- `path`には`/api/home`などが入ります。
+- `options`にはHTTPメソッド、トークン、本文などが入ります。
+- `Promise<T>`は将来`T`型の結果を返す約束です。
 
-`request`には、スマホから届いた認証情報とJSONが入っています。
+## 認証トークン
+
+```ts
+headers: {
+  Authorization: `Bearer ${token}`,
+}
+```
+
+ClerkのトークンをHTTPヘッダーへ入れます。
+
+バックエンドはこの値を検証して本人を確認します。
+
+## JSON送信
+
+```ts
+body: JSON.stringify(input)
+```
+
+TypeScriptのオブジェクトを通信可能なJSON文字列へ変換します。
+
+## JSON受信
+
+```ts
+return (await response.json()) as T;
+```
+
+サーバーのJSONをTypeScriptで扱える値へ変換します。
+
+`as T`は実行時検査ではなく、TypeScriptへ型を伝える書き方です。
+
+## タイムアウト
+
+GETは通常30秒、保存・生成・画像送信は通常120秒で打ち切ります。
+
+通信を永遠に待ち続けないためです。
+
+タイムアウト時でもサーバー側では処理が終わっている場合があります。
+
+そのため保存処理は、履歴を確認してから再送します。
+
+## 機能別通信ファイル
+
+| ファイル | 役割 |
+| --- | --- |
+| `mobile/src/lib/bootstrap.ts` | 初回設定状態 |
+| `mobile/src/lib/goals.ts` | 理想体型 |
+| `mobile/src/lib/profiles.ts` | 身体情報 |
+| `mobile/src/lib/trainingRecords.ts` | トレーニング記録 |
+| `mobile/src/lib/weightRecords.ts` | 体重記録 |
+| `mobile/src/lib/foodRecords.ts` | 食事記録 |
+| `mobile/src/lib/bodyAnalyses.ts` | 身体分析履歴 |
+| `mobile/src/lib/aiMenus.ts` | AIメニュー |
+| `mobile/src/lib/chatApi.ts` | AIチャット |
+| `mobile/src/lib/subscription.ts` | 課金状態・購入検証 |
+
+画面に`fetch()`を何度も直接書かず、通信処理を`lib`へ分けています。
+
+---
+
+# 9. HTTPメソッド
+
+| メソッド | このアプリでの主な意味 |
+| --- | --- |
+| GET | 保存済みデータを取得する |
+| POST | 新しいデータを作る・AI生成する |
+| PATCH | 既存データの一部を変更する |
+| DELETE | 既存データを削除する |
+
+GETは「フロントへ情報を渡す処理」です。
+
+POSTは保存だけでなく、AI生成開始にも使います。
+
+---
+
+# 10. バックエンドAPIの基本形
+
+例：`app/api/users/profile/route.ts`
+
+APIは次の順番で処理します。
+
+```text
+1. Clerkで本人確認
+2. JSONを受け取る
+3. Zodで入力検査
+4. Clerk IDからNeonのusers.idを取得
+5. 本人のデータだけを検索・保存
+6. JSONをフロントへ返す
+7. 失敗時は安全なエラーを返す
+```
+
+## `request.json()`
+
+```ts
+const body = await request.json();
+```
+
+フロントが送ったJSONをTypeScriptの値へ変換します。
+
+## `Response.json()`
+
+```ts
+return Response.json(
+  { error: 'ログインが必要です。' },
+  { status: 401 },
+);
+```
+
+バックエンドからフロントへJSONとHTTP状態番号を返します。
+
+## `try / catch`
+
+```ts
+try {
+  // 失敗する可能性がある処理
+} catch (error) {
+  // 失敗時の処理
+}
+```
+
+DBや外部APIの失敗でサーバー全体が止まらないようにします。
+
+## `async / await`
+
+```ts
+const user = await findUser();
+```
+
+- `async`は非同期処理を含む関数へ付けます。
+- `await`はPromiseの完了を待ちます。
+- 待っている間もサーバー全体を完全停止させるわけではありません。
+
+---
+
+# 11. 認証と本人データ
+
+## 共通認証ファイル
+
+ファイル：`app/lib/auth/clerk-auth.ts`
 
 ```ts
 const clerkUserId = await getClerkUserId(request);
-```
 
-リクエストのClerkトークンを確認し、ログイン中の本人のClerkユーザーIDを取得します。これは再ログイン処理ではなく、今回の削除要求を送った人が誰かをAPI側で確認する処理です。
-
-```ts
-const body = (await request
-  .json()
-  .catch(() => null)) as DeleteChatRequestBody | null;
-```
-
-`request.json()`はスマホから送られたJSONをJavaScript・TypeScriptで使えるデータへ変換します。
-
-`.catch(() => null)`は、不正なJSONだった場合にAPI全体を突然終了させず`null`として扱います。
-
-`as DeleteChatRequestBody | null`は、TypeScriptへ「この値は削除用データ、または`null`です」と型を伝えています。データを変換・保存する命令ではありません。
-
-```ts
-const conversationId =
-  body?.conversationId?.trim() ?? "";
-```
-
-`body?.conversationId`は、`body`が存在するときだけチャットIDを取得します。
-
-`.trim()`は文字列の前後の空白を削除します。
-
-`?? ""`は値が`null`または`undefined`なら空文字を使用します。空文字の場合はHTTP 400を返し、削除処理へ進みません。
-
-### 他人のチャットを削除させない検索条件
-
-```ts
-.where(
-  and(
-    eq(chatConversations.id, conversationId),
-    eq(users.clerkUserId, clerkUserId),
-  ),
-)
-```
-
-`eq(A, B)`はAとBが等しいという検索条件です。
-
-`and(条件1, 条件2)`は、両方の条件を満たす行だけを対象にします。
-
-ここでは「送られたチャットID」と「ログイン中の本人のClerk ID」の両方が一致する必要があります。他人のチャットIDだけを知っていても、Clerk IDが一致しないため削除できません。
-
-一致しない場合はHTTP 404を返します。本人のデータではないことを細かく教えず、チャットが見つからないものとして扱います。
-
-### 親チャットと子メッセージの削除
-
-```ts
-await db
-  .delete(chatConversations)
-  .where(
-    eq(
-      chatConversations.id,
-      matchedConversation.id,
-    ),
+if (!clerkUserId) {
+  return Response.json(
+    { error: 'ログインが必要です。' },
+    { status: 401 },
   );
-```
-
-`.delete(chatConversations)`は親テーブル`chat_conversations`から削除します。
-
-`.where(...)`があるため、確認済みの1つのチャットだけが対象です。`where`なしで削除すると全チャットが対象になる危険があるため、削除処理では特に重要です。
-
-`chat_messages.conversationId`には次の設定があります。
-
-```ts
-.references(() => chatConversations.id, {
-  onDelete: "cascade",
-})
-```
-
-`onDelete: "cascade"`は、親チャットを削除したとき、そのチャットに属する子メッセージもPostgreSQLが自動削除する設定です。そのため、メッセージを1件ずつ削除するコードは不要です。
-
-### スマホからDELETE APIを呼ぶ
-
-担当ファイルは`mobile/src/lib/chatApi.ts`です。
-
-```ts
-export async function deleteChatConversation(
-  token: string,
-  conversationId: string,
-) {
-```
-
-`token`はログイン中の本人を証明するClerkトークンです。
-
-`conversationId`はNeonから削除するチャットルームのIDです。
-
-```ts
-return apiRequest<DeleteChatResponse>(
-  '/api/chat',
-  {
-    method: 'DELETE',
-    token,
-    body: JSON.stringify({ conversationId }),
-  },
-);
-```
-
-`method: 'DELETE'`で削除リクエストだとバックエンドへ伝えます。
-
-`JSON.stringify()`はTypeScriptのオブジェクトを、HTTP通信で送れるJSON文字列へ変換します。
-
-`apiRequest<DeleteChatResponse>`の`<DeleteChatResponse>`は、成功時に返るデータの型をTypeScriptへ伝えています。
-
-### 削除ボタンを押した後の`removeChat()`
-
-担当ファイルは`mobile/src/app/chat.tsx`です。
-
-```ts
-const conversation =
-  conversations.find((chat) => chat.id === id) ?? null;
-```
-
-`.find()`はチャット一覧を先頭から確認し、押された画面内IDと一致するチャット1件を取得します。見つからなければ`?? null`によって`null`になります。
-
-```ts
-if (!conversation.serverConversationId) {
-  deleteConversation(id);
-  return;
 }
 ```
 
-まだメッセージを送っていない新規チャットにはNeon側IDがありません。Neonに存在しないためAPIを呼ばず、画面上のStateだけから削除します。
+これはログイン済みかを確認しています。
 
-保存済みチャットでは、次の順番を守ります。
+まだNeonのデータを取得しているわけではありません。
 
-```text
-deleteChatConversation()でNeonから削除
-↓
-成功
-↓
-deleteConversation()で画面から削除
-```
-
-先に画面から消すと、Neon通信に失敗した場合も削除できたように見え、再読み込み後に復活します。そのため、サーバーでの成功後に画面を更新します。
-
-`deletingConversationId`には削除中のチャットIDを保存します。値が入っている間は他の削除ボタンを無効化し、対象のボタンを「削除中…」へ変更します。
-
-`try`は削除通信を試す場所、`catch`は失敗メッセージを表示する場所、`finally`は成功・失敗のどちらでも削除中状態を解除する場所です。
-
-### チャット削除機能の確認結果
-
-- スマホ版のTypeScript型チェックに成功しました。
-- 今回変更したチャット3ファイルのESLintチェックに成功しました。
-- 未送信の新規チャットを画面から削除できました。
-- 保存済み4件に削除ボタンが表示されることを確認しました。
-- 認証なしで`DELETE /api/chat`を呼ぶとHTTP 401と「ログインが必要です。」が返り、削除が拒否されました。
-- 既存の保存済みチャットは、安全のため動作確認中には削除していません。
-
-バックエンド全体の`npx tsc --noEmit`は、今回の変更とは別の既存Cloudflare設定`vite.config.ts`と`worker/index.ts`の型エラーで停止します。今回変更したチャットファイルはESLint、スマホ側はTypeScriptで検査済みです。
-
-## AIチャットの1日利用上限
-
-`.env.local`の`AI_CHAT_DAILY_LIMIT=30`により、1人が1日に送信できるAIチャットの上限を30回にします。
-
-`AI_CHAT_DAILY_LIMIT`はOpenAIが決めた無料回数ではなく、このアプリが使いすぎを防ぐために決める設定値です。OpenAI APIの料金は21回目や101回目から始まるのではなく、1回目から使用したトークン量に応じて残高から消費されます。
-
-`process.env.AI_CHAT_DAILY_LIMIT`は`.env.local`の文字列を読み取り、`Number.parseInt(..., 10)`はその文字列を10進数の整数へ変換します。設定がない場合や不正な値の場合も初期値`30`を使用します。
-
-本番公開時も公開先の環境変数を`30`にします。回数を変更するときは、コードではなく環境変数を変更します。
-
-AIメニュー生成はAIチャットと分けて、`.env.local`の`AI_MENU_DAILY_LIMIT=3`で1人1日3回に制限します。AIチャットの質問回数を使い切ってもAIメニュー回数は減らず、その逆も同じです。
-
-### AIメニューの1日3回制限
-
-`app/api/ai-menu/route.ts`は、OpenAIへ生成依頼を送る前に`ai_generated_menus`を検索します。
-
-```text
-Clerkで本人を確認
-↓
-フロント入力を検証
-↓
-日本時間の今日0時と明日0時を計算
-↓
-本人が今日生成したメニュー数をNeonで数える
-↓
-3回未満ならOpenAIで生成／3回以上ならHTTP 429で終了
-```
-
-`aiGeneratedMenus`には`userId`と`createdAt`が保存されているため、本人と今日の時間範囲を条件にして直接数えられます。AIチャットのようにメッセージからチャットルームを経由して本人を探す必要はありません。
-
-上限到達時は`limit`、`used`、`remaining`、`nextAvailableAt`と`Retry-After`を返します。生成成功時は今回の1回を加算し、`usage`として残り回数とリセット日時をフロントへ返します。
-
-この判定をOpenAI通信より前に置くことで、4回目以降はOpenAI料金が発生しません。`npx eslint app/api/ai-menu/route.ts`でエラーがないことも確認済みです。
-
-### AIリクエストの5秒クールダウン
-
-`.env.local`の`AI_REQUEST_COOLDOWN_SECONDS=5`は、AIチャットの質問またはAIメニュー生成の直後に、同じ利用者が連続してリクエストするのを5秒間止める設定です。
-
-AIチャットは最新の利用者メッセージ、AIメニューは最新の生成メニューについて、Neonに保存された`createdAt`を確認します。
-
-`max(createdAt)`は条件に一致する日時の中から最も新しい日時を1件だけ取得します。`count()`と同じ検索に含めているため、回数と最新日時を別々に検索する必要がありません。
-
-```text
-Neonから今日の件数と最新日時を取得
-↓
-最新日時 + 5秒を計算
-↓
-現在時刻がそれより前ならHTTP 429
-↓
-5秒以上経過していれば通常処理へ進む
-```
-
-拒否時には`Retry-After`、待ち秒数、次回利用可能日時を返すため、フロントは「あと何秒待つか」を表示できます。
-
-この処理は、すでにNeonへ保存された直近の操作を基準にする連続送信対策です。ほぼ同時に到着した2つのリクエストは、どちらも保存前の状態を読む可能性があるため、完全な二重送信対策は別途リクエストIDを使って追加します。
-
-### 二重送信を防ぐai_request_guardsテーブル
-
-`db/schema.ts`の`aiRequestGuards`は、AI処理を開始したリクエストの受付番号をNeonへ保存するための設計図です。
-
-- `userId`：誰の操作かを表す
-- `requestType`：`chat`と`menu`を区別する
-- `requestId`：1回のボタン操作ごとにフロントが作るUUID
-- `createdAt`：受付記録を作った日時
-
-`uniqueIndex()`は、`userId`・`requestType`・`requestId`の同じ組み合わせを2回登録できなくします。1件目だけが登録に成功してOpenAIへ進み、同じ受付番号の2件目はOpenAIを呼ぶ前に拒否できるようにします。
-
-`index()`は重複禁止ではなく、本人の古い受付記録を日時順で検索・削除しやすくする索引です。`uniqueIndex()`と`index()`は名前が似ていますが、目的が異なります。
-
-`mobile`ではExpo公式の`expo-crypto`を使い、`Crypto.randomUUID()`でボタン操作ごとのUUIDを作ります。`useRef`にも処理中のIDを保存するため、Reactの画面更新を待たずに同じ画面内の2回目の関数実行を止めます。
-
-チャットAPIとAIメニューAPIは、受け取った`requestId`をOpenAI通信より前に`ai_request_guards`へ追加します。
-
-`.onConflictDoNothing()`は、ユニーク索引と同じ組み合わせがすでに存在してもサーバーをクラッシュさせず、追加しない処理です。`.returning()`で新しい受付記録が返れば1件目、何も返らなければ重複した2件目だと判断します。
-
-```text
-スマホでUUIDを1つ作る
-↓
-バックエンドへrequestIdとして送る
-↓
-ai_request_guardsへ追加を試す
-↓
-追加成功：OpenAIへ進む
-追加なし：HTTP 409で終了
-```
-
-途中でOpenAI通信や保存に失敗した場合は、その受付記録を削除します。これにより、エラー後に同じ操作を正しく再試行できます。成功時の受付記録は残すため、通信結果が遅れて同じリクエストが再到着しても二重処理しません。
-
-マイグレーション`0005_add_ai_request_guards.sql`は、既存テーブルを再作成せず、新しいテーブル・外部キー・2つの索引だけを作る内容に確認・修正済みです。`drizzle-kit check`、バックエンドESLint、スマホTypeScript検査は成功しています。
-
-元のNeonプロジェクトはデータ転送量上限超過による`HTTP 402`が返るため、本番とは分離した`musclepas-development`を作成しました。空の開発用DBへ`0000`〜`0008`を適用し、`ai_request_guards`の同じ受付IDが二重保存されないことを実際に確認済みです。
-
-### OpenAI通信のタイムアウトと再試行
-
-`app/lib/ai/openAiClient.ts`は、AIチャットとAIメニューが共通で使うOpenAIクライアントを作るTypeScriptファイルです。
-
-`.env.local`では次の値を設定します。
-
-```env
-OPENAI_TIMEOUT_MS=60000
-OPENAI_MAX_RETRIES=1
-```
-
-`OPENAI_TIMEOUT_MS=60000`は、OpenAIへの1回の通信を最大60秒待つ設定です。`OPENAI_MAX_RETRIES=1`は、一時的な通信エラーやタイムアウトが起きた場合にSDKへ最大1回だけ自動再試行させる設定です。そのため、再試行が発生した場合の全体時間は60秒より長くなる可能性があります。
-
-`readPositiveInteger()`は、タイムアウトが1以上の整数かを確認します。`readNonNegativeInteger()`は、再試行回数として`0`も許可しながら、負数や不正な文字列を拒否します。環境変数が不正なら、それぞれ`60_000`と`1`を安全な初期値として使用します。
-
-```text
-チャットまたはAIメニューAPI
-↓
-共通のopenaiクライアントを使用
-↓
-60秒以内に応答：通常処理
-一時エラー：最大1回再試行
-タイムアウト：受付記録を削除してHTTP 504
-```
-
-`APIConnectionTimeoutError`はOpenAI SDKが通信時間超過時に投げる専用エラーです。通常のサーバーエラーと区別し、フロントへ「少し待って再試行してください」と返します。
-
-共通ファイルにまとめた理由は、チャットとメニューでタイムアウト値・再試行回数・APIキー設定がずれるのを防ぐためです。設定変更は環境変数またはこの共通ファイルだけで済みます。
-
-### TypeScriptからPython身体分析APIへのタイムアウト
-
-`app/api/body-analysis/route.ts`は、正面・横・背面画像をRender上のPython APIへ送ります。`.env.local`の`PYTHON_ANALYSIS_TIMEOUT_MS=120000`により、Pythonからレスポンス本文を受け取るまで最大120秒待ちます。
-
-```text
-TypeScriptが画像3枚をPythonへ送信
-↓
-120秒のタイマーを開始
-↓
-Pythonの応答とJSON取得が完了：タイマー解除
-120秒を超過：通信を中止してHTTP 504
-```
-
-`AbortController`は実行中の`fetch()`を外側から中止するための機能です。`pythonAbortController.signal`を`fetch()`へ渡し、`setTimeout()`が120秒後に`.abort()`を呼びます。
-
-`let analysisResult: unknown`とする理由は、Pythonから届いたJSONをまだ信用できないためです。取得後に`isBodyAnalysisResult()`で必要な項目・型・スコア範囲を検査してからNeonへ保存します。
-
-`finally`は成功・通常エラー・タイムアウトのどの場合でも必ず実行されます。`clearTimeout()`で不要になったタイマーを解除し、処理終了後にタイマーだけが残ることを防ぎます。
-
-タイムアウト時は専用の`PythonAnalysisTimeoutError`へ変換し、通常の内部エラー`500`ではなく`HTTP 504`を返します。`504`は、このTypeScript APIより先にあるPython APIが時間内に応答しなかったことを表します。
-
-### PythonからOpenAIへのタイムアウトと安全な再試行
-
-`python-analysis/app/main.py`は、Render上で身体画像をOpenAIへ渡すPython APIです。OpenAI Python SDKの既定値は待ち時間が長く、再試行も2回なので、このアプリでは次の値へ明示的に制限します。
-
-```env
-PYTHON_OPENAI_TIMEOUT_SECONDS=50
-PYTHON_OPENAI_MAX_RETRIES=1
-```
-
-`PYTHON_OPENAI_TIMEOUT_SECONDS=50`は、PythonからOpenAIへの1回の通信を最大50秒待つ設定です。
-
-`PYTHON_OPENAI_MAX_RETRIES=1`は、一時的な失敗時だけ追加で1回試す設定です。最初の1回と再試行1回を合わせ、最大2回OpenAIへ接続する可能性があります。
-
-Python側を50秒、外側のTypeScript側を120秒にした理由は、次のように内側の処理が先に終了し、TypeScriptがPythonからエラーJSONを受け取るための余裕を残すためです。
-
-```text
-TypeScriptからPython：全体を最大120秒待つ
-└─ PythonからOpenAI：1回最大50秒、再試行は最大1回
-```
-
-`AsyncOpenAI(timeout=..., max_retries=...)`は、待ち時間と再試行回数を身体分析で使うOpenAIクライアント全体へ適用します。
-
-`read_positive_float_env()`は待ち時間が0より大きい数値かを確認し、`read_non_negative_int_env()`は再試行回数が0以上の整数かを確認します。Renderの環境変数に文字や負数を誤って入れても、Pythonが起動時に落ちず、安全な初期値の50秒・1回へ戻します。
-
-OpenAI SDKが再試行するのは、接続エラー、HTTP 408、409、429、500番台などの一時的に回復する可能性がある失敗です。入力ミスや認証設定の失敗など、同じ内容を送り直しても直らないエラーは再試行しません。すべての`Exception`を自作ループで再送しないのは、無駄な待ち時間とAPI料金を増やさないためです。
-
-### PythonのOpenAIエラーをHTTP番号へ変換する
-
-`try:`の中で`responses.parse()`を実行し、OpenAI通信だけを専用の`except`で分類します。
-
-- `APITimeoutError`：OpenAIが時間内に返らなかったためHTTP 504
-- `APIConnectionError`：OpenAIへ接続できなかったためHTTP 503
-- `RateLimitError`：利用制限や混雑のためHTTP 429
-- `APIStatusError`の500番台：OpenAI側の一時障害としてHTTP 502
-- 認証エラー：利用者へ秘密情報を見せずHTTP 500
-
-`raise HTTPException(...) from error`の`from error`は、利用者へ返す安全なエラーと、サーバーログで原因調査に使う元のエラーを結び付けます。
-
-### Render停止中のエラーを分かりやすく返す
-
-`PythonAnalysisUnavailableError`は、TypeScriptからRender上のPython APIへ接続そのものができない場合に使う専用エラーです。
-
-Renderが停止中・起動中・ネットワーク障害の場合、`fetch()`は正常なHTTPレスポンスを受け取れません。そのときはHTTP 503と「身体分析サービスを起動中、または一時的に利用できません」というメッセージをフロントへ返します。
-
-`PythonAnalysisApiError`は、Pythonへは接続できたものの、PythonまたはOpenAIがエラーを返した場合に使います。Pythonの`detail`を読み、413・429・504などの意味を保ってフロントへ返します。
-
-```text
-Renderへ接続できない
-→ PythonAnalysisUnavailableError
-→ HTTP 503
-
-Renderへ接続できたがOpenAIがタイムアウト
-→ PythonがHTTP 504を返す
-→ PythonAnalysisApiError
-→ フロントにもHTTP 504を返す
-```
-
-### 画像容量を3段階で統一する
-
-画像容量は、役割の違う3つの上限へ統一しました。
-
-- スマホ・TypeScript・Python：画像1枚につき8MB以下
-- TypeScript・Python：画像3枚そのものは合計24MB以下
-- Vinextの入口：FormDataの付加情報も含む通信全体を26MB以下
-
-26MBは画像1枚の上限ではありません。8MBの画像3枚で最大24MBになり、ファイル名や区切り情報など`multipart/form-data`の付加情報を通すため、入口だけ2MBの余裕を持たせています。
-
-同じ検査をTypeScriptとPythonの両方で行う理由は、通常のアプリ経由では早くエラーを返し、Python APIが直接呼ばれた場合にも不正な画像を拒否するためです。
-
-### 質問回数を確認する処理の流れ
-
-`POST()`は質問を保存してOpenAIへ送る前に、次の順番で利用回数を確認します。
-
-```text
-Clerkでログイン中の本人を確認
-↓
-getJapanDayRange()で日本時間の今日0時と明日0時を作る
-↓
-chatMessagesとchatConversationsをinnerJoin()でつなぐ
-↓
-本人・userロール・今日の範囲だけに絞る
-↓
-count()で今日の質問数を数える
-↓
-上限未満ならOpenAIへ進む／上限以上ならHTTP 429で終了
-```
-
-`count(chatMessages.id)`は、条件に一致した質問メッセージの件数を数えます。
-
-`innerJoin()`が必要なのは、`chatMessages`にはユーザーIDがなく、所属するチャットルームのIDだけが保存されているためです。`chatConversations`とつなぐことで、その質問がログイン中の本人のものか確認できます。
-
-`eq(chatMessages.role, "user")`は利用者の質問だけを対象にし、AIの回答を利用回数へ含めない条件です。
-
-`gte(chatMessages.createdAt, start)`は作成日時が今日0時以降、`lt(chatMessages.createdAt, end)`は明日0時より前という意味です。この2つを組み合わせて今日の質問だけを数えます。
-
-上限に達した場合は`HTTP 429`、`Retry-After`、次回利用可能日時を返し、OpenAIを呼びません。成功した場合は今回の質問を`+ 1`し、`usage`として上限・使用回数・残り回数・リセット日時をフロントへ返します。
-
-今回の`app/api/chat/route.ts`は`npx eslint app/api/chat/route.ts`で検査し、エラーがないことを確認済みです。
-
-## AIチャットのSystem PromptとTool選択
-
-`app/lib/ai/systemPrompt.js`は、AIの役割・回答方針・安全上のルール・Toolを使う判断基準を書くJavaScriptファイルです。
-
-このファイル自体はNeonからデータを取得しません。AIが質問を読んで必要なToolを選ぶための「説明書」です。
-
-```text
-systemPrompt.js
-→ AIが必要なToolを判断
-→ chatTools.tsに定義されたToolを選択
-→ runChatTool.tsがToolを実行
-→ Clerk IDで本人を特定
-→ Neonから本人のデータを取得
-→ AIが取得結果を使って回答
-```
-
-プロフィール取得の実通信テストでは「私の目標体型と身体情報を教えて」と質問し、`get_user_profile`を通してNeonに保存された目標体型・身長・体重・頻度・可能時間・場所・苦手部位が回答へ反映されることを確認済みです。
-
-## AIチャットToolの実通信テスト結果
-
-AIチャットで利用する4つのToolは、すべてスマホ画面から実通信で動作確認済みです。
-
-- `get_user_profile`：目標体型、身長、体重、頻度、可能時間、場所、苦手部位を取得できました。
-- `get_latest_body_analysis`：最新の分析日、全体評価、部位別スコア、優先部位、提案を取得できました。
-- `get_recent_training_records`：最近実施した部位・種目・セットなどを取得し、次に鍛える部位の判断へ使用できました。
-- `get_latest_ai_menu`：最後に生成した部位、理由、推定時間、種目、回数、セット、休憩、注意点を取得できました。
-
-ToolにはClerkユーザーIDを直接AIから渡しません。`route.ts`で認証できた本人のClerk IDを`runChatTool()`へ渡し、そのIDに一致するデータだけをNeonから検索します。これにより、AIが別の利用者のIDを指定してデータを取得することを防いでいます。
-
-## TypeScriptバックエンドをCloudflareへ公開する準備
-
-### 公開サービスの役割分担
-
-筋トレPASでは、すべてを1つのサービスへ無理にまとめず、得意な役割で分けます。
-
-```text
-Expoスマホアプリ
-↓
-Cloudflare：TypeScriptバックエンド
-├─ Clerk認証
-├─ Neonへの保存・取得
-├─ AIチャット
-├─ AIメニュー
-└─ 身体分析の受付
-     ↓
-Render：Python身体画像分析
-     ↓
-OpenAI
-```
-
-現在のプロジェクトは`Vinext`、Cloudflare Viteプラグイン、`worker/index.ts`を使用しており、Cloudflare Worker向けの構成がすでにあります。そのため、TypeScriptはCloudflareへ公開し、作成済みのPython分析APIはRenderで継続します。
-
-### `vite.config.ts`の古い開発設定を削除
-
-`localBindingConfig`にあった古い`dev.inspector`・`dev.server`設定は、現在のCloudflare型定義と一致せずTypeScriptエラーになっていました。
-
-同じWi-Fi上のスマホから開発サーバーへ接続する設定は、Vite側の`server.host = "0.0.0.0"`ですでに行っています。そのため、重複していた古い`dev`部分だけを削除し、LAN接続機能は残しました。
-
-`vinext({ nextConfig })`は現在のVinextでは`next.config.ts`の自動読込と重複するため、`vinext()`へ変更しました。画像通信の`bodySizeLimit: "26mb"`は引き続き`next.config.ts`から自動で読み込まれます。
-
-### `worker/index.ts`のCloudflare型エラー
-
-`Fetcher`と`D1Database`はCloudflare専用のグローバル型ですが、このプロジェクトのTypeScript設定には定義がありませんでした。
-
-筋トレPASのデータベースはD1ではなくNeonなので、未使用の`DB: D1Database`を削除しました。
-
-`ASSETS`は実際に使用する`.fetch()`だけを次のローカル型で表します。
-
-```typescript
-ASSETS: {
-  fetch(request: Request): Promise<Response>;
-};
-```
-
-これは「`ASSETS`にはRequestを受け取り、後でResponseを返す非同期の`fetch()`がある」とTypeScriptへ教える型です。不要なCloudflare型パッケージを追加せず、実際に使用する機能だけを定義しています。
-
-修正後は`npx tsc --noEmit`と`npm run build`の両方が成功しました。
-
-### 公開APIのヘルスチェック
-
-担当ファイルは`app/api/health/route.ts`です。
-
-`GET /api/health`は、公開中のTypeScriptバックエンドが起動しているかを確認するAPIです。Clerk認証、Neon、OpenAIを呼ばないため、ログイン前でも確認でき、AI料金も発生しません。
-
-```json
-{
-  "status": "ok",
-  "service": "musclepas-api",
-  "environment": "production",
-  "checkedAt": "確認した時刻"
-}
-```
-
-`Cache-Control: no-store`は、ブラウザや中継サービスに古い成功結果を保存させず、毎回その時点のサーバー状態を確認する指定です。
-
-### 開発環境と本番環境を分ける
-
-Macで動かす開発環境は`.env.local`の`APP_ENV=development`と各種設定を使用します。
-
-Cloudflare上の本番環境は、Sitesへ登録した`APP_ENV=production`と環境変数を使用します。秘密鍵はGit管理ファイルや`.openai/hosting.json`へ書かず、Sitesの秘密設定として保存します。
-
-Neon・Clerk・Render URL・OpenAI・タイムアウト・利用回数上限は本番環境へ登録済みです。`DATABASE_URL`、`CLERK_SECRET_KEY`、`OPENAI_API_KEY`などの秘密値は、コードやGitへ書かずSitesの秘密設定として保存しています。
-
-### Cloudflareへ公開したAPI
-
-TypeScriptバックエンドの開発用公開URLは次です。
-
-```text
-https://musclepas-api.y0u2t1a8.chatgpt.site
-```
-
-公開後、`GET /api/health`がHTTP 200を返し、JSONの`environment`が`production`になることを確認しました。
-
-プロフィール、理想体型、トレーニング記録、身体分析、AIメニュー、AIチャットの取得APIは、ログイン情報を付けずにアクセスするとすべてHTTP 401を返しました。これは公開後も個人データAPIがClerk認証で守られていることを表します。
-
-### Expoから公開APIへ接続する設定
-
-担当ファイルは`mobile/.env.local`です。
-
-```env
-EXPO_PUBLIC_API_BASE_URL=https://musclepas-api.y0u2t1a8.chatgpt.site
-```
-
-`mobile/src/lib/api.ts`は、この値と`/api/users/bootstrap`などのパスをつないで通信先を作ります。
-
-```text
-公開APIの基本URL
-+ APIごとのパス
-= 実際の通信先
-```
-
-`.env.local`はExpoの起動時に読み込まれるため、値を変更した後はExpoを再起動する必要があります。
-
-### CORSは何のためにあるか
-
-Expo Webは`http://127.0.0.1:8081`、公開APIは`https://musclepas-api...`で、ドメインが異なります。ブラウザは別ドメインへ勝手に個人情報を送らないように通信を止めるため、バックエンド側で許可するアクセス元を明示します。この仕組みがCORSです。
-
-担当ファイルは`worker/index.ts`です。
-
-```text
-Expo Web
-↓ OPTIONSで「この通信を送ってよいか」確認
-Cloudflare Worker
-↓ 許可リストとOriginを比較
-許可済みならCORSヘッダーを返す
-↓
-Expo Webが認証付きAPI本体を送信
-```
-
-`DEFAULT_CORS_ALLOWED_ORIGINS`には、開発で使用する`localhost`と`127.0.0.1`の8081・8082番ポートだけを登録しています。`*`ですべてのサイトを許可しないのは、Authorizationヘッダーを使う個人データAPIを不要なWebサイトから呼ばせないためです。
-
-`isAllowedCorsOrigin()`は、アクセス元が固定の開発URLまたは`CORS_ALLOWED_ORIGINS`環境変数に含まれるか確認します。本番フロントのWeb URLが決まったら、コードを変更せず環境変数へカンマ区切りで追加できます。
-
-`addCorsHeaders()`は許可された応答にだけ、次の情報を追加します。
-
-- `Access-Control-Allow-Origin`：通信を許可する画面のURL
-- `Access-Control-Allow-Methods`：使用を許可するHTTPメソッド
-- `Access-Control-Allow-Headers`：AuthorizationとContent-Typeを送ってよい指定
-- `Access-Control-Max-Age`：事前確認の結果を24時間再利用する指定
-- `Vary: Origin`：アクセス元ごとに応答が違うことをキャッシュへ伝える指定
-
-`OPTIONS`は実データの保存や取得を行う通信ではありません。ブラウザが本通信の前に送る安全確認なので、`/api/`へのOPTIONSにはHTTP 204で本文なしの応答を返します。
-
-ネイティブのiPhoneアプリにはブラウザと同じCORS制限はありません。ただし、開発中にExpo WebでもAPIを確認できるように今回の設定が必要です。
-
-### 公開後のExpo接続テスト結果
-
-CORS修正版はCloudflare Sitesのバージョン2として公開しました。事前確認の`OPTIONS`ではHTTP 204と次のCORSヘッダーが返ることを確認済みです。
-
-```text
-Access-Control-Allow-Origin: http://127.0.0.1:8081
-Access-Control-Allow-Headers: Authorization, Content-Type
-Access-Control-Allow-Methods: GET, POST, PATCH, DELETE, OPTIONS
-```
-
-Expo Webから`POST /api/users/bootstrap`を送ると、Cloudflareへ到達してClerkのAuthorizationトークンも認識され、Neon検索まで処理が進みました。
-
-その後のNeon検索は、プロジェクトのデータ転送量上限超過によりHTTP 402で停止しています。ローカルから同じ接続先へ`SELECT 1`だけを送っても同じHTTP 402になったため、Cloudflareのコードや環境変数の欠落ではなくNeon側の利用上限が原因です。
-
-```text
-Expo → 成功
-Cloudflare公開API → 成功
-CORS → 成功
-Clerk本人確認 → 成功
-Neon接続 → データ転送量上限のHTTP 402で停止
-```
-
-Neonの上限が回復するかプランを変更した後に、bootstrap、プロフィール、理想体型、記録、身体分析、AIメニュー、AIチャットの認証付き実通信を再確認します。
-
-## 体重履歴API
-
-### `weight_records`テーブルの役割
-
-担当ファイルは`db/schema.ts`です。
-
-`weight_records`は、利用者が日ごとに入力した体重を履歴として残すテーブルです。プロフィールの`weightKg`は現在の体重を1つだけ持ち、`weight_records`は過去から現在までの変化を複数件持つという違いがあります。
-
-```text
-user_profiles.weightKg
-→ 現在のプロフィール体重
-
-weight_records
-→ 8月1日 65.0kg
-→ 8月2日 64.8kg
-→ 8月3日 64.6kg
-```
-
-`date`はPostgreSQLの「日付だけ」を保存する型です。時刻を含めないため、タイムゾーンによって前日や翌日にずれる問題を避けられます。
-
-```typescript
-recordedDate: date("recorded_date", {
-  mode: "string",
-}).notNull()
-```
-
-`mode: "string"`は、TypeScript側で日付を`YYYY-MM-DD`形式の文字列として扱う指定です。
-
-`userId`はこの記録が誰のものかを`users.id`と結び付けます。利用者が削除された場合は`onDelete: "cascade"`により、その人の体重履歴も一緒に削除されます。
-
-`weightKg`は小数を含むkgを保存します。`.notNull()`により、体重の入っていない履歴は作れません。
-
-`uniqueIndex("weight_records_user_date_unique")`は、同じ利用者が同じ日付へ2件の体重を登録することをDB側で防ぎます。
-
-```text
-ユーザーA・2026-08-28 → 1件だけ
-ユーザーB・2026-08-28 → 別ユーザーなので登録可能
-```
-
-フロントの二重タップや同じ日付の再送信があっても、最後の安全装置としてPostgreSQLが重複を拒否します。
-
-### 体重記録を保存する`POST()`
-
-担当ファイルは`app/api/weight-records/route.ts`です。
-
-`POST()`は、フロントから受け取った日付と体重をログイン中の本人の履歴として保存します。
-
-```text
-Clerkで本人確認
-↓
-JSONからrecordedDateとweightKgを取得
-↓
-日付形式と20〜500kgの範囲を検査
-↓
-Clerk IDに一致するNeonのusers.idを取得
-↓
-weight_recordsへINSERT
-↓
-保存結果をHTTP 201で返す
-```
-
-`isValidWeight(value): value is number`の`value is number`は、この関数が`true`を返した後は値をnumberとして扱ってよいとTypeScriptへ伝える型ガードです。
-
-`isValidDate()`は正規表現で`YYYY-MM-DD`の形を確認した後、`Date`へ変換して実在する日付か確認します。文字の形だけでなく、2月30日などの存在しない日付も拒否するためです。
-
-`.onConflictDoNothing()`は、`userId + recordedDate`の組み合わせが登録済みの場合に、新しい行を追加せず終了します。
-
-```typescript
-.onConflictDoNothing({
-  target: [
-    weightRecords.userId,
-    weightRecords.recordedDate,
-  ],
-})
-```
-
-`target`は、どの重複ルールにぶつかったとき追加を中止するかを指定します。今回は同じ人・同じ日の組み合わせです。
-
-`.returning()`は、PostgreSQLへ保存できた行を配列で返します。重複で保存されなかった場合は空配列になるため、`createdRecords[0] ?? null`で先頭がなければnullへ統一します。
-
-保存成功はHTTP 201、入力不正は400、未ログインは401、ユーザー未登録は404、同じ日の重複は409を返します。
-
-### 体重履歴を取得する`GET()`
-
-`GET()`はログイン中の本人の体重記録だけを最大365件取得し、一覧・グラフ・概要表示用のJSONを返します。
-
-`orderBy(desc(weightRecords.recordedDate))`は新しい記録から並べ、`.limit(365)`はNeonから必要以上のデータを受け取らないための上限です。
-
-DBから新しい順で取得した後、`[...newestRecords].reverse()`で配列をコピーして古い順へ変えます。グラフは左から右へ日付が進むため、古い順の方がそのまま表示に使えます。
-
-`records.at(-1)`の`-1`は配列の最後を表します。今回は古い順へ並べ直した後なので、最後の要素が最新の体重です。
-
-`firstRecord?.weightKg`の`?.`は、記録が存在する場合だけ`weightKg`を読みます。記録が0件でもエラーになりません。
-
-`firstRecord?.weightKg ?? null`の`??`は、左側が`null`または`undefined`なら右側のnullを使用する演算子です。フロントへ「データなし」を一定の形で返せます。
-
-`toFixed(1)`は最新体重と最初の体重の差を小数第1位へ揃えます。`toFixed()`の返り値は文字列なので、外側の`Number()`で数値へ戻しています。
-
-返却する`summary`には最初の体重、最新体重、変化量、記録件数を含めます。フロントは全履歴を再計算せず、カード表示へ使用できます。
-
-### 体重記録を修正する`PATCH()`
-
-`PATCH()`は、フロントから`recordId`と新しい`weightKg`を受け取り、指定した1件の体重を更新します。
-
-`isValidRecordId()`は、記録IDがPostgreSQLで使うUUID形式か正規表現で確認します。不正な文字列をDB検索へ渡さずHTTP 400で終了するための検査です。
-
-```typescript
-and(
-  eq(weightRecords.id, recordId),
-  eq(weightRecords.userId, currentUser.id),
-)
-```
-
-`and()`は中に書いた条件を両方満たすデータだけを対象にします。記録IDだけで更新すると他人のIDを指定された場合に危険なので、必ずログイン中の本人の`userId`も条件へ含めます。
-
-`.update(weightRecords)`は更新対象テーブル、`.set({ weightKg, updatedAt: new Date() })`は変更する列、`.where(...)`は変更してよい行の条件です。
-
-`.returning()`で更新後の行を受け取り、0件なら対象が存在しないか本人の記録ではないためHTTP 404を返します。他人の記録が存在するかどうかも利用者へ教えません。
-
-### 体重記録を削除する`DELETE()`
-
-`DELETE()`はURLの`?recordId=UUID`から削除対象を受け取り、ログイン中の本人が持つ記録だけを削除します。
-
-`new URL(request.url)`はリクエストURLを、パスや検索パラメータへ分けて扱える`URL`オブジェクトへ変換します。
-
-`requestUrl.searchParams.get("recordId")`は、URLの`?`以降から`recordId`の値を取得します。指定がない場合はnullになるため、`isValidRecordId()`で拒否できます。
-
-`.delete(weightRecords)`は削除するテーブルを指定します。更新処理と同じく、`and()`で記録IDと本人のユーザーIDを両方確認します。
-
-```text
-記録IDが一致 + 本人のuserIdが一致
-→ 削除する
-
-記録IDだけ一致 + 他人のuserId
-→ 削除しない
-```
-
-`.returning({ id: weightRecords.id })`は削除できた行のIDだけを返します。削除結果が空ならHTTP 404、成功したら`deletedRecordId`をフロントへ返します。
-
-POST・GET・PATCH・DELETEは`npx tsc --noEmit`に成功しています。Neonへ`weight_records`を反映した後に実通信テストを行います。
-
-### AIチャットの体重履歴Tool
-
-体重履歴Toolは`chatTools.ts`と`runChatTool.ts`の2ファイルをセットで使用します。
-
-```text
-chatTools.ts
-→ AIへToolの名前・目的・入力形式を教える説明書
-→ Neonは検索しない
-
-runChatTool.ts
-→ AIが選んだTool名を受け取る実行係
-→ Clerkで確認済みの本人IDを使ってNeonを検索する
-```
-
-`chatTools.ts`の`get_weight_history`定義により、AIは体重の増減・減量・増量・停滞について答えるときに体重履歴を取得できると判断します。
-
-`runChatTool.ts`の`if (toolName === "get_weight_history")`は、選ばれたTool名を`getWeightHistory()`の実処理へつなぎます。
-
-`getWeightHistory()`は`weight_records`と`users`を`innerJoin()`し、ClerkユーザーIDが一致する本人の最近90件だけを取得します。件数を制限する理由は、Neonの通信量とOpenAIへ渡す文字数を増やしすぎないためです。
-
-取得結果は古い順へ並べ、最初の体重、最新体重、合計変化、経過日数、1週間あたりの平均変化を計算します。
-
-```text
-totalChangeKg
-＝ 最新体重 − 最初の体重
-
-weeklyChangeKg
-＝ 合計変化 ÷ 経過日数 × 7日
-```
-
-`JSON.stringify()`を使う理由は、Neonから取得したJavaScriptオブジェクトをOpenAIがTool結果として読めるJSON文字列へ変換するためです。
-
-AIからユーザーIDは受け取りません。`route.ts`でClerk認証できた本人のIDだけを`runChatTool()`へ渡すため、AIが別ユーザーのIDを指定できない構造です。
-
-`systemPrompt.js`には、体重の増減・減量・増量・停滞について質問された場合に`get_weight_history`を使用するルールを追加しました。
-
-```text
-systemPrompt.js：どんな質問で使うかを指示
-chatTools.ts：Toolの名前と説明を定義
-runChatTool.ts：Neonから本人の履歴を取得
-```
-
-### 体重テーブルのマイグレーション
-
-`npm run db:generate`は、`db/schema.ts`の変更と前回のスナップショットを比較し、PostgreSQLへ必要な変更をSQLファイルとして生成します。
-
-今回生成されたファイルは`drizzle-postgres/0006_many_namora.sql`です。
-
-```text
-CREATE TABLE weight_records
-→ 体重履歴テーブルを作る
-
-ALTER TABLE ... FOREIGN KEY
-→ weight_records.user_idとusers.idを結ぶ
-
-CREATE UNIQUE INDEX
-→ 同じ人・同じ日付の重複を防ぐ
-```
-
-`drizzle-postgres/meta/0006_snapshot.json`は、今回のスキーマ状態をDrizzleが次回の差分比較に使う記録です。手作業で編集しません。
-
-マイグレーションの「生成」と「適用」は別です。
-
-```text
-npm run db:generate
-→ SQLファイルをMac内へ作るだけ
-→ 今回完了
-
-npx drizzle-kit migrate
-→ SQLをNeonへ実行して実テーブルを作る
-→ 本番とは分離したNeon開発用DBへ実行
-```
-
-元の本番DBは変更していません。新しく作成したNeon開発用DBには、`weight_records`を含むマイグレーション`0000`〜`0008`が反映されています。
-
-## ホーム画面用API（GET /api/home）
+## Clerk IDからNeonユーザーを探す
 
-対象ファイルは`app/api/home/route.ts`です。このAPIは、スマホのホーム画面が必要とする本人の目標体型と最新AIメニューを、1回の通信でまとめて返します。
+```ts
+const matchedUsers = await db
+  .select({ id: users.id })
+  .from(users)
+  .where(eq(users.clerkUserId, clerkUserId))
+  .limit(1);
 
-### 大きな処理の流れ
-
-```text
-スマホがGET /api/homeを呼ぶ
-↓
-Clerkトークンからログイン中の本人を確認
-↓
-ClerkユーザーIDに一致するユーザーをNeonから取得
-↓
-本人が最後に生成したAIメニューを1件取得
-↓
-そのメニューに含まれる種目一覧を取得
-↓
-ホーム画面用のJSONとしてスマホへ返す
-```
-
-### 本人のユーザー情報を取得する部分
-
-`getClerkUserId(request)`は、スマホから送られたClerkトークンを確認し、ログイン中の本人のClerkユーザーIDを取得します。取得できなければHTTP 401を返し、Neonを検索しません。
-
-`.where(eq(users.clerkUserId, clerkUserId))`は、Neonの`users`テーブルからClerkユーザーIDが一致する本人だけを検索します。
-
-`.limit(1)`は検索結果を最大1件に制限します。ユーザーは1人につき1行なので、不要なデータを受け取らずNeonの通信量も抑えられます。
-
-```typescript
-const currentUser = matchedUsers[0] ?? null;
-```
-
-`matchedUsers`は検索結果の配列です。`[0]`で先頭のユーザーを取り出し、結果がないときは`?? null`によって明確に`null`へ統一します。
-
-### 最新AIメニューを取得する部分
-
-`.where(eq(aiGeneratedMenus.userId, currentUser.id))`は、ログイン中の本人が持つAIメニューだけに絞ります。
-
-`desc(aiGeneratedMenus.createdAt)`は生成日時を新しい順へ並べます。その後の`.limit(1)`と組み合わせることで、最新メニューだけを取得します。
-
-```text
-orderBy(desc(createdAt))
-→ 新しい順に並べる
-
-limit(1)
-→ 先頭の最新1件だけ取る
-```
-
-メニューが存在しない場合は、次のように`menu`と`aiMessage`を`null`で返します。フロントはこれを使い、「AIメニューはまだありません」と生成ボタンを表示できます。
-
-```json
-{
-  "goalBodyType": "細マッチョ",
-  "menu": null,
-  "aiMessage": null
-}
-```
-
-### 最新メニューの種目を取得する部分
-
-`aiGeneratedMenuExercises.menuId`と`latestMenu.id`を比較し、最新メニューに所属する種目だけを取得します。
-
-`.orderBy(aiGeneratedMenuExercises.displayOrder)`は、AIメニューで決めた実施順に種目を並べます。ここでは`.limit(1)`を付けません。メニューには複数種目があるため、該当する全種目が必要だからです。
-
-### ホームへ返すJSON
-
-メニューが存在する場合は、目標体型、最新メニュー、種目配列をまとめて返します。
-
-```text
-goalBodyType
-→ 本人が設定した理想体型
-
-menu
-→ 最新AIメニューの部位・理由・時間・調子・アドバイス
-
-menu.exercises
-→ 最新メニューに含まれる全種目
-
-aiMessage
-→ ホームに表示する短いAIメッセージ
-```
-
-```typescript
-latestMenu.advice[0] ?? latestMenu.reason
-```
-
-`advice[0]`はアドバイス配列の先頭です。アドバイスが空で先頭が`undefined`の場合は、`??`によってメニューを選んだ理由である`reason`を代わりに使用します。
-
-この`route.ts`はデータを画面へ直接表示するファイルではありません。本人のデータをNeonから集め、フロントが表示しやすいJSONへまとめるバックエンドの受け渡し役です。
-
-## アカウントと全保存データの削除API
-
-対象ファイルは`app/api/users/account/route.ts`です。使用言語はTypeScriptです。
-
-このAPIは、ログイン中の本人が自分のClerkアカウントとNeon内の保存データを削除するための場所です。
-
-### 大きな処理の流れ
-
-```text
-スマホがDELETE /api/users/accountを呼ぶ
-↓
-Clerkトークンからログイン中の本人を確認
-↓
-Clerkのstrict再確認が直近に行われているか確認
-↓
-確認文字がDELETEと完全一致するか確認
-↓
-Neonの本人users行を削除
-↓
-cascadeで本人のプロフィール・記録・分析・AI・チャットを削除
-↓
-Clerkのログインアカウントを削除
-```
-
-`getClerkSessionAuth(request)`は、通常のユーザーIDだけでなく、Clerkの本人再確認状態を含む認証情報を取得します。
-
-```typescript
-auth.has({ reverification: "strict" })
-```
-
-これは、ログインしているだけではなく、重要操作の直前に本人確認が行われたかを確認します。アカウント削除は元に戻せないため、通常のAPIより強い確認を使います。
-
-`input?.confirmation !== "DELETE"`は、利用者が確認文字として`DELETE`を入力したかを確認します。`?.`は`input`が`null`でもエラーにせず、結果を`undefined`として扱う記法です。
-
-Neonでは、次の条件で本人の行だけを削除します。
-
-```typescript
-eq(users.clerkUserId, auth.userId)
-```
-
-フロントからユーザーIDを受け取らないことが重要です。検証済みClerkトークンから得た`auth.userId`だけを使うため、別ユーザーのIDを送って削除することはできません。
-
-Neonを先に削除し、その後Clerkを削除します。Neonの削除に失敗した場合はClerkを残すため、利用者はログインした状態で再試行できます。Neon削除後にClerkだけ失敗した場合は、HTTP 502と`retryable: true`を返します。
-
-ClerkとNeonは別サービスなので、1つのPostgreSQLトランザクションにはできません。そのため、失敗しても再実行できる順番と返却形式で安全性を確保します。
-
-現在、身体写真そのものは長期保存していません。Neonには分析結果だけを保存しているため、現時点では画像ストレージの削除処理は不要です。
-
-## トレーニング記録の編集・削除
-
-対象ファイルは`app/api/training-records/route.ts`です。使用言語はTypeScriptです。
-
-### DELETEの役割
-
-`DELETE()`は、指定された1回分のトレーニング記録を削除します。
-
-```typescript
-and(
-  eq(trainingSessions.id, input.trainingSessionId),
-  eq(trainingSessions.userId, currentUser.id),
-)
-```
-
-記録IDと本人のNeonユーザーIDが両方一致する場合だけ削除します。他人の記録IDを送っても条件が一致しないため削除されません。
-
-`training_sessions`を削除すると、`onDelete: "cascade"`によって、その記録に所属する`training_exercises`と`training_sets`も削除されます。
-
-### PATCHの役割
-
-`PATCH()`は、保存済みのトレーニング記録を新しい内容へ更新します。
-
-POSTとPATCHはどちらも`isValidTrainingRecordInput()`を使います。同じ入力検査を共通利用することで、新規保存では許可されるのに編集では拒否される、といった違いを防ぎます。
-
-種目とセットは部分的に書き換えず、古い種目を削除して編集後の内容を入れ直します。
-
-```text
-training_sessionsの日時・時間・調子・メモを更新
-↓
-古いtraining_exercisesを削除
-↓
-cascadeで古いtraining_setsも削除
-↓
-編集後の種目を保存
-↓
-編集後のセットを保存
-```
-
-`crypto.randomUUID()`は、新しい種目を保存する前に種目IDを作ります。セット側へ同じ`trainingExerciseId`を入れることで、どのセットがどの種目に所属するかを結び付けられます。
-
-`map()`は各種目をNeonへ保存できる行へ変換します。`flatMap()`は種目ごとに分かれたセット配列を、まとめて保存できる1つの配列へします。
-
-`db.batch()`は、親記録の更新・古い種目の削除・新しい種目とセットの保存をまとめてNeonへ送ります。途中で1つが失敗した場合に、一部だけが保存された状態を防ぎます。
-
-## トレーニング履歴の絞り込みとページ分け
-
-`GET /api/training-records`は、ログイン中の本人が過去に保存したトレーニング履歴を取得します。
-
-使用できるURL条件は次のとおりです。
-
-```text
-page     → 何ページ目を取得するか
-limit    → 1ページに何件返すか（最大50件）
-dateFrom → 検索開始日
-dateTo   → 検索終了日
-bodyPart → 胸・背中・肩などの部位
-```
-
-```text
-/api/training-records?page=2&limit=20&dateFrom=2026-08-01&dateTo=2026-08-30&bodyPart=胸
-```
-
-URLから届く値は最初は文字列です。`parsePositiveInteger()`は`page`と`limit`を1以上の整数へ変換し、`parseJapanDate()`は`YYYY-MM-DD`を日本時間0時の`Date`へ変換します。
-
-日付を日本時間へ変換する理由は、時差によって8月1日の記録が7月31日の記録として検索されることを防ぐためです。
-
-`exists()`は、1回分のトレーニングに指定された部位の種目が1件でも存在するかを調べます。種目自体を検索結果にするのではなく、その種目を含む親のトレーニング記録を取得します。
-
-`count(trainingSessions.id)`は、条件に合う1回分のトレーニング記録が全部で何件あるかを数えます。種目数やセット数を数えているわけではありません。
-
-```text
-total      → 条件に合う過去の記録数
-limit      → 1ページの表示件数
-totalPages → total ÷ limitを切り上げた全ページ数
-```
-
-`.limit(limit)`は現在ページで取得する最大件数を指定します。`.offset(offset)`は前ページまでの記録を飛ばします。
-
-返却形式は、以前から存在する`records`を残したまま`pagination`を追加しています。
-
-```json
-{
-  "records": [],
-  "pagination": {
-    "page": 1,
-    "limit": 20,
-    "total": 0,
-    "totalPages": 0
-  }
-}
-```
-
-現在のフロントは`response.records`を読み取るため、そのまま動きます。フロントがページ移動UIを追加したときは、新しい`pagination`を利用できます。
-
-## トレーニング新規保存を安全な一括処理へ変更
-
-対象ファイルは`app/api/training-records/route.ts`です。使用言語はTypeScriptです。
-
-### 何を変更したのか
-
-フロントから受け取るJSON、フロントへ返すJSON、3つのテーブル構成は変更していません。
-
-変更したのは、`training_sessions`・`training_exercises`・`training_sets`をNeonへ送る方法です。
-
-以前は親記録を保存してから種目を1件ずつ保存していたため、途中で失敗すると親記録だけが残る可能性がありました。
-
-現在は3テーブル分の保存命令を`db.batch()`へ入れ、1つのトランザクションとして実行します。
-
-```text
-フロントから記録JSONを受け取る
-↓
-入力内容を検査する
-↓
-記録・種目・セットのIDと保存データを準備する
-↓
-3テーブルへのINSERTをdb.batch()でまとめて実行する
-↓
-成功した記録IDをフロントへ返す
-```
-
-### コードを一文ずつ理解する
-
-```typescript
-const trainingSessionId =
-  crypto.randomUUID();
-```
-
-`const`は、後から別の値へ入れ替えない変数を定義します。
-
-`crypto.randomUUID()`は、1回分のトレーニング記録を識別する重複しにくいUUIDを作ります。
-
-```typescript
-const exercisesWithIds =
-  input.exercises.map((exercise) => ({
-    id: crypto.randomUUID(),
-    exercise,
-  }));
-```
-
-`input.exercises`は、フロントから受け取った種目の配列です。
-
-`.map()`は、配列の各要素を別の形へ変換して新しい配列を作ります。
-
-`exercise`は、現在処理している1種目を受け取る仮の変数名です。
-
-`id: crypto.randomUUID()`は、現在の種目に保存前からUUIDを付けます。
-
-`exercise,`は`exercise: exercise`の省略形で、元の種目情報も同じオブジェクトへ入れます。
-
-先に種目IDを作る理由は、セット側の`trainingExerciseId`へ同じIDを入れ、種目とセットの親子関係を保存前に準備するためです。
-
-```typescript
-const exerciseRows = exercisesWithIds.map(
-  ({ id, exercise }) => ({
-    id,
-    sessionId: trainingSessionId,
-    exerciseId: exercise.exerciseId.trim(),
-    exerciseName: exercise.exerciseName.trim(),
-    bodyPart: exercise.bodyPart.trim(),
-    bodyArea: exercise.bodyArea?.trim() || null,
-    displayOrder: exercise.displayOrder,
-  }),
-);
-```
-
-`exerciseRows`は、全種目を`training_exercises`へINSERTできる形にした配列です。
-
-`({ id, exercise })`は、オブジェクトから`id`と`exercise`を取り出す分割代入です。
-
-`sessionId: trainingSessionId`は、全種目を今回の親トレーニング記録へ結び付けます。
-
-`.trim()`は、文字列の前後にある不要な空白を取り除きます。
-
-`exercise.bodyArea?.trim()`の`?.`は、`bodyArea`が存在するときだけ`trim()`を実行します。
-
-`|| null`は、結果が空文字などの場合にDBへ`null`を保存します。
-
-```typescript
-const setRows = exercisesWithIds.flatMap(
-  ({ id, exercise }) =>
-    exercise.sets.map((set) => ({
-      id: crypto.randomUUID(),
-      trainingExerciseId: id,
-      setNumber: set.setNumber,
-      weightKg: set.weightKg ?? null,
-      reps: set.reps ?? null,
-    })),
-);
-```
-
-`setRows`は、全種目に含まれる全セットを`training_sets`へINSERTできる形にした配列です。
-
-`.flatMap()`は、種目ごとに分かれているセット配列を1つの平らな配列へまとめます。
-
-内側の`.map()`は、現在の種目に含まれる各セットをDB保存用の形へ変換します。
-
-`trainingExerciseId: id`は、そのセットを現在の親種目へ結び付けます。
-
-`set.weightKg ?? null`の`??`は、重量が`undefined`または`null`のときだけ`null`を使います。
-
-重量が`0`なら`??`は`0`をそのまま残すため、`||`より数値入力に向いています。
-
-```typescript
-await db.batch([
-  db.insert(trainingSessions).values({ ... }),
-  db.insert(trainingExercises).values(exerciseRows),
-  db.insert(trainingSets).values(setRows),
-]);
-```
-
-`db.insert(テーブル)`は、どのテーブルへ新しい行を追加するか指定します。
-
-`.values(...)`は、そのテーブルへ保存する値を指定します。
-
-`db.batch([ ... ])`は、3つのINSERTを1つのまとまりとしてNeonへ送ります。
-
-このプロジェクトの`neon-http`では、`db.batch()`が内部でPostgreSQLのトランザクションとして実行されます。
-
-トランザクションは、3つすべて成功した場合だけ確定し、途中の1つが失敗した場合は全体を取り消す仕組みです。
-
-`await`は、Neonの保存結果が決まるまで次の処理へ進まずに待ちます。
-
-```typescript
-trainingSessionId,
-```
-
-保存成功後は、最初に作った親記録のUUIDをフロントへ返します。
-
-### 今回変わっていないもの
-
-- フロントから送るトレーニング記録JSON
-- 成功時に返す`message`と`trainingSessionId`
-- `training_sessions`・`training_exercises`・`training_sets`の役割
-- 本人認証と入力チェック
-
-コード上の一括保存は完了しています。Neonの利用上限が回復した後に、意図的に途中失敗させて3テーブルすべてがロールバックされる実通信テストを行います。
-
-## 身体分析保存・二重送信・DBルールの強化
-
-今回の主な対象は次のファイルです。
-
-- `app/api/body-analysis/route.ts`：身体分析の受付・Python通信・Neon保存
-- `app/api/training-records/route.ts`：トレーニング記録の受付・Neon保存
-- `app/lib/idempotency/createRequestFingerprint.ts`：重複判定用UUIDの作成
-- `db/schema.ts`：PostgreSQLのテーブル・インデックス・制約
-- `drizzle-postgres/0007_repair_missing_ai_body_chat_tables.sql`：不足テーブルを補うSQL
-- `drizzle-postgres/0008_add_data_consistency_constraints.sql`：検索と入力ルールを追加するSQL
-
-使用言語は、APIとスキーマがTypeScript、マイグレーションがSQLです。
-
-### 身体分析をまとめて保存する理由
-
-以前は`body_analyses`へ分析本体を保存した後、`body_analysis_areas`へ部位別結果を保存していました。
-
-この順番では2回目だけが失敗すると、部位別結果のない分析本体が残る可能性がありました。
-
-現在は保存前に親IDを作り、全データを次の順番で準備します。
-
-```text
-Pythonから検品済みの分析JSONを受け取る
-↓
-bodyAnalysisIdを作る
-↓
-肩・胸・背中などへ同じbodyAnalysisIdを付ける
-↓
-db.batch()へ分析本体と全部位のINSERTを入れる
-↓
-全部成功した場合だけNeonへ確定する
-```
-
-```typescript
-const bodyAnalysisId =
-  crypto.randomUUID();
-```
-
-`crypto.randomUUID()`は、まだNeonへ保存していない分析本体のIDを先に作ります。
-
-```typescript
-const areaRows =
-  analysisResult.areas.map((area) => ({
-    id: crypto.randomUUID(),
-    analysisId: bodyAnalysisId,
-    bodyPart: area.body_part.trim(),
-  }));
-```
-
-`.map()`は、Pythonが返した各部位をNeonへ保存できる行へ変換します。
-
-`analysisId: bodyAnalysisId`は、全部位を今回の分析本体へ結び付けます。
-
-```typescript
-await db.batch([
-  insertAnalysis,
-  db.insert(bodyAnalysisAreas).values(areaRows),
-]);
-```
-
-`db.batch()`は、分析本体と全部位の保存命令を1つのトランザクションとして実行します。
-
-片方が失敗した場合は全体が取り消されるため、親データだけが残る状態を防ぎます。
-
-### 二重送信対策の基本
-
-二重送信とは、ボタンの連打や通信の再送によって同じ処理がほぼ同時に2回届くことです。
-
-対象ファイル`createRequestFingerprint.ts`の役割は、同じ内容から毎回同じUUIDを作ることです。
-
-```typescript
-await crypto.subtle.digest(
-  "SHA-256",
-  new TextEncoder().encode(value),
-);
-```
-
-`TextEncoder()`は、JavaScriptの文字列をコンピューターが計算できるバイト列へ変換します。
-
-`crypto.subtle.digest("SHA-256", ...)`は、入力内容から固定長のハッシュを作ります。
-
-ハッシュは元の身体情報や記録内容をそのままDBへ保存せず、同じ内容かどうかを比較するために使います。
-
-作ったハッシュの先頭16バイトをPostgreSQLの`uuid`形式へ直し、`ai_request_guards.request_id`へ保存します。
-
-同じユーザー・同じ処理・同じUUIDには一意制約があるため、1件目だけが登録され、2件目はHTTP 409になります。
-
-### トレーニング記録の重複判定
-
-トレーニング記録では、本人ID・実施日時・時間・調子・メモ・全種目・全セットからUUIDを作ります。
-
-内容が同じでも実施日時が違えば別の記録として保存できます。
-
-保存途中で失敗した場合は受付記録を削除するため、同じ内容をもう一度送れます。
-
-### 旧仕様：身体分析の重複判定と1日1回
-
-この説明は変更前の記録です。現在は「本人ID・日本時間の年月・月内利用枠」からUUIDを作り、有料会員の月4回制限を同時通信ですり抜けないようにします。
-
-身体分析では、本人IDと日本時間の日付からUUIDを作ります。
-
-同じ日の2回の通信は画像が違っても同じUUIDになるため、同時送信された場合も最初の1件だけが分析を開始します。
-
-翌日は日付が変わるため、新しいUUIDになり再び分析できます。
-
-### インデックスとは
-
-インデックスは、テーブル全体を先頭から調べなくても目的の行を探しやすくするDBの索引です。
-
-今回追加した主な索引は次のとおりです。
-
-```text
-training_sessions(user_id, performed_at)
-→ 本人の履歴を日付順で探す
-
-training_exercises(session_id, display_order)
-→ 1回分の種目を表示順で探す
-
-body_analyses(user_id, status, analyzed_at)
-→ 本人の完了済み分析や今日の分析を探す
-
-body_analysis_areas(analysis_id)
-→ 1回の分析に所属する全部位を探す
-```
-
-### DB制約とは
-
-DB制約は、APIの入力チェックとは別にPostgreSQL自身がデータを検査する最後の安全網です。
-
-今回追加した主なルールは次のとおりです。
-
-```text
-トレーニング時間：1〜600分または未入力
-調子：1〜10または未入力
-種目表示順：0〜29
-セット番号：1〜20
-重量：0〜1000kgまたは未入力
-回数：0〜1000回または未入力
-身体分析点数：1〜10または未入力
-```
-
-`training_sets`では、同じ種目に同じセット番号を2件保存できない一意インデックスも追加しました。
-
-### 0007と0008の違い
-
-`0007`は、過去のスナップショットには記録されていたものの、作成SQLが不足していた身体分析・AIメニュー・チャットの6テーブルを補います。
-
-`CREATE TABLE IF NOT EXISTS`は、テーブルがなければ作り、すでにあれば重複作成しません。
-
-`ADD COLUMN IF NOT EXISTS`も、列が存在しない場合だけ追加します。
-
-`0008`は、今回追加したインデックス・一意制約・数値範囲のチェック制約を追加します。
-
-順番を分けることで、最初に必要なテーブルをそろえ、その後に検索と安全ルールを追加できます。
-
-全13テーブルに作成SQLがあることと、`npx drizzle-kit check`が成功することまでは確認済みです。
-
-Neonコネクタには引数名の不整合があったため、公式Neon CLIを使って検証を続けました。元の本番DBとは別に`musclepas-development`を作成し、空のDBへ`0000`〜`0008`を最初から適用できることを確認済みです。元の本番DBへの差分適用だけは、転送量上限が回復してから確認します。
-
-## Neon開発用プロジェクトでのマイグレーション実証
-
-### 何をしたのか
-
-元の`musclepas`は転送量上限で接続できないため、同じシンガポールリージョン・PostgreSQL 18で`musclepas-development`を作成しました。
-
-これは本番データを直す作業ではありません。空の別DBを使い、現在のマイグレーションだけでアプリに必要なDBを最初から再現できるか確認する作業です。
-
-### 接続先を一時的に変えた理由
-
-マイグレーション実行中だけ、環境変数`DATABASE_URL`へ開発用DBの接続先を渡しました。
-
-```text
-開発用DBの接続先をコマンド実行中だけ取得
-↓
-DATABASE_URLとしてDrizzle Kitへ渡す
-↓
-drizzle.config.tsがその接続先を読む
-↓
-0000〜0008を開発用DBへ適用
-```
-
-`.env.local`を書き換えていないため、元の本番用接続設定を誤って上書きしていません。また、接続文字列とパスワードはターミナル出力やGitへ保存していません。
-
-### なぜ適用数が9本なのか
-
-ファイル名が`0000`から`0008`まであるためです。
-
-```text
-0000, 0001, 0002, 0003, 0004, 0005, 0006, 0007, 0008
-```
-
-番号は8までですが、0から数えるので合計は9本です。
-
-### 確認できた内容
-
-- アプリ用の13テーブルが作成された
-- Drizzleの適用履歴テーブル`drizzle.__drizzle_migrations`が作成された
-- 入力範囲を守る9個の`CHECK`制約が作成された
-- 検索と重複防止に使う主要7インデックスが作成された
-- 同じAIリクエストIDの二重保存が拒否された
-- 同じ種目へ同じセット番号を二重保存すると拒否された
-
-二重保存テストは`BEGIN`から`ROLLBACK`までの中で行いました。
-
-```text
-BEGIN
-↓
-テストデータを保存
-↓
-同じデータをもう一度保存して、DBが拒否することを確認
-↓
-ROLLBACK
-```
-
-`ROLLBACK`は、そのテスト中の変更を確定せず全部取り消す命令です。最後にテスト用ユーザーが0件であることも確認したため、検証用データはDBに残っていません。
-
-## トレーニング履歴APIの無限再取得を防ぐ
-
-対象ファイルは`mobile/src/contexts/TrainingHistoryContext.tsx`です。使用言語はTypeScriptとReactです。
-
-### 発生していた流れ
-
-```text
-useEffectがreloadRecordsを実行
-↓
-GET /api/training-recordsを呼ぶ
-↓
-取得結果をStateへ保存して再描画
-↓
-認証状態や取得関数の再評価でuseEffectが再実行される
-↓
-取得済みの判定がないため、またAPIを呼ぶ
-```
-
-この循環により、画面を操作していなくてもNeon検索が繰り返されていました。通信量・サーバー負荷・Neon利用上限を増やす原因になるため修正しました。
-
-```typescript
-const getTokenRef = useRef(getToken);
-```
-
-- `useRef()`：再描画されても同じ入れ物を維持するReactの機能
-- `getTokenRef`：Clerkの最新`getToken`関数を保存する入れ物
-- `.current`：`useRef`の中に現在保存されている値
-
-```typescript
-useEffect(() => {
-  getTokenRef.current = getToken;
-}, [getToken]);
-```
-
-`getToken`が更新されたときだけ、refの中身を最新の関数へ入れ替えます。refの中身を変えても画面の再描画は発生しません。
-
-```typescript
-const token = await getTokenRef.current();
-```
-
-履歴取得時には、refへ保存された最新のClerk関数を呼び、認証トークンを取得します。
-
-```typescript
-}, [isLoaded, isSignedIn]);
-```
-
-`reloadRecords`を作り直す条件から`getToken`を外しました。Clerkの読込状態またはログイン状態が変わった場合だけ関数を作り直すため、State更新後の無限再取得を防げます。
-
-ただし、これだけでは開発中の再評価を完全に防げなかったため、次の2つの印を追加しました。
-
-```typescript
-const hasAutomaticallyLoadedRef = useRef(false);
-const isReloadingRef = useRef(false);
-```
-
-- `hasAutomaticallyLoadedRef`：同じログイン中に自動取得を已に行ったかを覚える
-- `isReloadingRef`：現在API通信中かを覚える
-
-```typescript
-if (!isLoaded || !isSignedIn || isReloadingRef.current) return;
-```
-
-Clerkの確認前、未ログイン、または履歴の取得中なら、新しいAPI通信を始めません。
-
-```typescript
-if (hasAutomaticallyLoadedRef.current) return;
-hasAutomaticallyLoadedRef.current = true;
-void reloadRecords();
+const user = matchedUsers[0] ?? null;
 ```
-
-1行目は、自動取得済みならそこで終了します。2行目はAPIを呼ぶ前に「取得済み」の印を付けます。3行目で実際に履歴APIを呼びます。
 
-`void`は、`reloadRecords()`が返すPromiseの完了をこの行で待たずに処理を開始する、という意図をTypeScriptへ伝えます。
+1行ずつ読むと次の意味です。
 
-ログアウトしたときは`hasAutomaticallyLoadedRef.current = false`へ戻すため、次にログインした利用者の履歴は新しく取得されます。カレンダーの「もう一度読み込む」ボタンからの手動取得もそのまま利用できます。
+- `.select()`で欲しい列を決めます。
+- `.from(users)`で検索するテーブルを決めます。
+- `.where()`でClerk IDが一致する本人だけに絞ります。
+- `.limit(1)`で最大1件にします。
+- `matchedUsers[0]`で最初の検索結果を取り出します。
+- `?? null`で結果がない場合を`null`へ統一します。
 
-### 修正後の実通信確認
+### `?.`の意味
 
-```text
-GET /api/training-records → HTTP 200、1回で停止
-GET /api/home → HTTP 200、開発モードの2回で停止
-GET /api/ai-menu → HTTP 200、1回で停止
-10秒間監視 → 追加の連続通信なし
+```ts
+const id = matchedUsers[0]?.id;
 ```
-
-開発中のReactは、問題を見つけるために初回処理を2回確認することがあります。2回で止まるのは無限通信ではありません。
-
-これにより、画面を放置してもNeonへの検索が連続しないことを確認しました。
 
-### ホームとAIコーチでも同じ対策が必要な理由
+`?.`は左側が`null`や`undefined`なら、エラーにせず`undefined`を返します。
 
-対象ファイルは次の2つです。
+### `??`の意味
 
-- `mobile/src/app/home.tsx`：目標体型と今日のAIメニューを取得する
-- `mobile/src/app/ai-coach.tsx`：Neonに保存済みの最新AIメニューを取得する
-
-どちらも、`useEffect()`からClerkの`getToken()`を使うAPI取得を行っています。`getToken`の更新を契機に処理が繰り返されないよう、次の役割を分けました。
-
-```text
-getTokenRef
-→ 常に最新のClerk関数を使う
-
-hasAutomaticallyLoadedRef / hasLoadedSavedMenuRef
-→ 同じ画面の自動取得を1回に制限する
-
-isLoadingHomeRef
-→ ホームAPIの通信中に、次の通信を重ねない
+```ts
+const user = matchedUsers[0] ?? null;
 ```
 
-AIメニューの「再生成」は利用者がボタンを押した場合の別処理です。自動取得を1回に制限しても、ボタンによるメニュー生成は使えます。
+左側が`null`または`undefined`の場合だけ、右側の`null`を使います。
 
-### Safariの重複タブに注意する
+## なぜ全APIで本人確認するのか
 
-`npm run web -- --port 8081`を繰り返すと、Safariに新しいlocalhostタブが追加されることがあります。
+ログイン時に1回確認しても、その後届く通信が本人のものとは限りません。
 
-```text
-localhostの古いタブが複数残る
-↓
-タブごとにReactアプリが動く
-↓
-各タブが同じAPIを呼ぶ
-↓
-コードが正しくても、ログに複数回の通信が表示される
-```
-
-再テストではlocalhostの古いタブを閉じ、1タブだけで確認します。今回はSafariのlocalhostタブを1つに整理してから、上記の通信回数を確認しました。
+APIは通信ごとにトークンを確認します。
 
-## JSON入力検査とAI安全対策
+同じ認証コードを全ファイルへコピーするのではなく、共通関数を呼んでいます。
 
-### 今回の大枠
-
-フロントから届くJSONやAIから返るJSONを、そのまま信用せず、決めた形式・数値範囲・文字数に合うか確認してから使うようにしました。
-
-```text
-フロントのJSON
-↓
-Zodで形式と上限を検査
-↓ 成功したデータだけ
-route.tsがNeonやOpenAIを操作
-```
+---
 
-不正な入力はNeonへ保存せず、HTTP 400を返します。
+# 12. Zodによる入力検査
 
-### `apiSchemas.ts`は何をするファイルか
+ファイル：`app/lib/validation/apiSchemas.ts`
 
-対象ファイルは`app/lib/validation/apiSchemas.ts`です。
+フロントの入力チェックだけは信用しません。
 
-このファイルは、各JSON APIで共通利用する「入力データの設計図」です。
+通信を直接送れば、画面の制限を通らずAPIへ到達できるためです。
 
-```typescript
+```ts
 export const chatRequestSchema = z.object({
-  conversationId: uuidSchema.nullable().optional(),
-  message: z.string().trim().min(1).max(2000),
+  message: z.string().trim().min(1).max(500),
+  conversationId: uuidSchema.optional(),
   requestId: uuidSchema,
 });
 ```
 
-一文ずつ見ると次の意味です。
+- `z.object`はオブジェクトの設計です。
+- `z.string`は文字列だけを許可します。
+- `.trim()`は前後の空白を除きます。
+- `.min(1)`は空文字を拒否します。
+- `.max(500)`は500文字までにします。
+- `.optional()`は省略可能です。
 
-- `z.object({...})`：JSON全体がオブジェクトであることを確認する
-- `conversationId`：既存チャットを続ける場合のIDで、未入力または`null`も許可する
-- `uuidSchema`：PostgreSQLで使うUUID形式か確認する
-- `message`：前後の空白を除き、1〜2000文字だけ許可する
-- `requestId`：二重送信を区別する必須UUIDとして確認する
-
-`safeParse()`は、検査に失敗してもプログラム全体を止めず、成功・失敗を結果として返します。
-
-```typescript
+```ts
 const parsedBody = chatRequestSchema.safeParse(body);
 ```
 
-`parsedBody.success`が`true`なら、`parsedBody.data`には検査済みデータが入っています。
+`safeParse`は成功・失敗を結果として返します。
 
-### トレーニング記録の上限
+入力が不正ならOpenAIやNeonを呼ぶ前にHTTP 400を返します。
 
-現在は次の共通ルールです。
+---
 
-```text
-1回の種目数：1〜30件
-1種目のセット数：1〜20件
-メモ：1000文字まで
-種目名・種目ID：100文字まで
-部位・細分部位：50文字まで
-時間：1〜600分
-調子：1〜10
-重量：0〜1000kg
-回数：0〜1000回
-```
+# 13. Neon・PostgreSQL・Drizzle
 
-新規保存の`POST`と編集の`PATCH`が同じ`trainingRecordSchema`を使うため、保存時と編集時で判定がずれません。
-
-トレーニング日時と体重記録日は未来を許可しません。トレーニング日時だけは端末時計の小さなずれを考え、5分以内の差を許可しています。
-
-### ZodとPydanticの違い
-
-ZodはTypeScript側の検査、PydanticはPython側の検査を担当します。
+## 3つの関係
 
 ```text
-PythonのOpenAI回答
-↓ Pydanticで検査
-PythonからTypeScriptへJSONを返す
-↓ Zodでもう一度検査
-正しい分析結果だけNeonへ保存
+Neon       = PostgreSQLをクラウドで提供するサービス
+PostgreSQL = データベース本体の種類
+Drizzle    = TypeScriptからPostgreSQLを操作する道具
 ```
 
-Python側で正しくても通信途中や将来の変更で形が変わる可能性があるため、受け取るTypeScript側でも再確認します。
+## DB接続
 
-身体分析では、部位点数1〜10、優先度`high`・`medium`・`low`、文章の最大文字数、部位数1〜20件を検査します。
+ファイル：`db/index.ts`
 
-### `config.ts`は何をするファイルか
+`DATABASE_URL`を使ってNeonへ接続します。
 
-対象ファイルは`app/lib/ai/config.ts`です。
+接続情報は`.env.local`に置き、GitHubへ公開しません。
 
-OpenAIのモデル名や利用上限を、AI処理へ直接書かず環境変数から読み込む場所です。
+## `pgTable`
+
+```ts
+export const users = pgTable('users', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  email: text('email').notNull().unique(),
+});
+```
+
+`pgTable`はPostgreSQLテーブルの設計をTypeScriptで書く関数です。
+
+- `'users'`は実際のテーブル名です。
+- `uuid`は重複しにくいIDです。
+- `primaryKey`は行を区別する主キーです。
+- `notNull`は値を必須にします。
+- `unique`は重複を禁止します。
+
+## 外部キー
+
+```ts
+userId: uuid('user_id')
+  .notNull()
+  .references(() => users.id, {
+    onDelete: 'cascade',
+  }),
+```
+
+1行ずつ読むと次の意味です。
+
+- `userId`はTypeScriptで使う名前です。
+- `'user_id'`はPostgreSQLの列名です。
+- `.notNull()`で必須にします。
+- `.references(() => users.id)`でusersテーブルと結び付けます。
+- `onDelete: 'cascade'`で親ユーザー削除時に関連データも削除します。
+
+## 親テーブルと子テーブル
+
+トレーニング記録は3段階です。
 
 ```text
-OPENAI_CHAT_MODEL：AIチャットのモデル
-OPENAI_MENU_MODEL：AIメニューのモデル
-OPENAI_CHAT_MAX_TOOL_CALLS：1回答で使えるToolの最大回数
-OPENAI_CHAT_MAX_OUTPUT_TOKENS：OpenAIが生成できる最大トークン数
-OPENAI_MENU_MAX_OUTPUT_TOKENS：メニュー生成の最大トークン数
-AI_CHAT_MAX_ANSWER_CHARACTERS：保存・表示する回答の最大文字数
+training_sessions          1回のトレーニング
+  └ training_exercises     その日に行った種目
+      └ training_sets      各種目の重量・回数
 ```
 
-モデル名を環境変数へ移す理由は、コードを書き換えず開発環境と公開環境のモデルを変更できるようにするためです。
+1つの大きなJSON列へ保存せず、検索・編集しやすい単位へ分けています。
 
-`max_output_tokens`はOpenAIが生成に使える上限です。さらに`limitChatAnswer()`で完成した回答文字数も制限し、長すぎる文章をNeonへ保存しません。
+## 現在の主なテーブル
 
-チャットのToolは`parallel_tool_calls: false`により1回ずつ実行し、`for`文の回数を`OPENAI_CHAT_MAX_TOOL_CALLS`で制限します。初期値は3回、設定可能な最大値は5回です。
+| テーブル | 保存内容 |
+| --- | --- |
+| `users` | Clerk ID、メール、理想体型、初回設定状態 |
+| `user_subscriptions` | App Store契約状態 |
+| `user_profiles` | 身長、体重、体脂肪率、運動条件 |
+| `weight_records` | 日ごとの体重 |
+| `food_records` | 食事、カロリー、たんぱく質 |
+| `training_sessions` | 1回のトレーニング |
+| `training_exercises` | 実施種目 |
+| `training_sets` | 重量と回数 |
+| `body_analyses` | 身体分析全体 |
+| `body_analysis_areas` | 部位別評価 |
+| `ai_generated_menus` | AIメニュー全体 |
+| `ai_generated_menu_exercises` | AIメニューの種目 |
+| `chat_conversations` | チャットルームと要約 |
+| `chat_messages` | 利用者とAIの発言 |
+| `openai_usage_records` | モデルとトークン使用量 |
+| `ai_request_guards` | 二重送信防止 |
 
-### 医療・痛みに関する安全ルール
+## schemaとrouteの違い
 
-AIチャット、AIメニュー、Python身体分析へ同じ考え方を追加しました。
+`db/schema.ts`は「何をどんな列で保存するか」を決めます。
 
-- 病名を断定しない
-- 治療や薬を指示しない
-- 一般的なトレーニング情報として回答する
-- 鋭い痛み、胸の痛み、強いしびれ、息苦しさ、めまいがあれば運動を中止する
-- 緊急性が疑われる場合は救急相談・救急要請を案内する
-- 痛みを確かめるために運動を続けさせない
+`app/api/**/route.ts`は「いつ誰のデータを保存・取得するか」を決めます。
 
-これはAIの文章を医療診断として使わせず、危険な状態で運動を続ける提案を防ぐためです。
+## マイグレーション
 
-### テストファイル
-
-対象ファイルは`tests/api-safety.test.mjs`です。
-
-次の内容を自動確認します。
-
-- 正しいトレーニング記録を受け付ける
-- 種目30件・セット20件の上限を超えた入力を拒否する
-- 不正入力用レスポンスがHTTP 400になる
-- 不正な日付・長すぎる質問・苦手部位の過剰入力を拒否する
-- Python分析結果の点数と優先度を検査する
-- AIプロンプトに診断禁止・しびれ・運動中止・薬のルールが存在する
-
-単体テストだけを実行するコマンドは次です。
+`schema.ts`を変えただけではNeonのテーブルは変わりません。
 
 ```bash
-npm run test:unit
+cd /Users/yuuta/Desktop/musslepas
+npm run db:generate
+npx drizzle-kit migrate
 ```
 
-## OpenAIへ渡す匿名ID（safety_identifier）
+1つ目でSQL変更ファイルを作り、2つ目でNeonへ反映します。
 
-### 何のために使うのか
+本番DBへ適用する前に、生成されたSQLを確認します。
 
-ClerkのユーザーIDをそのままOpenAIへ送らず、SHA-256で作った匿名IDを`safety_identifier`として送ります。
+---
 
-同じ利用者からは毎回同じ匿名IDが作られますが、匿名IDから元のClerk IDを簡単に読み取ることはできません。
+# 14. 機能別のデータの流れ
+
+## 理想体型
 
 ```text
-ClerkユーザーID
-↓ createSafetyIdentifier.tsでハッシュ化
-匿名UUID
-↓
-AIチャット・AIメニュー・身体分析
-↓ safety_identifierとして送信
-OpenAI
+ideal-body.tsx
+→ mobile/src/lib/goals.ts
+→ PATCH /api/users/goal
+→ users.goal_body_type
 ```
 
-### `createSafetyIdentifier.ts`の役割
+AIはこの値を目標として参照します。
 
-対象ファイルは`app/lib/ai/createSafetyIdentifier.ts`です。
+## プロフィール
 
-```typescript
-import { createRequestFingerprint } from "@/app/lib/idempotency/createRequestFingerprint";
+```text
+profile-setup.tsx / my-page.tsx
+→ mobile/src/lib/profiles.ts
+→ PATCH /api/users/profile
+→ user_profiles
 ```
 
-すでに作成済みのSHA-256ハッシュ化機能を読み込みます。
+身長・体重は必須です。
 
-```typescript
-export async function createSafetyIdentifier(
+体脂肪率、週回数、可能時間、場所、苦手部位などは任意です。
+
+`availableMinutes`は1回のトレーニングに使える時間です。
+
+## トレーニング記録
+
+```text
+training.tsx
+→ mobile/src/lib/trainingRecords.ts
+→ POST /api/training-records
+→ training_sessions
+→ training_exercises
+→ training_sets
+```
+
+記録本体・種目・セットはまとめて保存し、途中だけ残りにくくしています。
+
+GETで履歴取得、PATCHで編集、DELETEで削除します。
+
+## 体重記録
+
+```text
+weight-history.tsx
+→ mobile/src/lib/weightRecords.ts
+→ /api/weight-records
+→ weight_records
+```
+
+同じユーザー・同じ日付は1件だけ保存します。
+
+## 食事記録
+
+```text
+food.tsx
+→ mobile/src/lib/foodRecords.ts
+→ /api/food-records
+→ food_records
+```
+
+現在保存するのは日付、食事区分、食事名、カロリー、たんぱく質です。
+
+食事管理画面はプレミアム状態を確認してから表示します。
+
+## ホーム
+
+```text
+home.tsx
+→ mobile/src/lib/homeApi.ts
+→ GET /api/home
+→ 目標体型と最新AIメニュー
+```
+
+メニュー未生成の場合、バックエンドは`menu: null`を返します。
+
+フロントは「AIメニューはまだありません」を表示します。
+
+---
+
+# 15. AIへ渡す本人情報
+
+ファイル：`app/lib/ai/getUserAiContext.ts`
+
+このファイルはOpenAIを呼びません。
+
+NeonからAIに必要な事実を集め、1つのオブジェクトにまとめます。
+
+取得する主な情報は次のとおりです。
+
+- 理想体型
+- 身長・体重・体脂肪率
+- 週の運動回数・可能時間・場所・苦手部位
+- 最新の身体分析
+- 最近10回のトレーニング
+- 最近7日間の食事
+- 最近生成したAIメニュー
+
+```ts
+export async function getUserAiContext(
   clerkUserId: string,
-) {
+): Promise<UserAiContext | null> {
 ```
 
-他のファイルから呼べる非同期関数を定義し、Clerk IDを文字列として受け取ります。
+- 引数は本人のClerkユーザーIDです。
+- 成功時は`UserAiContext`を返します。
+- Neonにユーザーがいない場合は`null`を返します。
 
-`async`が必要な理由は、内部の`crypto.subtle.digest()`が計算完了を待つ非同期処理だからです。
+AIメニューとチャット要約が同じ事実データを使えるようにしています。
 
-```typescript
-return createRequestFingerprint(
-  `openai-safety:${clerkUserId}`,
-);
-```
+---
 
-`openai-safety:`をClerk IDの前へ付けてからハッシュ化し、別の目的で使うハッシュと区別します。
+# 16. AIチャット
 
-`return`は完成した匿名UUIDを呼び出し元へ返します。
+## 関係するファイル
 
-### TypeScriptで匿名IDを作る部分
+| ファイル | 役割 |
+| --- | --- |
+| `mobile/src/app/chat.tsx` | チャット画面 |
+| `mobile/src/lib/chatApi.ts` | チャットAPI通信 |
+| `app/api/chat/route.ts` | 認証・制限・保存・OpenAI呼び出し |
+| `app/lib/ai/systemPrompt.js` | AIの基本ルール |
+| `app/lib/ai/chatSummary.ts` | 古い会話の短い要約 |
+| `app/lib/ai/config.ts` | モデル・文字数・トークン上限 |
 
-チャット・AIメニュー・身体分析の各APIで、本人確認後に次のコードを実行します。
-
-```typescript
-const safetyIdentifier =
-  await createSafetyIdentifier(
-    clerkUserId,
-  );
-```
-
-- `const safetyIdentifier`：作った匿名IDを後から使える変数へ保存する
-- `await`：匿名IDの計算が終わるまで待つ
-- `clerkUserId`：Clerkで確認済みの本人IDを関数へ渡す
-
-AIチャットとAIメニューは、OpenAI通信へ直接追加します。
-
-```typescript
-safety_identifier:
-  safetyIdentifier,
-```
-
-左側の`safety_identifier`はOpenAI APIが決めた項目名です。
-
-右側の`safetyIdentifier`はTypeScriptで作った匿名IDが入っている変数名です。
-
-### 身体分析でPythonへ渡す部分
-
-身体分析はTypeScriptからPythonを経由するため、最初に`FormData`へ追加します。
-
-```typescript
-pythonFormData.append(
-  "safety_identifier",
-  safetyIdentifier,
-);
-```
-
-- `pythonFormData`：画像や身体情報をPythonへ送る箱
-- `.append()`：その箱へ新しい項目を追加する
-- `"safety_identifier"`：Python側が受け取る項目名
-- `safetyIdentifier`：TypeScriptで作った匿名ID
-
-### Pythonで匿名IDを受け取る部分
-
-対象ファイルは`python-analysis/app/main.py`です。
-
-```python
-safety_identifier: str = Form(
-    ...,
-    min_length=1,
-    max_length=64,
-),
-```
-
-一行ずつの意味は次のとおりです。
-
-- `safety_identifier`：TypeScriptから届いた匿名IDを保存するPython変数
-- `: str`：この値を文字列として扱う型指定
-- `Form(...)`：通常のJSONではなく、画像と一緒に送られたフォームデータから受け取る
-- `...`：必須入力であり、届かなければFastAPIが拒否する
-- `min_length=1`：空文字を拒否する
-- `max_length=64`：OpenAIへ渡す識別子が長くなりすぎないよう制限する
-
-### PythonからOpenAIへ渡す部分
-
-```python
-safety_identifier=safety_identifier,
-```
-
-同じ名前が左右にあるため、役割を分けて考えます。
+## 送信処理の順番
 
 ```text
-左側：OpenAI APIが決めた入力項目名
-右側：PythonがTypeScriptから受け取った変数
+1. フロントで500文字以内か確認
+2. Clerkトークン付きでPOST
+3. バックエンドでも500文字以内か確認
+4. Moderationで危険内容を検査
+5. 今日30回以内か確認
+6. 5秒以内の連続送信を拒否
+7. requestIdで二重送信を拒否
+8. 質問をNeonへ保存
+9. 古い会話を短いsummaryへ整理
+10. summary + 直近5往復をOpenAIへ送る
+11. 回答をNeonへ保存
+12. 回答と残り利用回数をフロントへ返す
 ```
 
-つまり「OpenAIの`safety_identifier`欄へ、Python変数の`safety_identifier`を入れる」という意味です。
+## 500文字制限
 
-これでAIチャット・AIメニュー・Python身体分析の3機能が、Clerk IDそのものをOpenAIへ送らない同じ方式になりました。
+フロントとバックエンドの両方で確認します。
 
-## AIチャットのModeration検査
+画面の確認は使いやすさのため、APIの確認は不正通信を防ぐためです。
 
-### 何のために使うのか
+## 会話履歴を全部送らない理由
 
-利用者の質問をAIチャットへ送る前に、重大な危険内容が含まれていないかOpenAI Moderation APIで検査します。
+会話が長くなるほど入力トークンと料金が増えます。
+
+現在は、最大800文字の要約と直近5往復だけを送ります。
+
+## `summary`
+
+`chat_conversations.summary`へ古い会話の重要情報を保存します。
+
+OpenAIを追加で呼ばず、アプリの事実データと古い相談内容から作ります。
+
+そのため要約だけで追加料金は発生しません。
+
+## モデルと回答上限
+
+モデル名は`OPENAI_CHAT_MODEL`環境変数で変更できます。
+
+通常回答は約400文字、OpenAI出力は最大600トークンです。
+
+モデル名をコードへ固定しないため、料金や性能に応じて変更できます。
+
+## Toolとの現在の関係
+
+Tool用ファイルは残っていますが、通常チャットでは追加Tool呼び出しを行いません。
+
+1回の質問で複数回OpenAIを呼ぶ料金を避けるため、先に本人情報を要約へまとめています。
+
+---
+
+# 17. AIメニュー
+
+## 関係するファイル
+
+| ファイル | 役割 |
+| --- | --- |
+| `mobile/src/app/home.tsx` | 条件入力と結果表示 |
+| `mobile/src/lib/aiMenus.ts` | API通信と画面用変換 |
+| `app/api/ai-menu/route.ts` | 生成・保存・取得 |
+| `app/lib/ai/menuPrompt.ts` | メニュー作成ルール |
+| `app/lib/ai/menuSchema.ts` | 入出力形式 |
+| `app/lib/ai/getUserAiContext.ts` | 本人データ取得 |
+
+## 生成の流れ
 
 ```text
-利用者の質問
-↓ Zodで文字数・形式を検査
-Moderation APIで危険カテゴリを検査
-↓ safe
-Neonへ保存してAIチャットへ送る
-↓ self_harm_support
-緊急時の相談案内を返す
-↓ blocked
-OpenAIチャットへ送らずHTTP 400を返す
+今日の調子・鍛えたい部位
+        ＋
+理想体型・プロフィール・身体分析・運動履歴・食事・過去メニュー
+        ↓
+OpenAI Structured Outputs
+        ↓
+決められたJSON形式
+        ↓
+メニュー本体と種目をNeonへ保存
+        ↓
+ホームへ表示
 ```
 
-先にModerationを実行するため、遮断した質問はチャット履歴へ保存されません。
+## Structured Outputs
 
-### `checkModeration.ts`の役割
+自由文章ではなく、決めたJSON形式で回答させる仕組みです。
 
-対象ファイルは`app/lib/ai/checkModeration.ts`です。
+種目名、重量、回数、セット数などを画面が安全に読み取れます。
 
-```typescript
-const response =
-  await openai.moderations.create({
-    model: moderationModel,
-    input,
-  });
-```
+## 1日3回
 
-一文ずつの意味は次のとおりです。
+最初の生成1回と再生成2回を合わせて、1日3回までです。
 
-- `await`：Moderation APIの判定が返るまで待つ
-- `openai.moderations.create()`：文章の危険カテゴリを検査するOpenAI APIを呼ぶ
-- `model`：Moderation専用モデルを指定する
-- `input`：利用者が入力した質問文を渡す
+制限はバックエンドで確認するため、画面を改造しても超えられません。
 
-```typescript
-const result = response.results[0];
-```
+## モデル
 
-OpenAIから配列で返った判定結果の1件目を取得します。
+`OPENAI_MENU_MODEL`でチャットとは別に変更できます。
 
-結果が存在しない場合は、安全か危険か判断できないためエラーにして通常のAIチャットへ進ませません。
+---
 
-### なぜ`flagged`だけを使わないのか
+# 18. 身体分析
 
-筋トレでは「胸を追い込む」「限界まで上げる」など、通常のトレーニング表現にも暴力に似た単語が含まれます。
-
-そのため`flagged`が`true`という理由だけで全部を遮断せず、カテゴリ別に処理を決めます。
-
-現在の重大な遮断対象は次です。
-
-- 未成年者を含む性的内容
-- 暴力を伴う違法行為の手順
-- 暴力を伴う差別的脅迫
-- 深刻な脅迫
-- 生々しい暴力表現
-
-自傷の意思・手順が疑われる場合は、通常の拒否文ではなく、身近な人・地域の緊急窓口・差し迫った危険時の119を案内します。
-
-### `moderationDecision.ts`と`decideModeration()`の役割
-
-通信を担当する`checkModeration.ts`から、判定だけを`moderationDecision.ts`へ分けています。
-
-分ける理由は、OpenAI APIキーや通信を使わずに判定ルールだけを単体テストできるようにするためです。
-
-```typescript
-export function decideModeration(
-  categories: ModerationCategories,
-): ModerationDecision {
-```
-
-- `export`：テストや他のファイルから使用できるようにする
-- `function`：カテゴリからアプリの処理を決める関数を定義する
-- `categories`：OpenAIが返したカテゴリ別の真偽値
-- `: ModerationDecision`：戻り値を`safe`・`self_harm_support`・`blocked`の3種類へ限定する
-
-`findFlaggedCategories()`は、検査対象として決めたカテゴリの中から`true`になった項目だけを取り出します。
-
-### `chat/route.ts`での使用場所
-
-Zodで質問の形式を確認した直後、Neonから利用回数を取得したり質問を保存したりする前に実行します。
-
-```typescript
-const moderationDecision =
-  await checkModeration(message);
-```
-
-- `message`：Zod検査を通過した利用者の質問
-- `await checkModeration(message)`：質問の安全判定が完了するまで待つ
-- `moderationDecision`：3種類のどの処理へ進むかを保存する変数
-
-`safe`ならこれまでどおりAIチャットへ進みます。
-
-`self_harm_support`または`blocked`ならHTTP 400を返し、それより下のNeon保存とOpenAI回答生成は実行しません。
-
-### Moderationのテスト
-
-`tests/api-safety.test.mjs`では、同じ判定関数へテスト用カテゴリを渡し、次を確認します。
-
-- 全カテゴリが`false`なら`safe`
-- `self-harm/intent`が`true`なら`self_harm_support`
-- `illicit/violent`が`true`なら`blocked`
-
-## Python身体分析のOpenAI失敗テスト
-
-### 何のためのテストか
-
-対象ファイルは`python-analysis/tests/test_openai_errors.py`です。
-
-OpenAIへの画像分析が失敗したとき、Python APIが固まったり内部エラーをそのまま見せたりせず、理由に合ったHTTPエラーを返せるか確認します。
+## 全体の流れ
 
 ```text
-OpenAIの失敗をテスト内で再現
-↓
-main.pyのanalyze_body()を実行
-↓
-PythonがHTTPExceptionへ変換
-↓
-ステータス番号と日本語メッセージを比較
+body-analysis.tsx
+→ FormDataで正面・横・背面を送信
+→ POST /api/body-analysis
+→ TypeScriptで本人・権限・容量を確認
+→ Python /analyze
+→ Pythonで画像形式・破損を確認
+→ OpenAI画像分析
+→ 決められたJSONをTypeScriptへ返す
+→ Neonへ分析全体と部位別結果を保存
+→ フロントへ返す
 ```
 
-実際のOpenAI APIは呼ばないため、API利用料金は発生しません。
+## なぜPythonを挟むのか
 
-```python
-PYTHON_ANALYSIS_ROOT = Path(__file__).resolve().parents[1]
-if str(PYTHON_ANALYSIS_ROOT) not in sys.path:
-    sys.path.insert(0, str(PYTHON_ANALYSIS_ROOT))
+画像の読み込み、破損検査、画像処理ライブラリとの相性が良いためです。
+
+ただしユーザー認証、利用制限、Neon保存はTypeScriptバックエンドが担当します。
+
+## FormData
+
+JSONは通常の文字や数値を送るのに向いています。
+
+画像ファイルは`FormData`を使います。
+
+```ts
+formData.append('front_image', frontImage);
+formData.append('side_image', sideImage);
+formData.append('back_image', backImage);
 ```
 
-- `Path(__file__)`：現在のテストファイルの場所
-- `.resolve()`：絶対パスへ変換する
-- `.parents[1]`：`tests`の1つ上にある`python-analysis`を取得する
-- `sys.path`：Pythonが`import`先を探すフォルダ一覧
-- `insert(0, ...)`：`python-analysis`を探索先の先頭へ追加する
+## 画像制限
 
-これにより、プロジェクト直下と`python-analysis`のどちらからでも`app.main`を読み込めます。
+- JPEG・PNG・WebP
+- 1枚8MB以下
+- 3枚合計24MB以下
+- 空ファイル・破損画像を拒否
 
-### `unittest.IsolatedAsyncioTestCase`の意味
+TypeScriptとPythonの両方で確認します。
 
-```python
-class OpenAIErrorResponseTests(
-    unittest.IsolatedAsyncioTestCase,
-):
-```
+## 利用制限
 
-- `class`：関連するテストを1つのまとまりとして定義する
-- `OpenAIErrorResponseTests`：このテストまとまりの名前
-- `unittest`：Pythonに最初から入っているテスト機能
-- `IsolatedAsyncioTestCase`：`async`関数を`await`して確認できるテスト用の型
+初回設定時の1回だけ無料です。
 
-`analyze_body()`はOpenAIの返信を`await`で待つ非同期関数なので、この型を使います。
+その後はプレミアム会員が日本時間の暦月ごとに4回利用できます。
 
-### テスト画像を作る部分
+現在の画面には「契約更新ごと」という文言も残っていますが、バックエンドの実際の判定は毎月1日から翌月1日までです。
 
-```python
-def make_test_image() -> UploadFile:
-```
+公開前に、暦月方式と契約更新日方式のどちらを正式仕様にするか統一する必要があります。
 
-- `def`：Pythonの関数を定義する
-- `make_test_image`：テスト用画像を作る関数名
-- `-> UploadFile`：FastAPIがアップロード画像として扱える型を返す
+同時送信で上限を超えないよう、DBの一意制約も使います。
 
-`Image.new()`で8×8ピクセルの小さなPNGをメモリ上に作ります。利用者の写真やローカルファイルは使いません。
+## 写真の保存
 
-### OpenAI通信を偽物に置き換える部分
+現在は分析結果をNeonへ保存し、身体写真そのものは長期保存しません。
 
-```python
-with patch.object(
-    openai_client.responses,
-    "parse",
-    new=AsyncMock(side_effect=openai_error),
-):
-```
+Pythonへ処理用として渡し、分析結果JSONだけを戻す構成です。
 
-- `with`：この範囲の中だけ一時的な設定を使う
-- `patch.object()`：既存オブジェクトの一部をテスト用に置き換える
-- `openai_client.responses`：`main.py`が使っているOpenAI通信クライアント
-- `"parse"`：画像と身体情報をOpenAIへ送るメソッド
-- `AsyncMock`：`await`で呼ばれる偽の関数
-- `side_effect=openai_error`：呼ばれたとき、成功結果ではなく指定したOpenAIエラーを発生させる
+---
 
-### HTTPエラーを確認する部分
+# 19. App Store月額課金
 
-```python
-with self.assertRaises(HTTPException) as raised:
-    await self.call_analyze()
-```
+## フロント
 
-- `assertRaises()`：指定したエラーが実際に発生したか確認する
-- `HTTPException`：FastAPIがHTTPステータスとメッセージを返すためのエラー
-- `as raised`：発生したエラーを`raised`という変数で確認できるようにする
-- `await self.call_analyze()`：3枚のテスト画像で身体分析を実行する
+ファイル：`mobile/src/app/subscription.tsx`
 
-```python
-self.assertEqual(
-    raised.exception.status_code,
-    expected_status,
-)
-```
+月額プランの説明、契約状態、購入・復元ボタンを表示します。
 
-`assertEqual()`は「実際の値」と「期待した値」が同じか確認します。ステータス番号だけでなく、利用者向けの日本語メッセージも比較します。
-
-### 確認する6種類
-
-- `APITimeoutError` → HTTP 504：制限時間内に終わらない
-- `APIConnectionError` → HTTP 503：OpenAIへ接続できない
-- `RateLimitError` → HTTP 429：利用回数や混雑の制限
-- HTTP 401 → HTTP 500：APIキーなどのサーバー設定ミス
-- OpenAIのHTTP 500 → HTTP 502：OpenAI側の一時障害
-- `output_parsed=None` → HTTP 502：決めたJSON形式の分析結果がない
-
-### テストの実行方法
-
-```bash
-cd /Users/yuuta/Desktop/musslepas/python-analysis
-.venv/bin/python -m unittest discover -s tests -v
-```
-
-- `-m unittest`：Python標準のテスト機能を実行する
-- `discover`：テストファイルを自動で探す
-- `-s tests`：`tests`フォルダから探す
-- `-v`：各テストの名前と成功・失敗を詳しく表示する
-
-6件すべての後に`OK`が出れば成功です。
-
-## 公開API・Clerk認証・開発用Neonの通しテスト
-
-### 何を確認したか
-
-2026年9月2日に、フロントの仮データモードを無効にして、次の流れを実際の通信で確認しました。
+端末別の購入処理は次のファイルへ分かれています。
 
 ```text
-Expo Webの画面
-↓ Clerkのセッショントークン
-Sitesへ公開したTypeScript API
-↓ DATABASE_URL
-開発用Neon PostgreSQL
-↓ 本人のデータをJSONで返す
-Expo Webの画面へ表示
+SubscriptionPurchasePanel.native.tsx
+→ iPhoneのApp Store購入
+
+SubscriptionPurchasePanel.web.tsx
+→ Webでは購入できない案内
 ```
 
-### 仮データモードを無効にする設定
+Metroが実行環境に合わせて自動選択します。
 
-対象ファイルは`mobile/.env.local`です。
-
-```env
-EXPO_PUBLIC_ENABLE_API_BYPASS=false
-```
-
-- `EXPO_PUBLIC_`：Expoのフロントから読める環境変数
-- `ENABLE_API_BYPASS`：APIを通らず仮データを使うかどうかの設定
-- `false`：仮データを使わず、公開APIへ実際に通信する
-
-この設定を変更した後は、Expoを再起動して読み直す必要があります。
-
-### 確認できた取得処理
-
-- `POST /api/users/bootstrap`：ログイン中の本人と初回設定状態を取得
-- `GET /api/home`：目標体型と最新AIメニューを取得
-- `GET /api/ai-menu`：保存済みの最新AIメニューを取得
-- `GET /api/chat`：本人のチャットとメッセージ履歴を取得
-- `GET /api/training-records`：本人のトレーニング履歴を取得
-- `GET /api/body-analysis`：本人の身体分析履歴を取得
-
-全画面で通信エラーが出ず、Neonの件数と表示内容が一致しました。
-
-### 未ログインテストの意味
-
-`GET /api/health`はHTTP 200、本人データが必要な`bootstrap`と`home`は、トークンを付けない通信にHTTP 401を返しました。
-
-HTTP 401は「ログイン情報がないため拒否した」という意味です。これにより、ログインせずURLを直接開いた人が個人データを読めないことを確認できます。別のログインユーザー間の分離は、2人目のテストアカウントで別に確認します。
-
-### 体重画面で見つかった残作業
-
-Neonの`weight_records`は0件ですが、`mobile/src/app/weight-history.tsx`はまだ確認用の仮体重を表示しています。
-
-そのため、体重APIのバックエンドは存在しますが、体重履歴画面からの実際の保存・取得・更新・削除はまだ接続されていません。
-
-## 全テストをまとめて実行する仕組み
-
-### 何のために作ったか
-
-今後は機能を変更した後、1つずつ手作業で確認しなくても、次の10層をまとめて検査できるようにしました。
+## バックエンド
 
 ```text
-TypeScriptの入力ルール
-↓
-ソースコードの秘密情報チェック
-↓
-Pythonの画像・OpenAIエラー処理
-↓
-ExpoのAPI通信処理
-↓
-Expo側のTypeScript
-↓
-Expo側のLint
-↓
-Lintによるコード品質
-↓
-バックエンドのビルド
-↓
-開発用Neonの保存・制約・削除
-↓
-公開APIの起動状態と未ログイン保護
+GET /api/subscription
+→ 現在の契約状態と利用可能機能
+
+POST /api/subscription/apple/verify
+→ iPhoneから届いた署名付き購入情報を検証
+
+POST /api/subscription/apple/notifications
+→ 更新・解約・返金などのApple通知を受信
 ```
 
-### 全テストを実行するコマンド
+## なぜフロントの「購入済み」を信用しないのか
 
-プロジェクト直下で次を実行します。
+スマホ側の値は改造される可能性があります。
 
-```bash
-cd /Users/yuuta/Desktop/musslepas
-npm run test:all
+Appleが署名した取引情報をバックエンドで確認し、成功した場合だけNeonを更新します。
+
+## 現在のプラン
+
+- 月額1,000円
+- 食事管理
+- 初回無料後の身体分析
+- プレミアム身体分析は現在のバックエンドでは暦月ごとに4回
+
+App Store Connectの商品設定とSandbox実機購入は別途確認が必要です。
+
+---
+
+# 20. 二重送信を防ぐ仕組み
+
+## フロントのロック
+
+```ts
+if (savingLock.current) return;
+savingLock.current = true;
 ```
 
-`package.json`の`test:all`は、複数のテスト用コマンドを`&&`で順番につないでいます。
+ボタンを素早く2回押しても1回だけ処理します。
 
-```json
-"test:all": "npm run test:unit && npm run test:source-security && npm run test:python && npm run test:mobile-api && npm run test:mobile-types && npm --prefix mobile run lint && npm run lint && npm run build && npm run test:db && npm run test:public"
+## バックエンドの`requestId`
+
+フロントは操作ごとにUUIDを送ります。
+
+バックエンドは`ai_request_guards`へ保存します。
+
+同じユーザー・処理種類・requestIdはDBが重複を拒否します。
+
+フロントだけでなくバックエンドでも止める理由は、通信の再送や複数端末があるためです。
+
+---
+
+# 21. DBへまとめて保存する理由
+
+```ts
+await db.batch([
+  db.insert(parentTable).values(parent),
+  db.insert(childTable).values(children),
+]);
 ```
 
-- `&&`：左側が成功したときだけ右側へ進む
-- `test:unit`：APIの入力形式とAI安全ルールを確認する
-- `test:source-security`：端末用コードとログに秘密情報が混ざっていないか確認する
-- `test:python`：Python画像検査とOpenAI障害処理を確認する
-- `test:mobile-api`：ExpoからAPIへ送る通信処理8件を確認する
-- `test:mobile-types`：Expo側のTypeScriptに型エラーがないか確認する
-- `npm --prefix mobile run lint`：`mobile`フォルダのExpo用Lintを実行する
-- `lint`：未使用変数や危険なReactコードなどを確認する
-- `build`：公開用バックエンドを最後まで組み立てられるか確認する
-- `test:db`：開発用Neonへ一時データを保存してDB制約を確認する
-- `test:public`：公開URLが動き、未ログイン通信を拒否するか確認する
+親データと子データをまとめて処理します。
 
-途中で1つでも失敗すると、その場所で止まります。最後まで進んで終了コードが`0`なら全体成功です。
+途中で失敗して親だけ残る状態を避けるためです。
 
-### `tests/api-safety.test.mjs`の役割
+例はトレーニング記録、身体分析、AIメニューです。
 
-バックエンドがデータを保存する前に使うZodの設計図を検査します。
+---
 
-今回確認している主な内容は次のとおりです。
+# 22. セキュリティの基本
 
-- トレーニング種目は最大30件、1種目のセットは最大20件
-- 身長と体重だけがプロフィールの必須項目
-- 理想体型は用意した4種類だけ
-- 日付は実在する日で、未来日は不可
-- UUIDが必要な更新・削除処理へ不正なIDを渡さない
-- AIメニューの調子は1〜10
-- OpenAIが返すAIメニューと身体分析結果が決めたJSON形式か
-- アカウント削除は確認文字`DELETE`の完全一致が必要
-- AIチャットが公開するToolは本人データ取得用の5種類だけ
-- Tool実行回数とAI回答文字数に上限がある
+## このアプリで守るもの
 
-```javascript
-assert.equal(
-  profileSchema.safeParse({
-    heightCm: 170,
-    weightKg: 65,
-  }).success,
-  true,
-);
-```
+このアプリには、メールアドレス、身体情報、トレーニング記録、食事、身体分析結果、チャットが入ります。
 
-- `safeParse(...)`：値がZodの設計図どおりか安全に検査する
-- `.success`：検査に通れば`true`、失敗すれば`false`
-- `assert.equal(実際の値, 期待する値)`：実際の結果が予想どおりか比較する
+セキュリティの目的は主に次の4つです。
 
-### `python-analysis/tests/test_image_validation.py`の役割
+1. 他人のデータを見せない
+2. 不正なデータを保存しない
+3. APIキーやDB接続情報を利用者へ渡さない
+4. AIや外部サービスの失敗時にも個人情報を漏らさない
 
-利用者の写真やOpenAI APIを使わず、テスト内で小さなPNGを作って画像処理を検査します。
+## APIを受け取ってから返すまで
 
-- 正常なPNGを許可する
-- 画像以外のContent-TypeをHTTP 415相当として拒否する
-- 空ファイルと壊れた画像をHTTP 400相当として拒否する
-- 1枚8MBを超える画像をHTTP 413相当として拒否する
-- OpenAIへ渡すBase64データURLへ正しく変換する
-
-このテストでは個人の身体写真を読み込まず、OpenAI料金も発生しません。
-
-### `tests/db-integration.test.mjs`の役割
-
-開発用Neonへ`自動テスト`と分かる専用ユーザーを一時作成し、実際のPostgreSQLで次を確認します。
-
-- プロフィールと体重を保存できる
-- 同じユーザー・同じ日の体重を2件作れない
-- 体重を更新できる
-- 調子11、セット番号重複、分析点数11などをDB制約が拒否する
-- トレーニング、身体分析、AIメニュー、チャットの親子データを保存できる
-- 子データの保存が失敗すると、同じトランザクションの親データも残らない
-- 親を削除すると`cascade`で子も削除される
-- 別ユーザーIDを条件にすると、他人の記録を取得・更新・削除できない
-- 同じ`requestId`による二重受付を拒否する
-
-```javascript
-try {
-  // テストデータを作成して検査する
-} finally {
-  // 成功・失敗に関係なくテストユーザーを削除する
-}
-```
-
-- `try`：通常のテスト処理を実行する範囲
-- `finally`：途中でテストが失敗しても必ず実行される後片付け
-
-テストユーザーを削除すると、外部キーの`cascade`により所属するテストデータも削除されます。既存利用者のIDは使いません。
-
-### ロールバックテストの意味
-
-```javascript
-await expectDatabaseError(() =>
-  sql.transaction([
-    親データのINSERT,
-    意図的に失敗する子データのINSERT,
-  ]),
-);
-```
-
-- `sql.transaction([...])`：複数のSQLを1つのまとまりとして実行する
-- 途中の1件が失敗：まとまり全体を取り消す
-- ロールバック：すでに実行した親のINSERTも元に戻すこと
-
-これにより「トレーニング本体だけあるが種目がない」といった中途半端なデータを防げることを確認しています。
-
-### `tests/public-api-smoke.test.mjs`の役割
-
-公開中のバックエンドへ実際に通信する軽い動作確認です。
-
-- `GET /api/health`がHTTP 200と`status: "ok"`を返す
-- ログイン情報を付けない本人用APIがHTTP 401を返す
-- GETだけでなくPOST・PATCH・DELETEも未ログインでは拒否する
-
-ここでは保存用JSONを送らず認証も付けないため、既存のユーザーデータは変更されません。
-
-### `mobile/scripts/api-request.test.mjs`の役割
-
-フロントエンド担当が作ったAPI通信処理を、実際のサーバーや利用者データを使わずに確認します。
-
-- ログイン用Bearerトークンを通信へ付ける
-- フロント専用オプションを`fetch()`へ誤って渡さない
-- サーバーから応答がない場合にタイムアウトする
-- 応答本文の読み込みが止まった場合にも終了する
-- 画像送信時に`Content-Type`を手動指定せず、ブラウザへ任せる
-- HTTP 401を別のエラーへ変えずに維持する
-- オフライン相当の失敗を分かりやすいメッセージへ変える
-- 送信前・送信中のキャンセルを反映する
-
-`fetch()`そのものはテスト用の偽物へ置き換えるため、Neon・OpenAIの料金や保存データには影響しません。
-
-フロント通信テストだけを実行する場合は、次のどちらかを使います。
-
-```bash
-cd /Users/yuuta/Desktop/musslepas
-npm run test:mobile-api
-```
-
-```bash
-cd /Users/yuuta/Desktop/musslepas/mobile
-npm run test:api
-```
-
-- `node --test`：Node.js標準のテスト機能を起動する
-- `scripts/api-request.test.mjs`：フロントのAPI通信だけを確認するテストファイル
-- `npm --prefix mobile`：プロジェクト直下から`mobile`のコマンドを実行する指定
-
-### `tests/source-security.test.mjs`の役割
-
-公開前に人の目だけで探すと見落としやすい秘密情報を、ソースコードから自動で検査します。
-
-- 利用者の端末へ配る`mobile/src`と`mobile/app.json`を検査する
-- `CLERK_SECRET_KEY`・`DATABASE_URL`・`OPENAI_API_KEY`をフロントへ入れない
-- PostgreSQL接続URLやOpenAI Secret Keyらしい文字列をフロントへ入れない
-- `.env*`が`.gitignore`に含まれ、Gitへ誤登録されないことを確認する
-- サーバーの`console.log()`・`console.error()`へ画像や認証情報の変数を直接渡さない
-
-```javascript
-assert.doesNotMatch(source, forbiddenPattern);
-```
-
-- `source`：検査対象ファイルの中身
-- `forbiddenPattern`：入ってはいけない文字列の規則
-- `doesNotMatch()`：禁止文字列に一致しないことを確認する
-
-この検査は文字列を探す静的テストです。実際の公開ログに秘密情報が出ていないかは、公開環境のログでも最後に確認します。
-
-### 2026年9月7日の再テスト結果
-
-- API・安全ルール：17件合格
-- ソースコード秘密情報：3件合格
-- Python画像・OpenAI障害：12件合格
-- Expo API通信：8件合格
-- Expo TypeScript：合格
-- Expo Lint：合格
-- バックエンドLint：エラー0件、既存の画像最適化警告2件
-- バックエンド本番ビルド：合格
-- 開発用Neon：保存・更新・削除・制約・ロールバック・cascade・ユーザー分離が合格
-- 公開API：ヘルスチェックと未ログイン保護が合格
-
-さらにExpo Webを開発用バイパスで起動し、トレーニング記録画面で保存したあと、画面内ナビゲーションでマイページからカレンダーへ進みました。カレンダーには当日の記録1件と、ベンチプレス・インクラインダンベルプレス・サイドレイズの3種目が表示されました。
-
-開発用バイパスではNeonへ送らず、React Contextの画面内データを確認します。画面をURLから再読み込みするとこの仮データは消えます。本番の保存継続性は、ClerkへログインしてAPI経由でNeonへ保存する別のE2Eテストで確認します。
-
-テスト後は`EXPO_PUBLIC_ENABLE_API_BYPASS=false`へ戻しており、通常の認証が必要な状態です。
-
-### 2026年9月8日の認証付き保存テスト
-
-Clerkへログインした通常モードで、トレーニング記録画面から次の内容を保存しました。
-
-- ベンチプレス：40kg × 10回を3セット
-- インクラインダンベルプレス：12kg × 10回を3セット
-- サイドレイズ：5kg × 12回を3セット
-- トレーニング時間：45分
-- メモ：Neon保存・再読み込み確認用テスト
-
-保存直後に成功メッセージが表示され、ブラウザを再読み込みした後も各種目の「前回」欄へ同じ重量・回数が戻りました。さらにカレンダーには、2026年9月8日の記録1件として3種目・45分・メモが表示されました。
-
-この確認で、データの流れが次のようにつながっていると分かります。
+保護が必要なAPIは、基本的に次の順番で処理します。
 
 ```text
-トレーニング記録画面
-  ↓ POSTで保存
-TypeScriptバックエンド
-  ↓ 本人のusers.idと結び付ける
-Neon PostgreSQL
-  ↓ 再読み込み後にGETで取得
-トレーニング画面の「前回」欄・カレンダー
-```
-
-`useState`だけの一時保存ならブラウザ再読み込みで消えます。今回は再読み込み後にも戻ったため、Clerkで特定した本人の記録がNeonへ保存され、取得APIから読み直せていることを確認できました。
-
-### 2026年9月8日の全体テストで分かったこと
-
-自動テストでは、API安全ルール17件、秘密情報検査3件、Pythonテスト12件、Expo通信テスト8件、TypeScript、Lint、ビルド、Neon実DB、公開APIが合格しました。
-
-ログイン済み画面では、次の実データ取得に成功しました。
-
-- bootstrapからホームへの移動
-- ホームの目標体型とAIメニュー
-- AIメニュー画面の保存済みメニュー
-- AIチャット画面の保存済み会話と回答
-- トレーニング記録の保存、再読み込み後の復元、カレンダー表示
-
-一方で、次の未完成点も画面テストで確認しました。
-
-- 分析履歴画面が`GET /api/body-analysis`を繰り返し、読み込み中のままになる
-- マイページはプロフィールAPIへ接続済み。画面表示時にGETし、保存時にPATCHする
-- 体重履歴は確認用の固定データで、体重APIへまだ接続していない
-- 食事管理は画面内の仮保存で、サーバー保存APIがない
-- トレーニング記録の編集・削除APIはあるが、操作するフロントUIがまだない
-
-分析履歴ではAPIがHTTP 200を返しているため、Neonやバックエンドの取得失敗ではありません。`useFocusEffect()`から呼ぶ`loadHistory`が再描画のたびに作り直され、再取得が続いている可能性を優先して調べます。
-
-#### 分析履歴の連続GETを止める修正
-
-`useFocusEffect()`は画面が選択されたときに処理を実行します。Expo公式仕様では、渡す処理を`useCallback()`で安定させ、必要以上に実行されないようにする必要があります。
-
-Clerkの`getToken`が再描画時に別の関数として渡されると、以前の`loadHistory`は`[getToken]`を依存配列に持っていたため、`loadHistory`まで作り直されることがありました。その結果、`useFocusEffect()`が再実行されてGETが続いていました。
-
-```typescript
-const getTokenRef = useRef(getToken);
-
-useEffect(() => {
-  getTokenRef.current = getToken;
-}, [getToken]);
-```
-
-- `useRef(getToken)`：現在の`getToken`を入れておく、再描画しても同じ箱を作る
-- `.current`：Refという箱に入っている現在値を読み書きする場所
-- `useEffect(..., [getToken])`：Clerkの関数が変わったときだけ箱の中身を最新版へ交換する
-
-履歴取得側では`getTokenRef.current()`を呼び、`loadHistory`の依存配列を`[]`にしました。これにより、本人確認には最新のClerk関数を使いながら、画面フォーカス中に履歴取得関数を何度も作り直さなくなります。
-
-修正後にログイン済みの分析履歴画面を開くと、最初は「分析履歴を読み込み中」と表示され、その後「分析履歴はまだありません」へ切り替わりました。開発環境の初回表示ではGETが2回記録されましたが、その後5秒待っても新しいGETは発生していません。Reactの開発時確認で初回処理が複数回動く場合はありますが、以前のように通信が終わらず繰り返される状態は解消しています。
-
-```text
-分析履歴画面へ移動
-  ↓
-useFocusEffectがloadHistoryを呼ぶ
-  ↓
-Clerkの最新トークンをgetTokenRef.current()で取得
-  ↓
-GET /api/body-analysis
-  ↓
-Neonの分析履歴を画面へ表示
-  ↓
-再描画されてもloadHistoryは作り直されないため、GETは繰り返されない
-```
-
-スマートフォン幅の表示確認ではChromeを390×844pxに設定し、ホーム、トレーニング、チャット、マイページ、カレンダー、身体分析の6画面を確認しました。全画面で`scrollWidth`と`clientWidth`が390pxで一致し、意図しない横スクロールは発生していません。
-
-### AI機能の実通信テスト
-
-AIチャットへ「今日保存した記録をもとに次回の改善点」を質問しました。AIは最近のトレーニング記録Toolを実行し、ベンチプレス40kg×10回×3セット、インクラインダンベルプレス12kg×10回×3セット、サイドレイズ5kg×12回×3セット、45分というNeonの値を回答へ反映しました。
-
-```text
-チャット画面の質問
-  ↓
-POST /api/chat
-  ↓
-OpenAIが必要なToolを選ぶ
-  ↓
-最近の記録ToolがNeonを検索
-  ↓
-Tool結果をOpenAIへ戻す
-  ↓
-記録に基づく回答を画面へ返してNeonへ保存
-```
-
-ブラウザ再読み込み後にも質問と回答が表示されたため、会話の長期保存も確認できました。
-
-AIメニューでは再生成を実行し、当日の胸・肩の記録と以前の脚メニューを参考に、ハックスクワットなど別構成の脚メニューが生成されました。こちらも再読み込み後に復元できました。
-
-安全確認用の質問では、肩に鋭い痛みとしびれがある条件を送信しました。AIはトレーニングの即時中止、症状が続く場合の医療相談、救急症状の案内を返し、無理な運動継続を勧めませんでした。
-
-### Python身体分析の実OpenAIテスト
-
-人物を模した合成画像の正面・横・背面3枚と架空の身体情報をPythonの`POST /analyze`へ送りました。Pythonは画像検査、Data URL変換、OpenAI送信を行い、HTTP 200で次の項目を含むJSONを返しました。
-
-- 全体の要約
-- 理想体型との差
-- 肩・胸・背中・腕・腹部・脚・姿勢の7項目
-- 各項目のスコア、優先度、観察内容、改善案
-
-これによりPythonからOpenAIまでの分析処理は実通信でも動くと確認できました。Chrome画面からの3枚選択だけは、ChatGPT Chrome拡張機能にファイルURLへのアクセス権限がないため未確認です。
-
-### 2026年9月2日の実行結果
-
-- API・安全ルール：17件合格
-- Python画像・OpenAI障害：12件合格
-- 開発用Neon：1つの統合テスト内の保存・更新・制約・ロールバック・cascade・ユーザー分離が合格
-- 公開API：ヘルスチェックと本人用API全26通信の未ログイン保護が合格
-- Expo TypeScript：合格
-- バックエンドLint：エラー0件、画像最適化の警告2件
-- バックエンド本番ビルド：合格
-
-まだ別に必要なのは、2つの本物のClerkログインセッションを使うユーザー分離と、ログイン済み画面から保存・更新・削除ボタンを押すE2Eテストです。
-
-## マイページとプロフィールAPIの接続
-
-### 今回何をできるようにしたか
-
-マイページを開くと、ログイン中の本人に保存されているプロフィールをNeonから取得します。保存ボタンを押すと、フォームの内容をプロフィールAPIへ送り、同じ本人のデータを更新します。
-
-```text
-マイページを開く
-  ↓
-Clerkから本人確認用トークンを取得
-  ↓ GET /api/users/profile
-TypeScriptバックエンドがClerkユーザーIDを確認
-  ↓
-Neonのuser_profilesから本人の1件を検索
-  ↓
-数値を入力欄用の文字列へ変換して表示
-
-保存ボタンを押す
-  ↓
-入力欄の文字列を数値またはnullへ変換
-  ↓ PATCH /api/users/profile
-バックエンドがZodで入力を検査
-  ↓
-Neonの本人プロフィールを追加または更新
-  ↓
-保存結果を画面とOnboardingContextへ戻す
-```
-
-### `mobile/src/app/my-page.tsx`の役割
-
-このファイルは、利用者が実際にプロフィールを見たり変更したりするReact Native・TypeScriptの画面です。
-
-```typescript
-const { getToken } = useAuth({
-  treatPendingAsSignedOut: false,
-});
-```
-
-- `useAuth()`：Clerkのログイン状態と認証機能を利用する
-- `getToken`：バックエンドへ「ログイン中の本人からの通信」と伝えるトークンを取得する関数
-- `treatPendingAsSignedOut: false`：Clerkの確認途中を、すぐ未ログイン扱いにしない
-
-```typescript
-const getTokenRef = useRef(getToken);
-```
-
-- `useRef()`：再描画されても同じ箱を使う
-- `getTokenRef.current`：箱に入っている最新の`getToken`を表す
-- 目的：認証関数が更新されてもプロフィール取得関数を何度も作り直さない
-
-```typescript
-const response = await fetchUserProfile(token);
-```
-
-- `fetchUserProfile()`：`GET /api/users/profile`を呼ぶ
-- `await`：バックエンドとNeonから結果が返るまで次へ進まず待つ
-- `response.profile`：本人の保存済みプロフィール。未作成なら`null`
-
-```typescript
-const restoredProfile =
-  userProfileToDraft(response.profile);
-setForm(restoredProfile);
-setProfile(restoredProfile);
-```
-
-- `userProfileToDraft()`：Neonの数値を入力フォームで扱う文字列へ変換する
-- `setForm()`：現在表示しているマイページの入力欄へ反映する
-- `setProfile()`：ホームやAIメニューなど、ほかの画面も使うContextへ反映する
-
-```typescript
-const response = await saveUserProfile(
-  token,
-  form,
-);
-```
-
-- `saveUserProfile()`：`PATCH /api/users/profile`を呼ぶ
-- `token`：誰のプロフィールを更新するか安全に判断するための認証情報
-- `form`：身長・体重など、画面に現在入力されている内容
-- `PATCH`：すでにある本人のプロフィールを更新する目的で使うHTTPメソッド
-
-`savingLock.current`は、保存ボタンを素早く2回押して同じ保存通信が重なることを防ぎます。`isSaving`はボタンを無効化し、画面に読み込み表示を出すためのStateです。
-
-### `mobile/src/lib/profiles.ts`の役割
-
-このファイルは画面そのものではなく、プロフィール画面とバックエンドAPIの間でデータ形式を変換するTypeScriptの通信担当です。
-
-- `fetchUserProfile()`：プロフィールをGETする
-- `saveUserProfile()`：プロフィールをPATCHする
-- `profileDraftToApiInput()`：`"177"`のような入力文字列を`177`という数値へ変える
-- `userProfileToDraft()`：Neonの`177`という数値を入力欄用の`"177"`へ戻す
-- 空の任意項目：空文字ではなく`null`へ統一してバックエンドへ送る
-
-### バックエンドとNeon側の変更
-
-`app/api/users/profile/route.ts`は、Clerkトークンから本人を特定し、GETでは本人のプロフィールを返し、PATCHでは本人のプロフィールだけを保存します。
-
-`db/schema.ts`の`trainingStyle`は、次の3種類をNeonの`user_profiles.training_style`列へ保存する項目です。
-
-- `full-body`：全身
-- `split`：部位別
-- `ai`：AIにおまかせ
-
-```sql
-ALTER TABLE "user_profiles"
-ADD COLUMN "training_style" text;
-```
-
-このSQLは`drizzle-postgres/0009_mute_roulette.sql`にあります。既存のプロフィールを消さず、新しい保存欄だけを追加します。
-
-`profileSchema`では、上の3種類または`null`だけを許可します。`unknown`など予定外の値はHTTP 400になるため、DBへ不正な形式が入りにくくなります。
-
-### 確認結果
-
-- API入力テスト17件：合格
-- Expo TypeScript：合格
-- Expo Lint：合格
-- Neonマイグレーション：適用成功
-- 一時テストユーザーの身長・体重・`trainingStyle`保存と再取得：合格
-- ログイン済みマイページでNeonの身長177cm・体重66kgを表示：確認済み
-
-実ユーザーのプロフィール内容を変更する保存ボタン操作は行っていません。コードと一時テストユーザーでは保存・復元まで確認できています。
-
-### Lintを通すために直したReactコード
-
-`IdealBodySection.jsx`と`ProfileSetupForm.jsx`では、以前は`useEffect()`が動いた直後に`setState()`して保存値を読み戻していました。
-
-今回は`useState()`の初期値を作る関数で、最初から保存値を読み込む形へ変更しました。
-
-```javascript
-const [form, setForm] = useState(loadInitialForm);
-```
-
-- `useState(...)`：画面で変化する値を保存する
-- `loadInitialForm`：最初の1回だけ実行して、端末に保存された入力を読み込む関数
-- 関数名だけを渡す：Reactが初期化時に必要になったタイミングで実行する
-
-これにより「初期表示→Effect実行→もう一度State変更」という余分な再描画を減らします。
-
-`eslint.config.mjs`では`mobile/**`をルートのNext.js用Lintから外しました。`mobile`は独立したExpoプロジェクトなので、Next.js専用ルールではなく`npm run test:mobile-types`でTypeScriptを検査します。
-
-## 体重履歴画面とNeonの接続
-
-### 全体のデータの流れ
-
-```text
-体重履歴画面を開く
-  ↓ GET /api/weight-records
-バックエンドがClerkトークンから本人を確認
-  ↓
-Neonのweight_recordsから本人の記録だけを取得
-  ↓
-日付・体重をグラフと履歴へ表示
-
-新しい日付を保存 → POST
-同じ日付または編集中の記録を保存 → PATCH
-削除ボタンを押して確認する → DELETE
-```
-
-### `mobile/src/lib/weightRecords.ts`の役割
-
-このTypeScriptファイルは、体重履歴画面とバックエンドAPIの間を担当します。画面の見た目は持たず、通信先・HTTPメソッド・JSON形式をまとめています。
-
-- `fetchWeightRecords()`：本人の履歴をGETする
-- `createWeightRecord()`：日付と体重をPOSTして新規保存する
-- `updateWeightRecord()`：記録IDと新しい体重をPATCHする
-- `deleteWeightRecord()`：URLへ記録IDを付けてDELETEする
-- `toWeightRecord()`：APIの`recordedDate`を画面用の`recordedOn`へ変換する
-
-```typescript
-const response = await apiRequest<WeightRecordsResponse>(
-  '/api/weight-records',
-  {
-    method: 'GET',
-    token,
-  },
-);
-```
-
-- `apiRequest<WeightRecordsResponse>`：返ってくるJSONのTypeScript型を指定する
-- `'/api/weight-records'`：体重APIの住所
-- `method: 'GET'`：保存済み情報を取得する
-- `token`：ログイン中の本人だとバックエンドへ伝える
-- `await`：履歴が返るまで待つ
-
-### `mobile/src/app/weight-history.tsx`の役割
-
-このファイルは体重入力、グラフ、履歴、編集・削除ボタンを表示するReact Native・TypeScript画面です。
-
-```typescript
-const sameDateRecord = records.find(
-  (record) => record.recordedOn === recordedOn,
-);
-```
-
-- `.find()`：条件に一致する最初の1件を探す
-- `record`：現在確認している履歴1件
-- `record.recordedOn === recordedOn`：保存しようとしている日付と同じか比較する
-- 一致する記録があれば新規POSTではなくPATCHへ切り替える
-
-```typescript
-const savedRecord = updateTargetId
-  ? await updateWeightRecord(...)
-  : await createWeightRecord(...);
-```
-
-- `条件 ? A : B`：条件が正しければA、違えばBを実行する三項演算子
-- `updateTargetId`がある：すでに存在する記録なのでPATCH
-- `updateTargetId`がない：新しい日付なのでPOST
-
-`savingLock.current`は、保存ボタンを連続で押して同じ通信が重なることを防ぎます。`isSaving`は保存中の表示とボタン無効化に使います。
-
-削除処理はすぐ実行せず、Webでは`confirm()`、iPhone・Androidでは`Alert.alert()`で確認します。削除APIも記録IDだけではなく、バックエンドで本人のユーザーIDを条件に含めるため、他人の記録は削除できません。
-
-### 固定データを残している理由
-
-通常モードでは固定データを使わず、Neonの実データだけを表示します。`EXPO_PUBLIC_ENABLE_API_BYPASS=true`の開発用モードだけは、バックエンドを起動できないときの見た目確認用として`WeightHistoryContext`の仮データを使います。
-
-### 自動テスト
-
-`mobile/scripts/weight-records.test.mjs`は実ユーザーのデータを変更せず、疑似APIで次を確認します。
-
-- GETした`recordedDate`が画面用の`recordedOn`になる
-- POSTへ日付と体重のJSONを送る
-- PATCHへ記録IDと変更後の体重を送る
-- DELETEのURLへ対象記録IDを付ける
-
-共通API通信8件と体重通信4件の合計12件、Expo TypeScript、Expo Lintが合格しました。さらに一時テストユーザーを使うNeon実DBテストで、保存・取得・更新・削除・同日重複防止が成功しています。
-
-2026年9月9日に`npm run test:all`も実行し、API安全17件、秘密情報3件、Python 12件、Expo通信12件、TypeScript、Expo Lint、バックエンドビルド、Neon実DB、公開APIがすべて合格しました。バックエンドLintには以前からある`<img>`最適化警告が2件ありますが、エラーは0件です。
-
-## トレーニング記録の編集・削除を画面へ接続
-
-目的は、カレンダーに表示された過去の記録を、ログイン中の本人が直したり削除したりできるようにすることです。
-
-```text
-カレンダーで「編集」を押す
-  ↓
-記録IDをtraining.tsxへ渡す
-  ↓
-履歴Contextから同じIDの記録を探して入力欄へ復元
-  ↓
-変更後の内容をPATCHでバックエンドへ送る
-  ↓
-本人のNeonデータと画面内の履歴を更新
-```
-
-### `mobile/src/lib/trainingRecords.ts`の追加部分
-
-```typescript
-export function updateTrainingRecord(
-  token: string,
-  trainingSessionId: string,
-  input: CreateTrainingRecordInput,
-) {
-```
-
-- `updateTrainingRecord`：保存済みトレーニングを変更する関数名
-- `token`：ログイン中の本人を確認するためのClerkトークン
-- `trainingSessionId`：どの記録を変更するか示すID
-- `input`：変更後の日時、種目、セット、時間、調子、メモ
-- `PATCH`：すでに存在するデータを変更するHTTPメソッド
-
-`deleteTrainingRecord()`は記録IDをDELETEのJSONへ入れます。バックエンドはそのIDだけで削除せず、Clerkから分かった本人のNeonユーザーIDも条件に入れます。そのため、別ユーザーの記録IDを送っても削除できません。
-
-### `calendar.tsx`から`training.tsx`へIDを渡す部分
-
-```typescript
-router.push({
-  pathname: '/training',
-  params: { editId: record.id },
-});
-```
-
-- `router.push()`：別画面へ移動する
-- `pathname`：移動先の記録画面
-- `params`：移動先へ一緒に渡す値
-- `editId`：編集対象だと分かるように付けた名前
-- `record.id`：カレンダーで選んだ記録のID
-
-### 記録画面で編集対象を探す部分
-
-```typescript
-const editingRecord = useMemo(
-  () => editId
-    ? records.find((record) => record.id === editId) ?? null
-    : null,
-  [editId, records],
-);
-```
-
-- `editId ? A : B`：IDがあるときだけAを実行し、なければBを使う
-- `.find()`：配列の中からIDが一致する最初の1件を探す
-- `?? null`：検索結果が`undefined`なら、記録なしを表す`null`へ変える
-- `useMemo()`：`editId`か`records`が変わったときだけ検索結果を計算し直す
-- 編集対象がある場合はPATCH、ない場合は今までどおりPOSTで新規保存する
-
-### 履歴Contextも変更する理由
-
-Neonの更新だけ成功しても、画面が持っている古い配列は自動では変わりません。`updateRecord()`は同じIDの要素を新しい記録へ差し替え、`removeRecord()`は削除したIDを配列から除きます。これにより、再読み込みを待たずカレンダー表示へ変更が反映されます。
-
-削除前はWebで`confirm()`、iPhone・Androidで`Alert.alert()`を表示します。これは削除ボタンの押し間違いで履歴を失うことを防ぐためです。
-
-`mobile/scripts/training-records.test.mjs`では、実ユーザーの記録を変更せず、PATCHへ変更内容と記録IDが入ること、DELETEへ削除対象IDが入ることを疑似通信で確認します。
-
-実画面テストでは開発用の一時データを使い、記録保存、カレンダーへの表示、編集画面への3種目の復元、変更保存後にカレンダーへ戻るところまで確認しました。テスト終了後は`EXPO_PUBLIC_ENABLE_API_BYPASS=false`へ戻しています。そのため、通常利用時は一時データではなくバックエンドAPIとNeonが使われます。
-
-## 接続テストで「どこが悪いか」を分ける考え方
-
-アプリで「インターネット接続を確認してください」と表示されても、必ずバックエンドが停止しているとは限りません。今回は次の順番で別々に確認しました。
-
-```text
-Expo画面
-  ↓ Clerkから本人確認用トークンを取得
-TypeScript APIへ通信
-  ↓
-Neonから本人のデータを取得・保存
-
-身体分析の場合だけ
-TypeScript API → RenderのPython API → OpenAI
-```
-
-- ローカルAPIの`GET /api/health`：HTTP 200
-- Expo Webのアクセス元`http://localhost:8081`：CORS許可ヘッダーあり
-- 公開API：ヘルスチェック成功、未ログイン通信を正しく拒否
-- Neon：保存・更新・削除・cascade・別ユーザー分離が成功
-- Render・OpenAI：合成画像3枚から7部位の分析JSONを取得
-
-この結果から、バックエンド・Neon・Render・OpenAIの接続経路は動いています。
-
-### `ERR_BLOCKED_BY_CLIENT`とは
-
-Chromeで公開APIとClerkのURLを直接開いたところ、両方が`ERR_BLOCKED_BY_CLIENT`になりました。これはサーバーが返したHTTPエラーではなく、Chromeの拡張機能・セキュリティ設定・通信保護機能などが、通信をサーバーへ送る前に止めた状態です。
-
-Clerkが止められると、`getToken()`で本人確認用トークンを受け取れません。そのため、`fetchBootstrap(token)`まで進まず、ローカルAPIへ切り替えても画面には同じ通信エラーが出ます。
-
-```typescript
-const token = await getToken();
-```
-
-- `getToken()`：Clerkからログイン中の本人を証明する文字列を取得する
-- ここで失敗：バックエンドAPI通信はまだ始まっていない
-- 取得成功後：`fetchBootstrap(token)`がTypeScript APIを呼ぶ
-
-今回のコード変更が原因ではないため、`mobile/.env.local`は通常の公開API URLへ戻しています。Chrome側の遮断を解除した後に、ログイン済み画面からPATCH・DELETEを最終確認します。
-
-### 2026年9月9日の全テスト結果
-
-`npm run test:all`で、API安全17件、秘密情報3件、Python 12件、モバイルAPI通信14件、TypeScript型検査、Expo Lint、バックエンドLint、ビルド、Neon実DB、公開APIが合格しました。バックエンドLintには以前からある画像最適化の警告が2件ありますが、エラーは0件です。
-
-`npx expo install --check`は、現在使っているExpo SDKと各Expoパッケージの版が合っているか調べるコマンドです。SDK 57内の推奨パッチ版へ4パッケージを揃え、再検査で`Dependencies are up to date`を確認しました。これはReact画面の機能変更ではなく、同じSDK内で不具合修正版を揃える保守作業です。
-
-`npm audit --omit=dev`は、本番依存に既知の脆弱性報告があるか調べます。今回はcriticalは0件で、moderate 28件・high 7件がExpo、Metro、Clerk、Markdown表示などの間接依存から報告されました。現在のSDK 57に合う自動修正版がない項目を含むため、`npm audit fix --force`は使っていません。`--force`はExpo Routerなどを互換性のない古い版へ変更する可能性があり、画面を壊す危険があるためです。AI質問は2000文字、AI回答も最大文字数を制限しており、長文処理による負荷リスクも小さくしています。今後のExpo SDK更新時に再監査します。
-## 追加：ログ・監視・本番認証の基本（2026-09-10）
-
-### 今回の目的
-
-APIで問題が起きたときに「どの通信が失敗したか」を追えるようにしながら、身体写真・身体情報・質問文・認証トークン・秘密鍵をログへ残さないようにしました。
-
-関係する主なファイルは次のとおりです。
-
-- `worker/index.ts`：すべてのAPI通信が最初と最後に通る入口
-- `app/lib/observability/serverLog.ts`：安全なログの共通ルール
-- `app/lib/config/runtimeStatus.ts`：Clerkが開発用か本番用かを秘密値なしで判定
-- `app/api/health/route.ts`：公開バックエンドの起動状態と認証環境を返す
-- `app/api/chat/route.ts`：AIチャットのトークン使用量を記録
-- `app/api/ai-menu/route.ts`：AIメニューのトークン使用量を記録
-- `python-analysis/app/main.py`：身体分析のトークン使用量を記録
-
-### リクエストIDとは
-
-リクエストIDは、API通信1回につける受付番号です。
-
-```text
-スマホからAPIへ送信
+スマホからリクエスト
 ↓
-X-Request-IDを確認
+Clerkトークンを検証
 ↓
-IDがなければUUIDを作成
+ClerkユーザーIDに対応するNeonユーザーを取得
 ↓
-同じIDをレスポンスとサーバーログへ入れる
+Zodで入力を検査
+↓
+本人のuserIdを条件にしてDBを検索・更新
+↓
+必要な処理だけを実行
+↓
+秘密情報を含まないJSONを返す
 ```
 
-エラー画面や通信結果にあるIDとサーバーログのIDを照合すると、複数人が同時に利用していても対象の通信を探しやすくなります。
+この順番にすることで、ログインしていない人や別ユーザーの操作を、DB更新前に止めます。
 
-`resolveRequestId(request)`は、`request.headers`から`x-request-id`を読みます。安全な文字と長さならそのIDを使い、不正または未設定なら`crypto.randomUUID()`で新しいUUIDを作ります。
+## 認証と認可の違い
 
-`new Request(request, { headers: new Headers(request.headers) })`は、元の通信内容を保ったまま、変更可能なヘッダーを持つ新しいRequestを作る書き方です。
+認証は「誰か」を確認する処理です。
 
-`headers.set("x-request-id", requestId)`は、ヘッダーへ受付番号を設定します。
+このアプリでは、スマホが送ったClerkトークンをバックエンドの`app/lib/auth/clerk-auth.ts`で検証します。
 
-身体分析ではTypeScriptが同じIDを`request_id`としてPythonへ渡します。そのため「スマホ → TypeScript API → Python → OpenAI」という長い処理も、同じ受付番号を手がかりに追跡できます。
+認可は「その人が、そのデータを操作してよいか」を確認する処理です。
 
-`Date.now() - requestStartedAt`は、処理終了時刻から開始時刻を引き、APIにかかった時間をミリ秒で求めます。
+ログイン済みでも、URLでもらった記録IDだけで更新してはいけません。
 
-### 安全なエラーログ
-
-`logServerError(event, error, requestId)`は、APIごとにバラバラだった`console.error(..., error)`を安全な共通形式へ変える関数です。
-
-記録するのは、エラーが起きた処理名・リクエストID・エラーの種類・安全なエラーコードだけです。
-
-`error.message`と`error.stack`は記録しません。ここにはDB接続情報や外部サービスの詳しい応答が混ざる可能性があるためです。
-
-`error && typeof error === "object"`は、受け取った値がnullではないオブジェクトかを確認しています。JavaScriptの`catch`で受け取る値は必ずError型とは限らないため、最初に安全確認が必要です。
-
-`errorData?.name`の`?.`は、`errorData`がnullならそこで確認を止めるオプショナルチェーンです。
-
-`requestId?: string`の`?`は、この引数を渡しても渡さなくてもよいというTypeScriptの書き方です。
-
-### OpenAIの使用量ログ
-
-`logOpenAiUsage()`は、OpenAIが返す`input_tokens`・`output_tokens`・`total_tokens`だけを記録します。
-
-- `input_tokens`：OpenAIへ送った文章や情報の量
-- `output_tokens`：OpenAIが生成した回答の量
-- `total_tokens`：入力と出力を合わせた使用量
-
-質問文・AI回答・身体情報・画像そのものはログへ入れません。これにより利用量を追いながら、利用者の内容をログへ複製しない構成になります。
-
-AIチャットはToolを使うとOpenAIを複数回呼ぶ場合があるため、最初の回答とTool実行後の回答をそれぞれ記録します。AIメニューとPython身体分析も同じ形式でトークン数だけを記録します。
-
-### 1日の利用回数制限との違い
-
-使用量ログは「実際にどれくらい使ったかを後から確認する仕組み」です。
-
-`AI_CHAT_DAILY_LIMIT=30`と`AI_MENU_DAILY_LIMIT=3`は「1人が1日に何回まで使えるかをAPIが止める仕組み」です。
-
-ログだけでは使いすぎを止められず、利用回数制限だけでは実際のトークン量や料金傾向を確認できません。そのため両方が必要です。
-
-### Clerkの開発用と本番用
-
-Clerkのキーは、開発用が`pk_test_`・`sk_test_`、本番用が`pk_live_`・`sk_live_`で始まります。
-
-`getAuthenticationMode()`はキー本体を返さず、2本の組み合わせだけを次の4種類へ分類します。
-
-- `development`：公開キーと秘密キーが両方とも開発用
-- `production`：両方とも本番用
-- `mixed`：開発用と本番用が混ざっている
-- `missing`：必要なキーが不足している
-
-`GET /api/health`の`authenticationMode`を見れば、秘密鍵を画面やログへ表示せずに設定状態を確認できます。
-
-現在のローカル確認結果は`development`です。本番用Clerkインスタンスを作成した後、公開先の環境変数だけを`pk_live_`・`sk_live_`へ入れ替えます。キーをコードやGitへ直接書いてはいけません。
-
-## セキュリティの詳しい説明
-
-### セキュリティは1か所だけで守らない
-
-このアプリでは、1つの確認だけを信用せず、次の順番で何段階にも確認します。この考え方を「多層防御」と呼びます。
-
-```text
-スマホから通信
-↓
-Clerkのトークンでログイン確認
-↓
-Neon検索に本人のユーザーIDを必ず入れる
-↓
-Zodで入力内容を検査
-↓
-DB制約で不正値と重複をもう一度防ぐ
-↓
-安全なデータだけを保存・取得
-↓
-秘密情報を除いたログだけを残す
-```
-
-どこか1段階の実装を間違えても、次の段階で被害を防ぎやすくするための構成です。ただし、セキュリティに「絶対安全」はないため、公開後も依存パッケージ・ログ・利用状況を定期的に確認します。
-
-### 認証と認可の違い
-
-認証は「誰がログインしているか」を確認する処理です。認可は「その人がこのデータを操作してよいか」を確認する処理です。
-
-```typescript
-const clerkUserId =
-  await getClerkUserId(request);
-
-if (!clerkUserId) {
-  return Response.json(
-    { error: "ログインが必要です。" },
-    { status: 401 },
-  );
-}
-```
-
-`getClerkUserId(request)`は、スマホが送ったClerkのセッショントークンをClerk側で検証し、ログイン中のユーザーIDを取得します。
-
-`await`は、Clerkの確認が終わるまで次の行を待つという意味です。
-
-`if (!clerkUserId)`は、ユーザーIDを取得できなかった場合です。このときはNeonを操作する前にHTTP 401を返します。
-
-ただし、ログイン済みというだけでは、どのデータでも操作してよいことにはなりません。そのため、Neonを検索・更新・削除するときにも本人条件を入れます。
-
-```typescript
-.where(
+```ts
+where(
   and(
-    eq(trainingSessions.id, recordId),
-    eq(trainingSessions.userId, userId),
+    eq(record.id, recordId),
+    eq(record.userId, user.id),
   ),
 )
 ```
 
-`and(A, B)`は、AとBの両方を満たす行だけを対象にします。
+`record.id`は操作する記録を指定します。
 
-`eq(trainingSessions.id, recordId)`は、操作したい記録IDが一致するかを確認します。
+`record.userId`は、その記録がログイン本人のものかを確認します。
 
-`eq(trainingSessions.userId, userId)`は、その記録の持ち主がログイン中の本人かを確認します。
+両方が一致した記録だけを操作するため、他人のIDを推測されても更新できません。
 
-記録IDだけで検索すると、他人のIDを推測または取得した人に操作される危険があります。記録IDと本人IDの両方を条件にすることで、他人の記録は検索結果に出ない構成になります。
+## ClerkとNeonを二重に確認する理由
 
-### Clerk IDとNeonユーザーを結び付ける理由
+Clerkはログイン中の人物を確認します。
 
-Clerkはログインを管理し、Neonはプロフィール・体重・記録・分析結果などを保存します。
+Neonはアプリ内のプロフィールや記録が誰のものかを管理します。
+
+APIでは、ClerkのユーザーIDをそのまま記録IDとして使わず、対応するNeonの`users.id`を取得します。
 
 ```text
-ClerkのuserId
-↓ users.clerk_user_idを検索
-Neon内部のusers.idを取得
+Clerk user_xxx
+↓ 対応関係を検索
+Neon users.id
 ↓
-本人のプロフィール・記録・分析だけを操作
+本人の記録だけを取得
 ```
 
-Clerkから得たIDをフロントの入力値として信用するのではなく、検証済みトークンからバックエンド自身が取得することが重要です。フロントから送られた`userId`だけを信用すると、利用者が値を書き換えて他人になりすませる可能性があります。
+## 管理者専用画面
 
-### 入力値をZodで検査する理由
+`app/lib/admin/requireAdmin.ts`は、ログイン中のClerkユーザーIDが`ADMIN_CLERK_USER_IDS`に含まれるか確認します。
 
-フロント画面に入力制限があっても、APIへは画面を使わず直接通信できます。そのため、バックエンドでも必ず検査します。
+- 未ログインはHTTP 401
+- ログイン済みでも管理者でなければHTTP 403
+- 管理者だけ`GET /api/admin/dashboard`を利用可能
 
-```typescript
-const parsedBody =
-  profileSchema.safeParse(rawBody);
+管理者画面をURLだけで隠すのではなく、API側でも権限を確認しています。
 
-if (!parsedBody.success) {
-  return Response.json(
-    { error: "入力内容が正しくありません。" },
-    { status: 400 },
-  );
-}
-```
+ローカル開発で認証・DBが未設定の場合だけ、開発用プレビューデータを表示します。本番環境ではこのプレビュー条件を使用しません。
 
-`profileSchema`は、プロフィールとして許可する項目・型・範囲を定めた設計図です。
+## 入力値の検査
 
-`.safeParse(rawBody)`は、受け取ったJSONを設計図と比較します。検査失敗時にアプリ全体を停止させず、`success: false`として扱える方法です。
+`app/lib/validation/apiSchemas.ts`などでZodを使っています。
 
-`parsedBody.success`が`true`になった後は、`parsedBody.data`に検査済みデータが入ります。それ以降の保存処理では、未検査の`rawBody`ではなく`parsedBody.data`を使います。
+Zodは、受け取ったJSONが決めた形式かを実行時に検査する道具です。
 
-現在は主に次を検査しています。
+検査例は次のとおりです。
 
-- UUIDが正しい形式か
-- 身長・体重・体脂肪率が決めた範囲内か
-- 日付が正しく、未来すぎないか
-- メモやチャットが長すぎないか
-- 種目数とセット数が多すぎないか
-- 理想体型や部位が許可した選択肢か
-- AIが返したJSONが決めた形式か
+- AIチャットは最大500文字
+- 身長・体重は現実的な数値範囲
+- 日付は実在する日付
+- トレーニング種目数とセット数に上限
+- 食事のカロリーやPFCは負数を禁止
+- 更新・削除IDはUUID形式
+- アカウント削除の確認文字は`DELETE`と完全一致
 
-### DB制約は最後の安全網
+TypeScriptの型だけでは、インターネットから届くJSONを安全にできません。そのため、APIを実行中にZodでも確認します。
 
-Zodを通った後も、Neon PostgreSQL側に一意制約・外部キー・範囲制約を置いています。
+## DB側の安全対策
 
-```typescript
-userId: uuid("user_id")
-  .notNull()
-  .references(() => users.id, {
-    onDelete: "cascade",
-  })
-```
+TypeScriptで検査した後も、Neon PostgreSQL側で次を制限します。
 
-`uuid("user_id")`は、この列にUUIDを保存する指定です。
+- 外部キーで親データとの関係を保証
+- `check`で数値や種類を制限
+- `unique`で重複を禁止
+- `onDelete: cascade`でアカウント削除時に関連データを削除
+- `db.batch()`で親子データをまとめて保存
 
-`.notNull()`は、ユーザーIDが空のデータを禁止します。
+フロント、API、DBの3段階で検査することで、1か所のミスだけで壊れたデータが残る可能性を下げます。
 
-`.references(() => users.id)`は、`users`テーブルに実在するユーザーIDだけを許可する外部キーです。
+## 二重送信と利用回数制限
 
-`onDelete: "cascade"`は、本人の`users`行を削除したとき、その人に属する子データも連動して削除する設定です。
+`ai_request_guards`へ`userId`、処理種類、`requestId`を保存します。
 
-一意制約は、同じユーザー・同じ日付の体重や、同じリクエストIDなどの重複をDB側で拒否します。APIの確認を同時通信がすり抜けた場合にも、DBが最後に止めます。
+同じ組み合わせはDBの一意制約で拒否されるため、ボタン連打や通信再送による二重実行を防ぎます。
 
-### 二重送信を防ぐ理由
+また、バックエンド側でも次の上限を判定します。
 
-利用者が送信ボタンを連打した場合や、通信結果が見えず再送した場合、同じ記録やAI処理が2回実行される可能性があります。
+- AIチャットは1日30回
+- AIメニューは1日3回
+- 身体分析は初回無料、その後はプレミアムで月4回
+- 短時間の連続送信にはクールダウン
 
-`ai_request_guards`は「このユーザーの、この機能の、このrequestIdは受付済み」という情報を保存するテーブルです。
+フロントのボタンを無効にするだけでは改造した通信を防げないため、必ずサーバー側でも止めます。
 
-```text
-初めてのrequestId → 受付して処理する
-同じrequestIdを再送 → HTTP 409で拒否する
-処理そのものが失敗 → 受付記録を消して再試行可能にする
-```
+## 秘密鍵
 
-AI通信の二重実行を防ぐことは、履歴の重複だけでなくOpenAI料金の重複発生も抑えます。
-
-### 利用回数と連続送信の制限
-
-AIチャット・AIメニュー・身体分析は、ログイン中の本人が日本時間の同じ日に実行した回数をNeonから数えます。
-
-上限に達した場合はHTTP 429を返し、OpenAIを呼びません。`Retry-After`には次に試せるまでの秒数を入れます。
-
-また、AIチャットとAIメニューは短時間の連続送信を止めます。これにより、ボタン連打・画面の不具合・単純な自動攻撃による急な料金増加を抑えます。
-
-回数制限だけで本格的な攻撃を完全に防げるわけではありません。公開後に利用者数が増えた場合は、IP単位の制限やCloudflare側のRate Limitingも追加候補になります。
-
-### 秘密鍵と環境変数
-
-次の値はバックエンドだけが使用する秘密情報です。
+次の値はフロントへ書きません。
 
 - `CLERK_SECRET_KEY`
 - `DATABASE_URL`
 - `OPENAI_API_KEY`
+- Appleの秘密鍵・Issuer ID・Key ID
+- 管理者のClerkユーザーID一覧
 
-これらは`.env.local`または公開先の秘密環境変数に保存し、GitHubへ送るコードには書きません。
+これらはバックエンド公開先の環境変数だけに設定します。
 
-`NEXT_PUBLIC_`や`EXPO_PUBLIC_`が付く環境変数は、ブラウザやスマホへ配られる可能性があります。そのため、秘密鍵には絶対にこの接頭辞を付けません。
+`EXPO_PUBLIC_`から始まる環境変数はアプリの中へ組み込まれるため、利用者から見える前提です。
 
-ClerkのPublishable Keyは公開を前提にした識別用キーなのでフロントで使用できます。ClerkのSecret Keyはユーザー管理などの権限を持つため、バックエンド以外へ置いてはいけません。
+`EXPO_PUBLIC_`にはAPIの公開URLや公開可能キーだけを設定し、秘密鍵は絶対に置きません。
 
-`.gitignore`の`.env*`は、`.env.local`などをGit管理から除外します。`.env.example`には本物の値を書かず、必要な環境変数名とダミー値だけを書きます。
+## ログとエラーメッセージ
 
-### CORSの役割と限界
+利用者には「保存できませんでした」など安全な説明だけを返します。
 
-CORSは、ブラウザ版のフロントからバックエンドへ通信してよいアクセス元を制限します。
+DB接続文字列、APIキー、画像、チャット本文、認証トークンはログへ直接出しません。
 
-```typescript
-headers.set(
-  "Access-Control-Allow-Origin",
-  origin,
-);
-```
+`requestId`をログへ残し、個人情報ではなく処理番号から障害を追跡します。
 
-許可した`localhost`や本番フロントURLだけにCORSヘッダーを返します。
+`app/lib/observability/serverLog.ts`は、ログへ渡してよい値を絞る役割です。
 
-ただし、CORSはブラウザのルールであり、本人確認の代わりにはなりません。スマホアプリや直接作ったHTTP通信はCORSの外側から送れるため、最終的にはClerk認証と本人ID条件で守ります。
+## AIの安全対策
 
-### 身体写真の安全対策
+- Moderationで危険内容を検査
+- 医療診断をしない
+- 強い痛み・しびれ・怪我は運動中止と専門家相談を案内
+- Clerk IDそのものではなくハッシュ化した匿名IDをOpenAIへ渡す
+- `store: false`でOpenAI側の応答保存を無効化
+- モデル出力をZodで再検査
+- 出力文字数・トークン数・Tool実行回数を制限
 
-身体写真は特に慎重に扱う情報です。現在の初期版では、写真そのものをNeonへ長期保存せず、分析結果のJSONだけを保存します。
+AIの文章は常に正しいとは限らないため、生成できたことと、安全な形式であることを分けて確認します。
 
-```text
-スマホから正面・横・背面画像を送る
-↓
-TypeScriptで枚数と通信容量を確認
-↓
-Pythonで形式・実データ・破損・画素数・容量を確認
-↓
-OpenAIへ分析依頼
-↓
-分析結果だけをNeonへ保存
-```
+## 身体写真の扱い
 
-PythonではJPEG・PNG・WebPだけを許可し、1枚8MB、3枚合計24MB、通信全体26MBの上限を設けています。
+正面・横・背面画像は、TypeScriptバックエンドからPython分析APIへ渡します。
 
-ファイル名や`Content-Type`だけでは画像と断定できません。Pillowで実際に画像として開き、壊れた画像や極端に大きな画像も拒否します。
+Neonへ保存するのは分析結果であり、現在の設計では身体写真そのものを長期保存する用途にはしていません。
 
-Base64への変換はOpenAIへ画像を渡すための一時的な変換です。暗号化や匿名化そのものではありません。そのため、変換後の文字列をログやDBへ保存しません。
+公開前には次を実環境でも確認します。
 
-将来、参考画像や身体写真を長期保存する場合は、公開URLへ直接置かず、本人だけが短時間アクセスできる署名付きURL・保存期限・削除機能が必要です。
+- 一時画像が処理後に残らない
+- Renderやサーバーログへ画像内容を出さない
+- 画像の形式・1枚容量・全体容量を制限する
+- プライバシーポリシーへ利用目的と保存期間を書く
 
-### AIへ直接ユーザーIDを渡さない
+## アカウント削除
 
-`createSafetyIdentifier(clerkUserId)`は、ClerkのユーザーIDをそのままOpenAIへ送らず、外部から元のIDを読み取りにくい匿名IDへ変換します。
+アカウント削除ではClerkの本人再確認を必須にします。
 
-`safety_identifier`は、OpenAI側で不正利用の傾向を区別するために使います。これは本人認証には使いません。本人認証は、OpenAIを呼ぶ前にClerkとバックエンドで完了させます。
+確認後、ClerkアカウントとNeonの本人データを削除します。
 
-AIへ渡す情報は、回答に必要なプロフィール・記録・分析結果に絞ります。APIキー・メールアドレス・Clerk IDなどはAI入力へ含めません。
+Neonでは`onDelete: cascade`により、プロフィール、記録、分析、チャットなどの関連データも削除します。
 
-### AIの医療・危険回答対策
+他人のアカウントIDを送って削除する形式にはせず、認証トークンから取得した本人を対象にします。
 
-AIチャット・AIメニュー・身体分析の指示には、次の安全ルールを入れています。
+## Apple課金の確認
 
-- 病気や怪我を診断しない
-- 薬や治療法を指示しない
-- 強い痛み・しびれ・胸痛・息苦しさなどがある場合は運動中止を案内する
-- 痛みを確認するために運動を続けさせない
-- 画像から分からない体脂肪率・年齢・人種・健康状態を作らない
+アプリから届いた「購入できた」という文字だけでは有料ユーザーにしません。
 
-AIチャットではModerationも使用し、重大な危険入力を通常の筋トレ回答として処理しないようにします。
+バックエンドのApple検証APIで署名付き取引情報を検証し、商品ID、購入者、期限、状態を確認します。
 
-AIの回答は必ず正しいとは限りません。プロンプトとModerationは危険を減らす対策であり、医師などの専門家による判断の代わりではありません。
+Server Notifications V2も署名を検証してから更新・解約・返金状態を反映します。
 
-### Toolの安全対策
+Appleの秘密情報はモバイルアプリへ入れません。
 
-AIチャットのToolは、OpenAIへDBの自由な操作権限を渡すものではありません。
-
-OpenAIが選べるのは、プロフィール・最新身体分析・最近の記録・最新AIメニュー・体重履歴など、あらかじめ定義した読取専用Toolです。
-
-Tool実行時にも`clerkUserId`から本人データを検索します。AIがユーザーIDを引数で自由指定する構成にはしていません。
-
-Toolの引数は`strict: true`と`additionalProperties: false`で、設計にない項目を受け取りません。さらに1回答で使えるTool回数にも上限を設け、無限ループや料金増加を防ぎます。
-
-### 安全なエラー応答
-
-利用者へ返すエラーには、DBのSQL・接続先・APIキー・外部サービスの詳しい本文を含めません。
-
-```typescript
-return Response.json(
-  {
-    error:
-      "AIチャットの処理に失敗しました。",
-  },
-  { status: 500 },
-);
-```
-
-詳しい内部エラーをそのまま返すと、攻撃者へ構成情報を教える可能性があります。そのため、利用者には安全な共通文を返し、開発者はリクエストIDと安全な分類ログで原因を追います。
-
-主なHTTP状態は次の意味です。
-
-- `400`：入力形式が正しくない
-- `401`：ログインを確認できない
-- `403`：本人再確認など追加権限が必要
-- `404`：本人が所有する対象データが見つからない
-- `409`：同じ操作を二重送信した
-- `413`：画像などが容量上限を超えた
-- `415`：許可していない画像形式
-- `429`：1日の利用上限または外部AIの利用制限
-- `500`：バックエンド設定または内部処理の失敗
-- `502`・`503`・`504`：Python・OpenAIなど外部通信の失敗、停止、タイムアウト
-
-### アカウント削除を慎重にする理由
-
-全データ削除は元に戻しにくい操作なので、通常のログイン確認だけでなくClerkの再本人確認と確認文字`DELETE`を要求します。
-
-削除対象のユーザーIDはフロントから受け取らず、認証済みトークンから取得した本人IDだけを使います。
-
-Neonの本人行を削除すると、`onDelete: "cascade"`によってプロフィール・体重・トレーニング・分析・AIメニュー・チャットなどの関連データも削除されます。
-
-ClerkとNeonは別サービスなので、完全に同じDBトランザクションにはできません。途中でClerk削除だけ失敗した場合は、成功したように見せず再実行可能なエラーを返します。
-
-### 自動テストで確認していること
-
-セキュリティは目視だけでなく、変更のたびに自動テストで再確認します。
-
-- 未ログインで本人APIへアクセスすると401になる
-- 別ユーザーIDでは取得・更新・削除が0件になる
-- 不正JSON・範囲外数値・長すぎる文章を拒否する
-- 同じIDや同じ日付の重複をDBが拒否する
-- 親と子の一括保存に失敗したとき、親だけ残らない
-- ユーザー削除時に関連データがcascadeで削除される
-- mobileコードにサーバー秘密鍵が含まれない
-- ログに写真・身体情報・トークン・APIキーを直接渡さない
-- OpenAI・Pythonのタイムアウトや障害を安全なHTTPエラーへ変換する
-- リクエストIDが安全な形式で生成・引継ぎされる
-
-### 本番公開前に残るセキュリティ確認
-
-コード側の基本対策は入っていますが、本番公開前には次も必要です。
-
-- Clerkを`pk_live_`・`sk_live_`の本番環境へ切り替える
-- 2つの実Clerkアカウントで他人のデータを操作できないことを画面から確認する
-- iPhone実機で認証・保存・更新・削除を確認する
-- 公開環境のログに秘密情報が出ていないことを確認する
-- OpenAIの予算アラートと公開先のログ監視を設定する
-- プライバシーポリシーと身体写真の利用目的・保存方針を表示する
-- 使用中の依存パッケージを定期的に更新・再監査する
-
-ここまで終わって初めて、コード上の対策だけでなく本番運用も含めたセキュリティ確認になります。
-
-## 追加：認証付き実APIテストと定期監視（2026-09-10）
-
-### 何のために追加したのか
-
-未ログイン通信が401になるだけでは、「ログインしたAさんがBさんの記録を変更できないか」までは確認できません。そこで`tests/authenticated-live-e2e.mjs`を追加し、ClerkとNeonへ実際に接続する2人分のテストを自動化しました。
-
-テストの間だけClerkへ2人の利用者を作り、それぞれ別のセッショントークンを発行します。終了時は`finally`でClerkとNeonのテストデータを削除するため、途中で失敗した場合も後片付けを試みます。
-
-### このテストで確認する流れ
-
-```text
-一時ClerkユーザーA・Bを作成
-↓
-各ユーザーのセッショントークンを発行
-↓
-bootstrapでNeonのusersへ登録
-↓
-Aの体重・記録・AIメニューを作る
-↓
-BのトークンではAのデータを変更・削除できないことを確認
-↓
-Aのトークンでは更新・削除できることを確認
-↓
-二重送信409と日次上限429を確認
-↓
-users削除時に関連データもcascadeで消えることを確認
-↓
-一時ユーザーを削除
-```
-
-実行コマンドは次の通りです。
+## 自動セキュリティテスト
 
 ```bash
-npm run test:authenticated-live
+npm run test:source-security
 ```
 
-### 覚えておきたいコード
+このテストでは主に次を確認します。
 
-```javascript
-const session = await clerk.sessions.createSession({
-  userId: user.id,
-});
+- モバイルコードにサーバー秘密情報が含まれない
+- `.env`がGit管理対象にならない
+- ログへ画像や認証情報を直接渡さない
+- 安全なrequest IDだけを引き継ぐ
+- Clerk開発用・本番用キーの状態を値を表示せず判定する
+- アカウント削除で本人再確認を要求する
 
-const token = await clerk.sessions.getToken(session.id);
-```
+## 公開前に残っている確認
 
-- `createSession()`：指定したテストユーザーをログイン中として扱うセッションを作る
-- `getToken()`：APIへ本人証明として送るJWTを取得する
-- `authorization: Bearer ...`：取得したトークンをHTTP通信へ付ける形
-- ユーザーAとBで別のトークンを使うことで、認証だけでなく認可も確認できる
+コード上の対策だけで公開安全性が確定するわけではありません。
 
-```javascript
-try {
-  await run();
-} finally {
-  // テストデータを削除する
-}
-```
+次は公開前に必ず確認します。
 
-- `try`：通常のテストを実行する範囲
-- `finally`：成功・失敗に関係なく最後に実行される後片付け
-- 実データを使うテストでは、失敗時にも一時データを残しにくくするために重要
+- Clerkを本番用キーへ切り替える
+- 開発用Neonと本番用Neonを分離する
+- 依存パッケージの脆弱性を対応可能な版へ更新する
+- 秘密鍵の定期変更手順を決める
+- 2ユーザーでデータが混ざらないことを本番相当環境で確認する
+- Neon、OpenAI、Render停止時の安全なエラーを確認する
+- Privacy ManifestとApp Storeのデータ収集申告を確認する
+- 身体写真を保存しない方針と削除タイミングを正式決定する
 
-### 確認できたHTTP状態
+---
 
-- `200`：更新・削除・実施済み変更に成功
-- `201`：ユーザー、体重、トレーニング記録の作成に成功
-- `404`：別ユーザーの体重・記録・AIメニューを操作しようとして拒否
-- `409`：同じトレーニング記録の二重送信を拒否
-- `429`：AIチャット、AIメニュー、身体分析の日次上限を超えた通信を拒否
+# 23. OpenAI料金を抑える仕組み
 
-### アカウント削除の再本人確認
+## AIチャット
 
-アカウント削除APIは、ログイン済みであるだけでは実行できません。Clerkの`reverification: "strict"`により、直近の本人再確認も必要です。バックエンドから自動作成したテストセッションでは403になり、削除が止まることを確認しました。
+- 入力は最大500文字
+- 回答は約400文字
+- 出力は最大600トークン
+- 直近5往復だけ送信
+- 古い会話は最大800文字の要約
+- 通常回答は1回の生成API
+- 1ユーザー1日30回
 
-これはエラーではなく、盗まれた古いセッションだけで全データを削除されないための安全機能です。最終的な削除ボタンのテストは、画面上で再本人確認を完了したセッションを使います。
+## AIメニュー
 
-### 公開APIの定期監視
+- チャットと別モデルを設定可能
+- 1ユーザー1日3回
+- 過去メニューを少数だけ参照
 
-`scripts/health-check.mjs`は、TypeScript APIとRender上のPython APIへ接続し、HTTP成功と`status: "ok"`を確認します。
+## 身体分析
 
-TypeScript側の`GET /api/health`は、起動しているだけでなくNeonへ`select 1`という非常に小さな読取も実行します。成功時は`dependencies.database`が`ok`になります。Neonへ接続できない場合はHTTP 503と`database: "unavailable"`を返しますが、接続URLやDBエラー本文は返しません。
+- 画像分析用モデルを別に設定
+- 初回1回無料、その後はプレミアム月4回
 
-```typescript
-await getDb().execute(sql`select 1`);
-```
+## 使用量記録
 
-- `getDb()`：Neonへ接続する共通入口を取得する
-- `execute()`：SQLを実行する
-- `select 1`：表の個人データを読まず、DBがSQLへ応答できるかだけを確認する軽い命令
-- HTTP 503：サーバーは動いているが、必要な依存先が一時的に利用できない状態
+`openai_usage_records`へ次を保存します。
 
-```javascript
-const response = await fetch(target.url, {
-  signal: AbortSignal.timeout(30_000),
-});
-```
-
-- `fetch()`：公開URLへHTTP通信する
-- `AbortSignal.timeout(30_000)`：30秒応答がなければ停止し、監視を失敗扱いにする
-- `assert.equal()`：期待するHTTP状態やJSONでなければテストを失敗させる
-
-`.github/workflows/health-check.yml`は、このスクリプトをGitHub Actionsで毎時2回実行します。失敗はGitHub Actionsの実行履歴へ残り、GitHub側の通知設定に応じて通知されます。
-
-手元から同じ確認を行うコマンドは次の通りです。
-
-```bash
-npm run health:check
-```
-
-### Neonの復元確認
-
-Neonのブランチは、元のブランチのスキーマとデータをコピーした検証環境として使えます。開発DBから期限付きの確認用ブランチを作り、マイグレーション10件とusersデータが複製されることを確認しました。
-
-本番の表を直接変更せず復元後の状態を確認できるのがブランチの利点です。確認用ブランチは検査後に削除しました。
-
-### 公開ログの秘密情報点検
-
-公開Workerの直近91件を機械的に検索し、次の文字列がログへ出ていないことを確認しました。
-
-- OpenAIの秘密鍵
-- Clerkの秘密鍵
-- PostgreSQL接続URL
-- Bearerトークン
-- メールアドレス
-
-Authorizationヘッダーは`********`へ伏字化されていました。今後もデプロイ後に同じ点検を行います。
-
-## 追加：公開版バージョン5の最終確認（2026-09-11）
-
-### 今回何を確認したのか
-
-最新コードをCloudflare Sitesのバージョン5として公開しました。公開後は手元のコードだけを見るのではなく、実際の公開URLへ通信して次の順番を確認しています。
-
-```text
-監視スクリプト
-↓
-Cloudflare上のTypeScript API
-↓
-Neon PostgreSQL
-
-監視スクリプト
-↓
-Render上のPython身体分析API
-```
-
-TypeScript APIが起動していてもNeonへ接続できなければ、アプリの保存・取得機能は使えません。そのため`GET /api/health`の中でNeonへ`SELECT 1`を送り、データベースまで応答することを確認します。
-
-公開環境から返った主な結果は次の形です。
-
-```json
-{
-  "status": "ok",
-  "environment": "production",
-  "dependencies": {
-    "database": "ok"
-  }
-}
-```
-
-- `status: "ok"`：TypeScript APIのヘルス確認が完了した
-- `environment: "production"`：ローカルではなく公開環境で動いている
-- `dependencies.database: "ok"`：Neonへ実際に小さなSQLを送り、応答を受け取れた
-- HTTP 200：必要な処理が正常に完了した
-- HTTP 503：API自体は動いていても、Neonなど必要な接続先が利用できない
-
-### 全テストの読み方
-
-```bash
-npm run test:all
-```
-
-この1行は、複数のテストを決めた順番でまとめて実行します。
-
-- API単体テスト：入力値や安全ルールを確認する
-- ソースセキュリティテスト：秘密鍵や個人情報を端末・ログへ出していないか確認する
-- Pythonテスト：画像検査とOpenAI障害時のHTTP状態を確認する
-- mobileテスト：フロントからAPIへ送る内容とタイムアウトを確認する
-- TypeScript・Lint・Build：型、書き方、公開用ビルドを確認する
-- Neon実DBテスト：制約、更新、削除、cascadeを本物のDBで確認する
-- 公開APIテスト：公開URLが動き、未ログイン通信を拒否することを確認する
-
-外部通信が禁止された実行環境では、Neonのホスト名を見つけられず`ENOTFOUND`になる場合があります。これはアプリのコードエラーとは限りません。今回も通信許可を付けて同じ全テストを再実行し、最後まで合格することを確認しました。
-
-### 定期監視が動く場所
-
-`.github/workflows/health-check.yml`はGitHub Actions上で毎時2回起動し、`scripts/health-check.mjs`を実行します。Macのターミナルを開き続ける必要はありません。
-
-定期監視で失敗した場合はGitHub Actionsの履歴に失敗が残ります。通知を受け取るかどうかはGitHubアカウント側の通知設定で決まります。
-
-### 公開ログで再確認したこと
-
-バージョン5公開後のWorkerログでは、`GET /api/health`がHTTP 200で終了し、アプリ側のリクエストIDと処理時間が記録されていました。秘密鍵、DB接続URL、Bearerトークン、身体画像、質問本文はログへ出していません。
-
-## 食事管理の保存とAI連携
-
-### 何をする機能か
-
-食事画面で入力した食事区分・食事名・カロリー・たんぱく質を、ログイン中の本人の記録としてNeonへ保存します。画面を閉じたりアプリを再起動したりしても、同じアカウントなら保存済みデータを取得できます。
-
-```text
-mobile/src/app/food.tsx
-  ↓ 画面の入力をまとめる
-mobile/src/lib/foodRecords.ts
-  ↓ Clerkトークンを付けてHTTP通信
-app/api/food-records/route.ts
-  ↓ 本人確認・入力検査
-db/schema.ts の food_records
-  ↓
-Neon PostgreSQL
-```
-
-### ファイルごとの役割
-
-- `mobile/src/app/food.tsx`：利用者が触る画面、入力State、一覧、合計、保存・削除ボタンを担当する
-- `mobile/src/lib/foodRecords.ts`：画面とバックエンドの間でGET・POST・PATCH・DELETE通信を行う
-- `app/api/food-records/route.ts`：Clerkで本人を確認し、Neonへ安全に読み書きする
-- `app/lib/validation/apiSchemas.ts`：食事区分、文字数、カロリー、たんぱく質の許容範囲を決める
-- `db/schema.ts`：Neonに作る`food_records`テーブルの列・関連・制約を決める
-- `drizzle-postgres/0010_ancient_ozymandias.sql`：決めたテーブルを実際のNeonへ作るマイグレーション
-
-### 画面側で使う基本の文法
-
-```ts
-const { getToken } = useAuth();
-```
-
-`useAuth()`はClerkのログイン状態を利用するReact Hookです。`getToken`を呼ぶと、バックエンドへ「誰が操作しているか」を安全に伝える短時間の認証トークンを取得できます。
-
-```ts
-const records = await fetchFoodRecords(getToken, today);
-```
-
-`await`は通信が終わるまで次の行を待ちます。取得が完了すると、`records`へNeonから返された当日の食事一覧が入ります。
-
-```ts
-setEntries(records);
-```
-
-取得した一覧をReactのStateへ保存します。Stateが変わると画面が再描画され、保存済みの食事が表示されます。
-
-```ts
-entries.reduce((total, item) => total + item.calories, 0)
-```
-
-`.reduce()`は配列を1つの値へまとめる処理です。ここでは`0`から始め、各食事のカロリーを順番に足して当日の合計を作ります。
-
-### APIの4つの処理
-
-- `GET /api/food-records?date=YYYY-MM-DD`：指定日の本人の記録を読む
-- `POST /api/food-records`：新しい記録を保存する
-- `PATCH /api/food-records`：本人の既存記録を変更する
-- `DELETE /api/food-records?recordId=...`：本人の記録を1件削除する
-
-GETは「受け取る」、POSTは「新しく保存する」、PATCHは「一部を直す」、DELETEは「削除する」という役割です。
-
-### なぜ毎回本人確認をするのか
-
-一度ログインしても、API通信はそれぞれ独立したお願いとして届きます。バックエンドは毎回Clerkトークンを確認し、取得した`clerkUserId`とNeonの`users.clerk_user_id`を照合します。
-
-さらに変更・削除では、次の2条件を同時に指定します。
-
-```ts
-and(
-  eq(foodRecords.id, recordId),
-  eq(foodRecords.userId, userId),
-)
-```
-
-1行目は対象の食事記録ID、2行目はログイン中の本人IDです。両方が一致しない限り変更・削除できないため、他人が記録IDを知っても操作できません。
-
-### ZodとDB制約を両方使う理由
-
-ZodはAPI入口で不正な入力をHTTP 400として分かりやすく拒否します。DB制約は、API以外の経路や将来のコードミスがあってもNeonへ不正値を保存させない最後の防御です。
-
-- 食事区分：朝食・昼食・夕食・間食だけ
-- 食事名：1〜100文字
-- カロリー：0〜10000
-- たんぱく質：0〜1000g
-
-### AIへ渡す流れ
-
-`getUserAiContext.ts`は本人の最近7日間の食事をNeonから取得し、`recentFoodRecords`へまとめます。AIメニューはこのデータを最初から受け取り、最近の食事をトレーニング量と一般的な栄養助言の参考にします。
-
-AIチャットは毎回すべてを読むのではなく、食事について質問されたときに`get_recent_food_records` Toolを選びます。`runChatTool.ts`が本人のデータだけを取得してOpenAIへ返します。この構成により、不要なデータ送信とAPI料金を抑えられます。
-
-AIは食事履歴だけから病気や栄養不足を診断せず、治療・投薬・極端な食事制限を指示しないルールにしています。
-
-## 食事・AI・アカウント削除の実通信テスト
-
-対象ファイルは`tests/food-ai-account-live-e2e.mjs`です。使用言語はJavaScriptです。
-
-このファイルは、個別のコードが存在するだけでなく、Clerk、TypeScript API、Neon、OpenAIが実際につながるかを一時テストユーザーで確かめます。本物の利用者データは使いません。
-
-```text
-一時Clerkユーザーを作る
-↓
-bootstrapでNeonへ本人を登録
-↓
-食事をPOST保存
-↓
-別のGET通信で再取得
-↓
-AIチャットへ食事について質問
-↓
-AIメニューを生成
-↓
-食事をDELETEしてNeonから消えたか確認
-↓
-古い本人確認状態ではアカウント削除が403になるか確認
-↓
-テスト用のNeon関連データとClerkアカウントを削除
-```
-
-### なぜ別のGET通信で取り直すのか
-
-保存直後の画面Stateにデータが残るだけでは、本当にNeonへ保存できた証明になりません。POSTとは別のGET通信を行い、同じ食事名・777kcal・たんぱく質55gが返ることを確認しています。これは「アプリを再起動しても残るか」のバックエンド側の確認に相当します。
-
-### AIチャットが食事を使ったと判断する方法
-
-テストごとに重複しない食事名を作り、AIへ保存済み食事を尋ねます。回答に固有の食事名、777、55が含まれることを`assert.match()`で確認します。たまたま一般知識で答えたのではなく、`get_recent_food_records` Toolから本人のNeonデータを取得したと判断できます。
-
-```javascript
-assert.match(chat.body.reply, new RegExp(uniqueFoodName));
-assert.match(chat.body.reply, /777/);
-assert.match(chat.body.reply, /55/);
-```
-
-`assert.match()`は、実際の文字列に期待する文字が含まれるかを検査するJavaScriptのテスト文法です。条件を満たさない場合は、その場でテストを失敗させます。
-
-### AIメニューへ食事が渡る場所
-
-`app/api/ai-menu/route.ts`の`aiInput`へ`recentFoodRecords`を入れています。そのため、AIメニューはプロフィール、身体分析、最近のトレーニングと同時に、最近7日間の食事も受け取ります。テストではメニューが決められたJSON形式で返り、種目と助言がNeonへ保存されることまで確認します。
-
-### アカウント削除画面の役割
-
-対象は`mobile/src/app/my-page.tsx`と`mobile/src/lib/account.ts`です。使用言語はTypeScriptとReact Nativeです。
-
-```typescript
-const deleteAccountWithReverification = useReverification(
-  async () => {
-    const token = await getTokenRef.current();
-    return deleteAccount(token);
-  },
-);
-```
-
-`useReverification()`は、Clerkの本人再確認が必要な通信を包むHookです。APIが再確認用の403を返すと、Clerkが本人確認画面を表示します。確認が成功すると、包んでいた`deleteAccount(token)`を自動でもう一度実行します。
-
-`getTokenRef.current()`は、現在のClerkトークン取得関数を参照します。再確認後は新しい本人確認状態を含むトークンが必要なので、処理を実行する時点の関数からトークンを取得します。
-
-削除ボタンは`deleteConfirmation !== 'DELETE'`の間は無効です。これにより、ボタンへ偶然触れただけでは削除通信を送れません。さらに確認ダイアログ、Clerk再確認、バックエンドの確認文字検査という複数段階で誤操作を防ぎます。
-
-### なぜ自動作成セッションでは403になるのか
-
-テストコードが管理APIで作るセッションは、利用者がメールコードなどを入力して本人確認したセッションではありません。そのため`reverification: "strict"`を満たさず、削除APIは意図どおり403を返します。
-
-これは失敗ではなく安全機能の確認です。実画面では`useReverification()`が確認画面を表示し、利用者が確認を終えたあとに削除APIを再送します。自動テストでは、古いセッションで削除できないことに加え、テスト用Neonユーザー削除による関連データのcascadeとClerkテストアカウント削除を個別に実通信で確認しています。
-
-実行コマンドは次です。このテストはOpenAIをチャット1回・メニュー1回使用します。
-
-```bash
-npm run test:food-ai-account-live
-```
-
-2026年9月13日の実行では全18項目が合格しました。テスト終了後は`finally`によって一時ユーザーだけを削除し、通常利用者のデータには触れていません。公開APIはSitesバージョン7へ反映し、TypeScript API、Neon、RenderのヘルスチェックがすべてHTTP 200になっています。
-
-## 2026年9月13日：身体分析を最初から最後まで確認するテスト
-
-対象ファイル：`tests/body-analysis-live-e2e.mjs`
-
-このファイルは、身体分析の一部分だけではなく、次の受け渡し全体を確認します。
-
-```text
-一時Clerkユーザーを作る
-↓
-初回登録・理想体型・身体情報を保存する
-↓
-合成した正面・横・背面画像をTypeScript APIへ送る
-↓
-TypeScript APIがPythonへ画像と身体情報を渡す
-↓
-PythonがOpenAIから分析JSONを受け取る
-↓
-TypeScript APIが分析本体と部位別結果をNeonへ保存する
-↓
-GET通信で同じ分析履歴を取得する
-↓
-テスト用ユーザーと関連データを削除する
-```
-
-### `freshToken`は何をしているか
-
-```javascript
-const freshToken = async () =>
-  (await clerk.sessions.getToken(session.id)).jwt;
-```
-
-`const freshToken`は、最新のClerk認証トークンを取得する関数を定義しています。
-
-`async`は、通信結果を待つ処理が入る関数であることを表します。
-
-`await clerk.sessions.getToken(session.id)`は、Clerkへ現在のセッション用トークンを問い合わせ、返るまで待ちます。
-
-`.jwt`は、Clerkから返ったデータの中からAPI認証に使うJWT文字列だけを取り出します。
-
-画像分析やAIメニュー生成には時間がかかるため、最初に取得したJWTが途中で期限切れになる場合があります。そのため、長い処理の後も同じ文字列を使い続けず、次のAPI通信直前に新しいJWTを取得します。これはスマホアプリが通信前に`getToken()`を呼ぶ動きと同じ考え方です。
-
-### 画像3枚を`FormData`へ入れる理由
-
-```javascript
-const formData = new FormData();
-
-formData.append(
-  "front_image",
-  await imageBlob("tmp/body-analysis-test/front.png"),
-  "front.png",
-);
-```
-
-`new FormData()`は、文字だけでなく画像ファイルもHTTP通信で送れる入れ物を作ります。
-
-`append()`は、その入れ物へ1項目を追加します。
-
-`"front_image"`はTypeScript側の`requestFormData.get("front_image")`と対応する名前です。送る側と受け取る側で同じ名前にする必要があります。
-
-`imageBlob()`はローカルの合成画像を読み込み、`image/png`形式のファイルデータへ変換します。
-
-`"front.png"`は、送信するファイル名です。
-
-同じ形式で`side_image`と`back_image`も追加するため、TypeScript APIは正面・横・背面の3枚を区別できます。
-
-### Neonへ本当に保存されたことの確認
-
-```javascript
-const savedRows = await sql`
-  select
-    (select count(*)::int from body_analyses where id = ${analysisBody.bodyAnalysisId}) as analyses,
-    (select count(*)::int from body_analysis_areas where analysis_id = ${analysisBody.bodyAnalysisId}) as areas
-`;
-```
-
-`body_analyses`では、分析のまとめが1件保存されたか確認します。
-
-`body_analysis_areas`では、肩・胸・背中などの部位別結果が保存された数を確認します。
-
-`bodyAnalysisId`を条件にすることで、別の利用者や過去の分析ではなく、今実行した分析だけを確認できます。
-
-### `try`と`finally`を使う理由
-
-テスト途中で失敗しても一時ユーザーがClerkやNeonへ残らないよう、削除処理を`finally`へ置いています。
-
-`try`の途中でエラーが発生しても、`finally`は最後に必ず実行されます。そのため、通常利用者のデータには触れず、このテスト自身が作ったユーザーだけを片付けられます。
-
-### 実行方法
-
-TypeScript APIを起動した状態で、別ターミナルから次を実行します。
-
-```bash
-npm run test:body-analysis-live
-```
-
-2026年9月13日の確認では、PythonとOpenAIから正常な分析JSONが返り、分析本体、部位別結果、履歴GET、Neon保存のすべてが合格しました。
-
-## iPhone相当の画面確認と実機確認の違い
-
-390×844のブラウザ確認では、スマートフォン幅でレイアウトが横にはみ出さないことを検査できます。
-
-ただし、ブラウザ確認だけではiPhoneのカメラ権限、写真アプリの選択画面、Appleログイン、アプリを完全終了した後の動作までは再現できません。この4点は、Expo GoまたはiOS開発ビルドを実際のiPhoneへ入れて確認します。
-
-## 月額プランと現在の利用制限（2026年9月14日版）
-
-ここからが現在の正しい仕様です。これより前にある「AIチャット100回」「身体分析1日1回」という説明は、変更前の学習記録です。
-
-### 現在のルール
-
-```text
-AIチャット
-→ 全ユーザーが1日30回まで
-
-AIメニュー
-→ 全ユーザーが1日3回まで
-→ 最初の生成1回と再生成2回を合わせて3回
-
-食事・カロリー管理
-→ 月額1,000円の有料会員だけ利用可能
-
-身体分析
-→ 最初の1回だけ無料
-→ 2回目以降は月額1,000円の有料会員だけ利用可能
-→ 有料会員も日本時間の1か月に4回まで
-```
-
-利用回数の判定はフロントではなくバックエンドで行います。フロントのボタンを隠すだけでは、APIを直接呼ばれると制限を回避されるためです。
-
-### 関係するファイル
-
-```text
-db/schema.ts
-→ Appleで確認済みの課金状態を保存するテーブル
-
-app/lib/subscriptions/policy.ts
-→ 価格・無料条件・月4回というルールだけを管理
-
-app/lib/subscriptions/entitlements.ts
-→ Neonから本人の課金状態を取得し、有料会員か判定
-
-app/api/subscription/route.ts
-→ フロントへ現在のプランと利用可能機能を返す
-
-app/api/food-records/route.ts
-→ 食事の保存・取得・変更・削除前に有料会員か確認
-
-app/api/body-analysis/route.ts
-→ 初回無料・2回目以降の課金・月4回を確認
-
-app/api/chat/route.ts
-→ AIチャットを日本時間で1日30回に制限
-
-app/api/ai-menu/route.ts
-→ AIメニューを再生成込みで1日3回に制限
-```
-
-### `user_subscriptions`テーブルは何を保存するか
-
-`userSubscriptions`は、利用者がフロントで「購入した」と送った内容をそのまま信用する場所ではありません。Appleの署名付き取引情報をバックエンドで検証できた後、その結果だけを保存する場所です。
-
-`userId`は、課金状態をNeon内の本人へ結び付けます。
-
-`productId`は、購入されたApp Storeの商品を表します。想定商品は`musclepas.premium.monthly`です。
-
-`originalTransactionId`は、Appleのサブスクリプションを継続して追跡するための取引IDです。
-
-`status`は、現在使えるかを`active`、`grace_period`、`expired`、`revoked`などで表します。
-
-`expiresAt`は、有料期間が終わる日時です。`active`でも期限切れなら有料会員として扱いません。
-
-`environment`は、App Storeのテスト購入である`sandbox`と本番購入である`production`を区別します。
-
-### 有料会員の判定
-
-```ts
-const premiumAccess = await getPremiumAccess(user.id);
-```
-
-`await`は、Neonから課金状態が返るまで待つという意味です。
-
-`getPremiumAccess(user.id)`は、ログイン中の本人の課金情報だけを検索します。
-
-検索条件は、状態が`active`または`grace_period`で、`expiresAt`が現在時刻より未来であることです。
-
-条件を満たす行があれば`isPremium: true`、なければ`isPremium: false`を返します。
-
-### 食事・カロリー管理の判定
-
-`GET`・`POST`・`PATCH`・`DELETE`の全部で課金状態を確認します。
-
-読み取りだけ無料にすると、無料ユーザーも過去のカロリー機能を使い続けられるため、今回は一覧取得を含む全操作を有料対象にしています。
-
-無料ユーザーにはHTTP 402と`PREMIUM_REQUIRED`を返します。フロントはこのcodeを見て、月額1,000円プランの案内画面を表示できます。
-
-### 身体分析の初回無料と月4回
-
-最初にNeonから次の2つを数えます。
-
-```text
-本人が今まで完了した分析の総数
-本人が今月完了した分析の数
-```
-
-総数が0なら、課金状態に関係なく初回無料で通します。
-
-総数が1以上で無料会員なら、OpenAIへ画像を送る前にHTTP 402で止めます。この順番にすることで、利用できない分析のOpenAI料金は発生しません。
-
-有料会員でも今月の完了数が4以上なら、HTTP 429と翌月の利用可能日時を返します。
-
-同時に複数回送信された場合は「本人ID・日本時間の年月・現在の利用枠」から同じ受付IDを作り、Neonの一意制約で1件だけを通します。
-
-### AIチャット30回とAIメニュー3回
-
-AIチャットは`AI_CHAT_DAILY_LIMIT=30`、AIメニューは`AI_MENU_DAILY_LIMIT=3`を使います。
-
-どちらもOpenAIへ送る前に、本人が日本時間の今日すでに使用した回数をNeonで数えます。
-
-上限に達していればHTTP 429を返すため、上限を超えた分のOpenAI料金は発生しません。
-
-AIメニューでは新規生成と再生成を同じ`ai_generated_menus`へ保存して数えるため、1回生成して2回再生成すると合計3回です。
-
-### 利益を守る予算設計
-
-月額1,000円は売上であり、その全額が残るわけではありません。App Store手数料、OpenAI、Neon、Renderなどの費用を差し引いて利益を確認します。
-
-最初の運用目安は、1人あたりのOpenAI費用を月額売上の20%以内、つまり月200円以内に置きます。App Store手数料や税を考えると、実際の利益計算ではさらに余裕を持たせます。
-
-```text
-月の実売上
-－ App Store手数料
-－ OpenAI実費
-－ Neon・Renderなどの月額費用
-＝ 残る利益
-```
-
-現在の回数制限は「暴走を事前に止める仕組み」、使用トークンログは「実際の利用量を見る仕組み」です。
-
-OpenAI Platformではプロジェクト予算アラートを設定し、アプリ側では本文を保存せずトークン数だけをログへ記録します。運用開始後はOpenAI Costs APIの実費とApp Storeの実売上を月次で比較し、30回・3回・月4回の上限が利益に合うか調整します。
-
-重要なのは、予算アラートは通常「通知」であり、必ずAPI通信を停止する機能とは限らないことです。そのため、アプリ側の回数制限を残します。
-
-### App Store課金の購入・検証（2026年9月16日）
-
-フロントは`expo-iap`を使い、月額商品の取得、購入、購入復元を行います。購入時はNeonユーザーのUUIDをAppleの`appAccountToken`へ渡します。
-
-購入後はAppleの署名付き取引情報を`POST /api/subscription/apple/verify`へ送り、バックエンドでApple公式ライブラリを使って署名、Bundle ID、環境、商品ID、本人用UUID、元取引ID、有効期限、取消状態を確認します。検証成功後だけNeonの課金状態を更新し、フロントがApple取引を完了します。フロントの`isPremium: true`のような自己申告は使用しません。
-
-更新・猶予期間・期限切れ・返金は`POST /api/subscription/apple/notifications`でApp Store Server Notifications V2を検証し、元取引IDが一致する課金状態へ反映します。
-
-必要な設定値は次のとおりです。
-
-- mobile：`EXPO_PUBLIC_APPLE_PREMIUM_PRODUCT_ID`
-- backend：`APPLE_PREMIUM_PRODUCT_ID`、`APPLE_BUNDLE_ID`、`APPLE_IAP_ENVIRONMENT`
-- backend：`APPLE_ROOT_CA_G2_BASE64`、`APPLE_ROOT_CA_G3_BASE64`
-- 本番backendのみ：`APPLE_APP_ID`
-
-コード、型、Lint、単体テスト、本番用ビルド、Expo Web書き出しは確認済みです。実決済はApp Store Connectの商品登録、Apple証明書、通知URL、iPhone開発ビルドが必要なため、Sandboxで購入・復元・更新・解約・返金を確認して完成とします。
-
-同日の依存関係監査で検出されたNext.jsの重大な既知問題は、修正版`16.3.5`へ更新しました。更新後もVinext本番ビルド、TypeScript、単体テスト19件は成功しています。その他の推移的依存関係は、互換性を壊す一括強制更新をせず個別に確認します。
-
-### 自動テスト結果
-
-2026年9月14日に次を確認しました。
-
-- AIチャットは日本時間の上限30回でHTTP 429になる
-- AIメニューは新規生成と再生成を合わせた上限3回でHTTP 429になる
-- 身体分析は有料会員でも月4回使用後にHTTP 429になる
-- 無料ユーザーの食事保存はHTTP 402になる
-- テスト用の有料状態では食事の保存・再取得・削除が成功する
-- `GET /api/subscription`は月額1,000円と`premium`を返す
-- AIチャットとAIメニューが保存済み食事を参照できる
-- 別ユーザーは他人の食事を変更・削除できない
-- テスト終了後、一時ClerkユーザーとNeon関連データが削除される
-
-本番Neonを直接変更する前に一時ブランチを作り、課金テーブルの外部キー、一意制約、状態チェック、期限検索インデックスも確認しました。
-
-承認後、本番Neonへ同じ課金テーブルを適用し、テーブル1件、制約15件、インデックス4件が存在することを再確認しました。一時ブランチは適用後に削除されています。
-
-公開Sitesの`AI_CHAT_DAILY_LIMIT`も100から30へ変更し、課金・利用制限を含むバージョン8を公開しました。公開URLのTypeScript API、Neon、RenderはHTTP 200、本人データAPIは未ログイン通信をHTTP 401で拒否しました。
-
-本番Neonの特権接続文字列をローカルE2Eへ直接渡す方法は、秘密漏えいの危険があるため使用しません。公開環境は、公開ヘルスチェックと認証保護、本番DBの読み取り検査、開発DBでの認証付きE2Eを組み合わせて確認しています。
-
-## AIチャットの料金を抑える新しい構成
-
-### 全体の流れ
-
-```text
-フロントで500文字以内か確認
-↓
-バックエンドでもZodで500文字以内か確認
-↓
-本人の1日30回制限と二重送信を確認
-↓
-Neonから本人情報・古い会話要約・直近5往復を取得
-↓
-OpenAIへ「短い要約 + 直近5往復 + 今回の質問」を1回送信
-↓
-回答を最大400文字に整える
-↓
-回答とトークン使用量をNeonへ保存
-```
-
-500文字を超えた質問は、フロントの送信ボタンを無効にします。リクエストを直接作られた場合も、`app/lib/validation/apiSchemas.ts`の`chatRequestSchema`がHTTP 400で拒否するためOpenAI料金は発生しません。
-
-### フロントの500文字確認
-
-対象は`mobile/src/app/chat.tsx`です。
-
-```ts
-const MAX_MESSAGE_LENGTH = 500;
-```
-
-この定数は、質問欄で許可する最大文字数です。
-
-```ts
-const isTooLong = input.length > MAX_MESSAGE_LENGTH;
-```
-
-`input.length`は入力中の文字数です。500より大きければ`isTooLong`が`true`になります。
-
-```ts
-const canSend = Boolean(input.trim()) && !isTooLong && !isSending;
-```
-
-空欄ではない、500文字以内、送信中ではない、という3条件を全部満たす場合だけ送信できます。
-
-### バックエンドの500文字確認
-
-```ts
-message: z.string().trim().min(1).max(500)
-```
-
-`z.string()`は文字列だけを許可します。`trim()`は前後の空白を除きます。`min(1)`は空文字を拒否し、`max(500)`は500文字を超えた質問を拒否します。この検査はOpenAI呼び出しより前に行います。
-
-### 直近5往復と今回の質問
-
-`app/lib/ai/config.ts`の`recentChatMessageLimit = 10`は、利用者5件とAI5件の合計10メッセージを表します。
-
-質問を保存した後は最大11件を取得します。内訳は「直前の10メッセージ + 今回の質問」です。それより古いメッセージ本文は、そのままOpenAIへ送りません。
-
-### 古い会話の要約
-
-`app/lib/ai/chatSummary.ts`は、OpenAIを呼ばずに短い要約を作ります。追加のAI要約料金を発生させないためです。
-
-要約には、目標、身長・体重・体脂肪率、週の頻度、利用場所、苦手部位、最新身体分析、最近の種目、最新体重、食事記録、最新AIメニュー、古い重要相談を含めます。最大800文字で、`chat_conversations.summary`へ保存します。
-
-`summarized_message_count`は、何件目まで要約済みかを覚える数値です。これにより、同じ古い質問を毎回要約へ重複追加しません。
-
-### OpenAIへ実際に渡す内容
-
-`app/api/chat/route.ts`の`aiInput`は次の形です。
-
-```ts
-const aiInput = [
-  { role: "developer", content: conversationSummary },
-  ...conversationInput,
-];
-```
-
-最初に短い本人要約を渡し、その後に直近5往復と今回の質問を並べます。通常チャットではTool判断のための生成をなくしたため、有料の回答生成は基本1回です。安全確認用Moderationは別処理として残しています。
-
-### 回答とモデルの上限
-
-`OPENAI_CHAT_MODEL`は通常チャット、`OPENAI_MENU_MODEL`はAIメニュー、`OPENAI_BODY_ANALYSIS_MODEL`は画像分析のモデルです。別々に変更できるため、通常チャットとメニューには安価なモデルを使い、画像分析だけ必要に応じて高性能モデルを使えます。
-
-```text
-OPENAI_CHAT_MAX_OUTPUT_TOKENS=600
-AI_CHAT_MAX_ANSWER_CHARACTERS=400
-```
-
-600トークンはOpenAIが生成できる上限です。さらに`limitChatAnswer()`がDB保存と画面表示を最大400文字にします。system promptにも「通常400文字以内、短く答えられる質問は短く」と書いてあります。
-
-### ユーザー別の使用量保存
-
-`openai_usage_records`は次を保存します。
-
-- Neon内のユーザーID
-- chat・menuなどの機能名
-- 使用モデル
+- ユーザーID
+- 機能名
+- モデル名
 - input tokens
 - output tokens
 - total tokens
-- 実行日時
+- 推定料金（100万分の1円単位）
+- 日時
 
-質問本文、回答本文、身体写真は使用量テーブルへ保存しません。`user_id + created_at`のインデックスがあるため、将来は「この利用者が今月使った合計トークン」を検索できます。
+質問本文や画像は料金記録へ保存しません。
 
-### 1日30回制限
+---
 
-バックエンドは日本時間の0時から翌日0時までに保存された本人の質問数を数えます。30回に達していればOpenAIより前でHTTP 429を返します。フロント表示だけに頼らないため、APIを直接呼ばれても31回目の料金は発生しません。
+# 24. エラー番号の読み方
 
-### 覚えておく単語
+| 状態 | 意味 |
+| --- | --- |
+| 200 | 成功 |
+| 400 | 入力形式が不正 |
+| 401 | ログイン確認失敗 |
+| 403 | 権限がない・有料機能を使えない |
+| 404 | 本人データが見つからない |
+| 409 | 二重送信・データ競合 |
+| 413 | 画像容量が大きい |
+| 415 | 画像形式が不正 |
+| 429 | 利用回数または連続送信の上限 |
+| 500 | サーバー内部エラー |
+| 502 / 503 / 504 | OpenAIやPythonなど外部サービスの失敗 |
 
-- `max_output_tokens`：OpenAIが1回に生成できる最大トークン数
-- `summary`：古い長文から今後も必要な情報だけを残した短い文章
-- `offset()`：検索結果の先頭から指定件数を飛ばす
-- `limit()`：取得する最大件数を決める
-- `ResponseInput`：Responses APIへ渡せる会話データのTypeScript型
-- `store: false`：このAPI応答をOpenAI側の保存対象にしない指定
-- `reasoning.effort: "none"`：通常チャットで追加の推論トークンを使わない指定
+---
 
-## 運営ダッシュボード（2026-09-20追加）
+# 25. 運営ダッシュボード
 
-- `app/admin/page.tsx`：運営指標・推移グラフ・OpenAI内訳・Neon実測値を表示する管理画面
-- `app/api/admin/dashboard/route.ts`：管理者権限を確認して売上・費用・利益を集計するAPI
-- `app/lib/admin/requireAdmin.ts`：`ADMIN_CLERK_USER_IDS`による管理者限定処理
-- `app/lib/admin/costConfig.ts`：月額料金、Apple手数料、OpenAIモデル単価、Neon・その他費用、警告閾値の設定
-- `openai_usage_records.estimated_cost_micros_yen`：OpenAI呼び出し時点の推定料金を100万分の1円単位で保存
-- `ADMIN_DASHBOARD_SETUP.md`：公開先の環境変数、DB反映、App Store Connect本格連携の手順
+## 何を確認する画面か
+
+運営者が、推定売上・Apple手数料・OpenAI料金・Neon料金・その他費用・推定利益を確認するWeb画面です。
+
+一般ユーザー向けのスマホ画面とは分かれています。
+
+## 関係するファイル
+
+| ファイル | 役割 |
+| --- | --- |
+| `app/admin/page.tsx` | 指標、推移、AI内訳、警告を表示する管理画面 |
+| `app/api/admin/dashboard/route.ts` | Neonから運営データを集計するAPI |
+| `app/lib/admin/requireAdmin.ts` | Clerk IDが管理者一覧に含まれるか確認 |
+| `app/lib/admin/costConfig.ts` | 単価、手数料、費用、警告値を環境変数から読む |
+| `app/lib/admin/previewDashboard.ts` | 本番データなしで画面を確認する開発用データ |
+| `ADMIN_DASHBOARD_SETUP.md` | 公開環境の設定手順 |
+
+## 管理者確認
+
+```ts
+const adminIds = process.env.ADMIN_CLERK_USER_IDS;
+```
+
+公開環境へ管理者本人のClerkユーザーIDを設定します。
+
+ログイン済みでも、一覧に含まれないユーザーへ集計データは返しません。
+
+## OpenAI推定料金
+
+`openai_usage_records.estimated_cost_micros_yen`へ、OpenAIを呼んだ時点の推定料金を保存します。
+
+100万分の1円単位の整数にすることで、小さい料金を丸めず安全に合計できます。
+
+モデル単価は`OPENAI_MODEL_PRICING_JSON`で設定します。
+
+## 推定利益
+
+```text
+推定売上
+－ Apple手数料
+－ OpenAI推定料金
+－ Neon月額料金
+－ その他インフラ費用
+＝ 推定利益
+```
+
+App Store Connectの実際の入金額ではなく、有料ユーザー数から計算した推定値です。
+
+## 画面に表示する内容
+
+- 有料ユーザー数
+- 推定売上
+- OpenAIの今日・今月の推定料金
+- Neonの推定料金
+- Apple手数料とその他費用
+- 合計コスト、利益、利益率
+- 1ユーザー平均売上・AI原価・インフラ原価・利益
+- 月別の売上、OpenAI、Neon、利益、有料ユーザー推移
+- OpenAIの機能別、モデル別、ユーザー別内訳
+- DB容量と保存件数
+- 設定した基準を超えた場合の警告
+
+OpenAIのトークン数、DB容量、保存件数は実測値です。
+
+OpenAI料金、Neon料金、売上、Apple手数料、利益は設定値を使った推定値です。
+
+画面でも実測と推定を区別して表示します。
+
+## 現在必要な外部設定
+
+- `0013_add_openai_estimated_cost.sql`を公開Neonへ適用
+- `ADMIN_CLERK_USER_IDS`を設定
+- OpenAIモデル単価を設定
+- Neon料金とApple手数料率を設定
+- 管理者でログインし、実データを確認
+
+---
+
+# 26. よく使うJavaScript・TypeScript単語帳
+
+## `const`
+
+変数を定義します。
+
+変数そのものへ別の値を再代入しない場合に使います。
+
+## `let`
+
+あとから別の値を代入する変数です。
+
+## `type`
+
+データの形を決めます。
+
+## `string / number / boolean`
+
+文字列、数値、真偽値です。
+
+## `null`
+
+値がないことを意図的に表します。
+
+## `undefined`
+
+値がまだ設定されていない、または項目が存在しない状態です。
+
+## `?`
+
+型の項目を省略可能にします。
+
+```ts
+conversationId?: string;
+```
+
+## `?.`
+
+左側に値がある場合だけ続きを読みます。
+
+## `??`
+
+左側が`null`か`undefined`の場合に右側を使います。
+
+## `!`
+
+真偽値を反対にします。
+
+```ts
+if (!user) {
+  // userがない場合
+}
+```
+
+## `===`
+
+型も含めて同じ値か確認します。
+
+## `&&`
+
+両方の条件が正しい場合です。
+
+## `||`
+
+どちらかの条件が正しい場合です。
+
+## 三項演算子
+
+```ts
+const label = isPremium ? '有料' : '無料';
+```
+
+条件が正しければ`有料`、違えば`無料`を使います。
+
+## `.map()`
+
+配列の各要素を別の形へ変換します。
+
+## `.filter()`
+
+条件に合う要素だけを残します。
+
+## `.find()`
+
+条件に最初に合う1件を返します。
+
+## `.some()`
+
+条件に合う要素が1件でもあるかを真偽値で返します。
+
+## `.reduce()`
+
+配列を1つの値へまとめます。
+
+```ts
+const total = entries.reduce(
+  (sum, entry) => sum + entry.calories,
+  0,
+);
+```
+
+食事の全カロリーを合計しています。
+
+## `.trim()`
+
+文字列の前後の空白を除きます。
+
+## `.slice()`
+
+文字列や配列の一部分を取り出します。
+
+## `JSON.stringify()`
+
+オブジェクトをJSON文字列へ変換します。
+
+## `JSON.parse()`
+
+JSON文字列をJavaScriptの値へ戻します。
+
+## `Promise.all()`
+
+互いに依存しない複数の非同期処理を並行して待ちます。
+
+## `try / catch / finally`
+
+- `try`で処理を試します。
+- `catch`で失敗を処理します。
+- `finally`は成功・失敗のどちらでも実行します。
+
+`finally`では読み込み表示や送信ロックを解除することが多いです。
+
+---
+
+# 27. よく使うDB単語帳
+
+## `select`
+
+データを取得します。
+
+## `insert`
+
+新しい行を追加します。
+
+## `update`
+
+既存の行を変更します。
+
+## `delete`
+
+既存の行を削除します。
+
+## `where`
+
+対象を条件で絞ります。
+
+## `eq`
+
+2つの値が等しい条件です。
+
+## `and`
+
+複数条件をすべて満たす指定です。
+
+## `orderBy`
+
+並び順を決めます。
+
+## `desc`
+
+新しい順・大きい順です。
+
+## `limit`
+
+最大取得件数です。
+
+## `leftJoin`
+
+左側のデータを残したまま、関連データを結合します。
+
+プロフィールが未登録でもユーザーを取得したい場合などに使います。
+
+## index
+
+検索を速くする索引です。
+
+## unique
+
+同じ値の重複を禁止します。
+
+## check
+
+DBへ保存できる値の範囲や候補を制限します。
+
+---
+
+# 28. テスト
+
+## 全体テスト
+
+```bash
+cd /Users/yuuta/Desktop/musslepas
+npm run test:all
+```
+
+型検査、Lint、ビルド、Python、DB、APIなどをまとめて確認します。
+
+## 主な個別テスト
+
+```bash
+npm run test:unit
+npm run test:source-security
+npm run test:python
+npm run test:mobile-api
+npm run test:mobile-types
+npm run test:db
+npm run test:public
+```
+
+## テストと実機確認の違い
+
+自動テストはデータや処理を速く確認できます。
+
+カメラ権限、キーボード、Safe Area、App Store Sandbox購入はiPhone実機が必要です。
+
+---
+
+# 29. 開発サーバーの起動
+
+## TypeScriptバックエンド
+
+```bash
+cd /Users/yuuta/Desktop/musslepas
+npm run dev
+```
+
+## Expoスマホアプリ
+
+別ターミナルで実行します。
+
+```bash
+cd /Users/yuuta/Desktop/musslepas/mobile
+npm run web
+```
+
+## Python身体分析API
+
+ローカルでPythonを使う場合だけ実行します。
+
+```bash
+cd /Users/yuuta/Desktop/musslepas/python-analysis
+source .venv/bin/activate
+uvicorn app.main:app --reload
+```
+
+Renderの公開Python APIを使う場合、ローカルPythonの起動は不要です。
+
+`Address already in use`は同じポートですでにサーバーが動いている意味です。
+
+---
+
+# 30. 現在の実装状況
+
+## 実装済み
+
+- Clerkメール認証
+- 初回設定分岐
+- 理想体型とプロフィール保存
+- 体重の保存・取得・編集・削除
+- トレーニングの保存・取得・編集・削除
+- 食事の保存・取得・編集・削除
+- 身体分析と履歴保存
+- AIメニュー生成・保存・履歴
+- AIチャット・履歴・要約
+- AI利用回数制限と使用量記録
+- アカウントと関連データ削除
+- プレミアム判定
+- App Store購入・復元・署名検証のコード
+- 管理者限定の運営ダッシュボード
+- プライバシーポリシー・利用規約のアプリ画面と公開Webページ
+
+## 外部設定・実機確認が必要
+
+- App Store Connectの商品設定
+- Apple通知URLと証明書設定
+- iPhone開発ビルドでSandbox購入・復元
+- Appleログインを採用する場合の実装と確認
+- Clerk本番インスタンスへの切り替え
+- カメラ・写真選択権限
+- iPhoneとAndroidの主要画面確認
+- プライバシーポリシー・利用規約の正式な運営者名・問い合わせ先・法務確認
+
+## 機能として残る改善
+
+- ホームの今週達成率
+- 最近鍛えていない部位
+- 最新身体分析からの優先部位
+- 食事の脂質・炭水化物・量・時間・メモ
+- OpenAI予算アラートと月次利益確認
+- 依存パッケージの脆弱性確認
+
+---
+
+# 31. 15日で1周する学習プラン
+
+毎日60〜90分を目安にします。最初の40〜60分で対象章とファイルを読み、残りの20〜30分で「確認」に自分の言葉で答えます。
+
+## 1日目：アプリ全体と言語
+
+- 読む：1〜3章
+- 見る：`mobile/src/app`、`app/api`、`db`、`python-analysis`
+- 目標：Expo、TypeScript、Neon、Python、OpenAIの担当を言える
+- 確認：`.ts`、`.tsx`、`.py`、`.sql`の違いは何か
+
+## 2日目：起動からホームまで
+
+- 読む：4章、6章
+- 見る：`mobile/src/app/index.tsx`、`mobile/src/app/bootstrap.tsx`
+- 目標：起動、ログイン判定、初回設定判定、画面遷移を説明できる
+- 確認：`push`と`replace`を使い分ける理由は何か
+
+## 3日目：React画面の基本
+
+- 読む：5章、26章の`.map()`まで
+- 見る：入力フォームがある好きな`.tsx`ファイル1つ
+- 目標：`useState`、`onChangeText`、`onPress`、条件表示、`.map()`を読める
+- 確認：`const [value, setValue] = useState("")`を一文ずつ説明する
+
+## 4日目：Contextと長期保存
+
+- 読む：7章
+- 見る：プロフィールまたは初回設定のContextとAPI通信
+- 目標：画面内の一時状態とNeonの永続データを区別できる
+- 確認：アプリ再起動後に残すデータはどこへ保存するか
+
+## 5日目：API通信とHTTP
+
+- 読む：8〜10章
+- 見る：`mobile/src/lib`の通信ファイルと対応する`app/api/**/route.ts`
+- 目標：JSON、GET、POST、PATCH、DELETE、`async / await`を説明できる
+- 確認：フロントの入力がAPIに届き、JSONで戻るまでを紙に書く
+
+## 6日目：Clerk認証と本人データ
+
+- 読む：11章、22章の認証・認可
+- 見る：共通認証ファイルとユーザー検索処理
+- 目標：Clerk IDとNeonの`users.id`の役割の違いを理解する
+- 確認：ログイン済みでもAPIごとに本人確認する理由は何か
+
+## 7日目：Zodとエラー処理
+
+- 読む：12章、24章
+- 見る：`safeParse`を使っている`route.ts`
+- 目標：フロントとバックエンド両方で検査する理由を説明できる
+- 確認：400、401、403、404、429、500の違いを言える
+
+## 8日目：Neon・PostgreSQL・Drizzle
+
+- 読む：13章、27章
+- 見る：`db/schema.ts`、`drizzle.config.ts`、`drizzle-postgres`
+- 目標：テーブル、行、列、主キー、外部キー、indexを理解する
+- 確認：`schema.ts`、`route.ts`、マイグレーションの役割を分けて説明する
+
+## 9日目：主要データの流れ
+
+- 読む：14章
+- 見る：理想体型、プロフィール、トレーニング、体重、食事のAPI
+- 目標：1機能を「入力 → API → 認証 → DB → 応答 → 表示」で追える
+- 確認：トレーニング本体・種目・セットが親子に分かれる理由は何か
+
+## 10日目：AIに渡す本人情報
+
+- 読む：15章
+- 見る：`app/lib/ai/getUserAiContext.ts`
+- 目標：Neonから目標、身体、運動、食事、分析を集める理由を理解する
+- 確認：`Promise<UserAiContext | null>`が何を約束する型か説明する
+
+## 11日目：AIチャット
+
+- 読む：16章、23章のAIチャット
+- 見る：`app/api/chat/route.ts`、`app/lib/ai/runChatTool.ts`、`app/lib/ai/chatTools.ts`
+- 目標：要約＋直近5往復＋今回の質問を送る構成を理解する
+- 確認：Toolと普通の会話履歴の違いは何か
+
+## 12日目：AIメニュー
+
+- 読む：17章、23章のAIメニュー
+- 見る：`app/api/ai-menu/route.ts`、`app/lib/ai/menuPrompt.ts`、`app/lib/ai/menuSchema.ts`
+- 目標：プロンプト、Structured Outputs、Zod検査、保存の順番を説明できる
+- 確認：AIの文章をそのままDBに保存しない理由は何か
+
+## 13日目：身体分析とPython
+
+- 読む：18章
+- 見る：`app/api/body-analysis/route.ts`、`python-analysis/app/main.py`
+- 目標：Expo → TypeScript → Python → OpenAI → TypeScript → Neonの流れを理解する
+- 確認：JSONと`FormData`の使い分け、Pythonを挟む理由を説明する
+
+## 14日目：課金・二重送信・一括保存
+
+- 読む：19〜21章
+- 見る：課金API、`requestId`を扱うAPI、`db.transaction()`または`db.batch()`
+- 目標：Appleの購入情報をサーバーで確かめる理由と、途中保存を防ぐ仕組みを理解する
+- 確認：同じ保存ボタンを2回押しても1件にする方法は何か
+
+## 15日目：セキュリティ・管理画面・テスト
+
+- 読む：22〜25章、28〜30章
+- 見る：`app/api/admin/dashboard/route.ts`、`app/admin/page.tsx`、`tests`
+- 目標：管理者限定、秘密鍵、利用制限、料金記録、公開前テストを説明できる
+- 確認：売上、Apple手数料、OpenAI料金、Neon料金、税引前利益の関係を式で書く
+
+## 1周した後の判定
+
+次の流れをコードを見ながら自分の言葉で説明できれば1周完了です。
+
+`Expoの入力 → API通信 → Clerk認証 → Zod検査 → Neon取得・保存 → 応答JSON → Expo表示`
+
+AI機能はさらに「本人情報の収集 → OpenAIへ送信 → 出力検査 → 保存 → 使用量記録」が加わります。

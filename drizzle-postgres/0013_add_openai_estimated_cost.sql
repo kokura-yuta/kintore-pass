@@ -4,3 +4,10 @@ ADD COLUMN "estimated_cost_micros_yen" bigint DEFAULT 0 NOT NULL;
 ALTER TABLE "openai_usage_records"
 ADD CONSTRAINT "openai_usage_cost_nonnegative_check"
 CHECK ("openai_usage_records"."estimated_cost_micros_yen" >= 0);
+--> statement-breakpoint
+ALTER TABLE "openai_usage_records"
+DROP CONSTRAINT IF EXISTS "openai_usage_feature_check";
+--> statement-breakpoint
+ALTER TABLE "openai_usage_records"
+ADD CONSTRAINT "openai_usage_feature_check"
+CHECK ("openai_usage_records"."feature" in ('chat', 'menu', 'body-analysis', 'summary', 'other'));

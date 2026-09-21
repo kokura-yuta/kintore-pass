@@ -38,9 +38,11 @@ ADMIN_WARNING_NEON_STORAGE_PERCENT=80
 - Apple手数料：推定売上×設定手数料率
 - 推定利益：売上－Apple手数料－OpenAI－Neon－その他費用
 
+OpenAI利用機能は`chat`、`menu`、`body-analysis`、`summary`、`other`の5種類に分けて保存できます。新しいAI機能を追加した場合は、既存4種類へ無理に混ぜず`other`として記録できます。
+
 ## DB反映
 
-`drizzle-postgres/0013_add_openai_estimated_cost.sql`を対象DBへ一度だけ適用します。適用後のOpenAI呼び出しは、トークン数に加えて呼び出し時点の推定料金も保存します。移行前の行は管理画面表示時に現在の設定単価で再計算します。
+`drizzle-postgres/0013_add_openai_estimated_cost.sql`を対象DBへ一度だけ適用します。この変更では推定料金列を追加し、利用機能の`other`も保存可能にします。適用後のOpenAI呼び出しは、トークン数に加えて呼び出し時点の推定料金も保存します。移行前の行は管理画面表示時に現在の設定単価で再計算します。
 
 ## App Store Connect本格連携
 

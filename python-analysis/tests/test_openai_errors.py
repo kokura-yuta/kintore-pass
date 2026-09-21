@@ -13,7 +13,7 @@ if str(PYTHON_ANALYSIS_ROOT) not in sys.path:
     sys.path.insert(0, str(PYTHON_ANALYSIS_ROOT))
 
 import httpx2
-from fastapi import HTTPException, UploadFile
+from fastapi import HTTPException, Response, UploadFile
 from PIL import Image
 from starlette.datastructures import Headers
 
@@ -71,6 +71,7 @@ class OpenAIErrorResponseTests(
     async def call_analyze(self) -> None:
         """3枚の正常画像で身体分析関数を呼ぶ。"""
         await analyze_body(
+            http_response=Response(),
             front_image=make_test_image(),
             side_image=make_test_image(),
             back_image=make_test_image(),

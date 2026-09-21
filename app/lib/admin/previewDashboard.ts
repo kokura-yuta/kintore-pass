@@ -8,6 +8,7 @@ export function createAdminPreviewDashboard() {
     summary: {
       paidUsers: 200,
       revenueYen: 200_000,
+      estimatedAppleProceedsYen: 170_000,
       openAiTodayYen: 180,
       openAiMonthYen: 4_200,
       neonYen: 1_200,
@@ -49,7 +50,8 @@ export function createAdminPreviewDashboard() {
       const revenueYen = paidUsers[index] * 1_000;
       const openAiYen = [900, 1300, 1850, 2600, 3400, 4200][index];
       const neonYen = 1_200;
-      return { month, revenueYen, openAiYen, neonYen, profitYen: revenueYen * 0.85 - openAiYen - neonYen, paidUsers: paidUsers[index] };
+      const profitYen = revenueYen * 0.85 - openAiYen - neonYen;
+      return { month, revenueYen, openAiYen, neonYen, profitYen, paidUsers: paidUsers[index] };
     }),
     warnings: ["これは開発用サンプルです。実データではありません。"],
   };

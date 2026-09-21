@@ -76,7 +76,8 @@ export function logOpenAiUsage(
     | "chat"
     | "menu"
     | "body-analysis"
-    | "summary",
+    | "summary"
+    | "other",
   usage: OpenAiUsage | null | undefined,
   requestId?: string,
   metadata?: {
