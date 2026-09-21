@@ -1,11 +1,9 @@
 import { Buffer } from "node:buffer";
 
-import {
-  Environment,
-  SignedDataVerifier,
-  type JWSRenewalInfoDecodedPayload,
-  type ResponseBodyV2DecodedPayload,
-  type JWSTransactionDecodedPayload,
+import type {
+  JWSRenewalInfoDecodedPayload,
+  ResponseBodyV2DecodedPayload,
+  JWSTransactionDecodedPayload,
 } from "@apple/app-store-server-library";
 
 const bundleId =
@@ -30,14 +28,21 @@ function readRootCertificates() {
   );
 }
 
-function configuredEnvironment() {
+function configuredEnvironmentName() {
   return process.env.APPLE_IAP_ENVIRONMENT === "production"
-    ? Environment.PRODUCTION
-    : Environment.SANDBOX;
+    ? "production"
+    : "sandbox";
 }
 
-function createVerifier() {
-  const environment = configuredEnvironment();
+async function createVerifier() {
+  // Apple公式ライブラリは読込時に乱数を作るため、
+  // Cloudflare Workerのグローバル領域ではなく、リクエスト中に遅延読込する。
+  const { Environment, SignedDataVerifier } =
+    await import("@apple/app-store-server-library");
+  const environment =
+    configuredEnvironmentName() === "production"
+      ? Environment.PRODUCTION
+      : Environment.SANDBOX;
   const appAppleId =
     environment === Environment.PRODUCTION
       ? Number(process.env.APPLE_APP_ID)
@@ -62,7 +67,8 @@ function createVerifier() {
 export async function verifyAppleTransaction(
   signedTransactionInfo: string,
 ): Promise<JWSTransactionDecodedPayload> {
-  return createVerifier().verifyAndDecodeTransaction(
+  const verifier = await createVerifier();
+  return verifier.verifyAndDecodeTransaction(
     signedTransactionInfo,
   );
 }
@@ -70,7 +76,8 @@ export async function verifyAppleTransaction(
 export async function verifyAppleNotification(
   signedPayload: string,
 ): Promise<ResponseBodyV2DecodedPayload> {
-  return createVerifier().verifyAndDecodeNotification(
+  const verifier = await createVerifier();
+  return verifier.verifyAndDecodeNotification(
     signedPayload,
   );
 }
@@ -78,7 +85,8 @@ export async function verifyAppleNotification(
 export async function verifyAppleRenewalInfo(
   signedRenewalInfo: string,
 ): Promise<JWSRenewalInfoDecodedPayload> {
-  return createVerifier().verifyAndDecodeRenewalInfo(
+  const verifier = await createVerifier();
+  return verifier.verifyAndDecodeRenewalInfo(
     signedRenewalInfo,
   );
 }
@@ -95,7 +103,5 @@ export function expectedAppleProductId() {
 }
 
 export function appleEnvironmentName() {
-  return configuredEnvironment() === Environment.PRODUCTION
-    ? "production"
-    : "sandbox";
+  return configuredEnvironmentName();
 }
