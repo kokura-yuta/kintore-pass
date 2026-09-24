@@ -24,7 +24,8 @@ export default function BottomNavigation() {
     pathname === "/profile-setup" ||
     pathname === "/initial-analysis" ||
     pathname === "/privacy" ||
-    pathname === "/terms";
+    pathname === "/terms" ||
+    pathname === "/support";
 
   if (isOnboardingRoute) {
     return null;

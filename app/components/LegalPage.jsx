@@ -13,7 +13,7 @@ export default function LegalPage({ title, sections }) {
           {section.paragraphs.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}
         </section>
       ))}
-      <div className="legalLinks"><Link href="/privacy">プライバシーポリシー</Link><Link href="/terms">利用規約</Link></div>
+      <div className="legalLinks"><Link href="/support">サポート</Link><Link href="/privacy">プライバシーポリシー</Link><Link href="/terms">利用規約</Link></div>
     </main>
   );
 }

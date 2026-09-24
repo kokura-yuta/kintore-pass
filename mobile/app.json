@@ -4,12 +4,12 @@
     "slug": "kintore-pas",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/kintore-pas-icon-v2.png",
+    "icon": "./assets/images/kintore-pas-app-store-1024.png",
     "scheme": "kintorepas",
     "userInterfaceStyle": "dark",
     "backgroundColor": "#050A0F",
     "ios": {
-      "icon": "./assets/images/kintore-pas-icon-v2.png",
+      "icon": "./assets/images/kintore-pas-app-store-1024.png",
       "bundleIdentifier": "com.yoshida.kintorepas",
       "supportsTablet": false
     },
