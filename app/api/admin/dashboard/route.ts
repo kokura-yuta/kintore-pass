@@ -1,6 +1,9 @@
 import { and, count, gt, gte, inArray, sql } from "drizzle-orm";
 
-import { adminCostConfig, estimateOpenAiCostMicrosYen } from "@/app/lib/admin/costConfig";
+import {
+  adminCostConfig,
+  estimateOpenAiCostMicrosYen,
+} from "@/app/lib/admin/costConfig";
 import { getAdminIdentity } from "@/app/lib/admin/requireAdmin";
 import { createAdminPreviewDashboard } from "@/app/lib/admin/previewDashboard";
 import { logServerError } from "@/app/lib/observability/serverLog";
@@ -53,9 +56,12 @@ function groupCost(rows: UsageRow[], key: "feature" | "model") {
 }
 
 export async function GET(request: Request) {
+  const requestedPreview =
+    new URL(request.url).searchParams.get("preview") === "1";
   const localPreview =
     process.env.NODE_ENV !== "production" &&
-    (!process.env.DATABASE_URL ||
+    (requestedPreview ||
+      !process.env.DATABASE_URL ||
       !process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ||
       !process.env.CLERK_SECRET_KEY);
   if (localPreview) {
@@ -122,6 +128,7 @@ export async function GET(request: Request) {
     const paidUsers = activeRows.length;
     const revenueYen = paidUsers * adminCostConfig.monthlyPriceYen;
     const appleFeeYen = revenueYen * (adminCostConfig.appleFeePercent / 100);
+    const estimatedAppleProceedsYen = revenueYen - appleFeeYen;
     const totalCostYen = appleFeeYen + openAiMonthYen + adminCostConfig.neonMonthlyCostYen + adminCostConfig.otherMonthlyCostYen;
     const profitYen = revenueYen - totalCostYen;
     const dbSizeRaw = (databaseSizeResult as unknown as Array<{ bytes: string | number }>)[0]?.bytes ?? 0;
@@ -160,7 +167,14 @@ export async function GET(request: Request) {
       const revenue = active * adminCostConfig.monthlyPriceYen;
       const appleFee = revenue * (adminCostConfig.appleFeePercent / 100);
       const profit = revenue - appleFee - openAiYen - adminCostConfig.neonMonthlyCostYen - adminCostConfig.otherMonthlyCostYen;
-      return { month: monthKey(start), revenueYen: revenue, openAiYen, neonYen: adminCostConfig.neonMonthlyCostYen, profitYen: profit, paidUsers: active };
+      return {
+        month: monthKey(start),
+        revenueYen: revenue,
+        openAiYen,
+        neonYen: adminCostConfig.neonMonthlyCostYen,
+        profitYen: profit,
+        paidUsers: active,
+      };
     });
 
     const warnings: string[] = [];
@@ -177,6 +191,7 @@ export async function GET(request: Request) {
       summary: {
         paidUsers,
         revenueYen,
+        estimatedAppleProceedsYen,
         openAiTodayYen,
         openAiMonthYen,
         neonYen: adminCostConfig.neonMonthlyCostYen,

@@ -46,6 +46,9 @@ test("端末へ配るmobileコードにサーバー秘密情報を含めない",
     /CLERK_SECRET_KEY/,
     /DATABASE_URL/,
     /OPENAI_API_KEY/,
+    /ADMIN_CLERK_USER_IDS/,
+    /APPLE_(?:ISSUER_ID|KEY_ID|PRIVATE_KEY)/,
+    /APP_STORE_(?:ISSUER_ID|KEY_ID|PRIVATE_KEY)/,
     /postgres(?:ql)?:\/\//i,
     /\bsk-[A-Za-z0-9_-]{16,}/,
   ];
@@ -135,6 +138,15 @@ test("サーバーエラーログとOpenAI利用ログに本文や秘密値を�
       },
       "request_12345678",
     );
+    logOpenAiUsage(
+      "other",
+      {
+        input_tokens: 10,
+        output_tokens: 5,
+        total_tokens: 15,
+      },
+      "request_other_12345678",
+    );
   } finally {
     console.error = originalError;
     console.info = originalInfo;
@@ -146,6 +158,35 @@ test("サーバーエラーログとOpenAI利用ログに本文や秘密値を�
   assert.doesNotMatch(combinedLogs, /写真本文/);
   assert.match(combinedLogs, /request_12345678/);
   assert.match(combinedLogs, /"totalTokens":120/);
+  assert.match(combinedLogs, /"feature":"other"/);
+});
+
+test("運営ダッシュボードはDB集計前に管理者権限を確認する", async () => {
+  const adminRoute = await readFile(
+    path.join(
+      projectRoot,
+      "app/api/admin/dashboard/route.ts",
+    ),
+    "utf8",
+  );
+  const adminGuard = await readFile(
+    path.join(
+      projectRoot,
+      "app/lib/admin/requireAdmin.ts",
+    ),
+    "utf8",
+  );
+
+  assert.match(adminRoute, /getAdminIdentity\(request\)/);
+  assert.match(adminRoute, /if \(!admin\.allowed\)/);
+  assert.ok(
+    adminRoute.indexOf("if (!admin.allowed)") <
+      adminRoute.indexOf("const db = getDb()"),
+    "管理者確認はDB集計より前に実行する必要があります",
+  );
+  assert.match(adminGuard, /ADMIN_CLERK_USER_IDS/);
+  assert.match(adminGuard, /status: 401/);
+  assert.match(adminGuard, /status: 403/);
 });
 
 test("Clerkの開発用キーと本番用キーを値を見せず判定する", () => {

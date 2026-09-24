@@ -17,7 +17,8 @@ type UsageFeature =
   | "chat"
   | "menu"
   | "body-analysis"
-  | "summary";
+  | "summary"
+  | "other";
 
 // 月別集計に必要な数値だけを保存し、質問・回答・身体情報は記録しない
 export async function recordOpenAiUsage({

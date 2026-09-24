@@ -782,7 +782,7 @@ export const openAiUsageRecords = pgTable(
     ),
     check(
       "openai_usage_feature_check",
-      sql`${table.feature} in ('chat', 'menu', 'body-analysis', 'summary')`,
+      sql`${table.feature} in ('chat', 'menu', 'body-analysis', 'summary', 'other')`,
     ),
     check(
       "openai_usage_tokens_nonnegative_check",

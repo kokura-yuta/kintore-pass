@@ -1,4 +1,5 @@
 import "./globals.css";
+import { ClerkProvider } from "@clerk/nextjs";
 import BottomNavigation from "./components/BottomNavigation";
 
 export const metadata = {
@@ -10,9 +11,11 @@ export default function RootLayout({ children }) {
   return (
     <html lang="ja">
       <body>
-        {children}
-        {/* すべての機能画面で共通して使う固定下部メニュー */}
-        <BottomNavigation />
+        <ClerkProvider>
+          {children}
+          {/* すべての機能画面で共通して使う固定下部メニュー */}
+          <BottomNavigation />
+        </ClerkProvider>
       </body>
     </html>
   );
