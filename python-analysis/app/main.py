@@ -358,6 +358,12 @@ async def analyze_body(
         back_image
     )
 
+    # Base64変換後は受信した一時アップロードファイルを明示的に閉じる。
+    # 元画像をRender上のファイルやデータベースとして残さない。
+    await front_image.close()
+    await side_image.close()
+    await back_image.close()
+
     # 任意の体脂肪率をAIへ渡せる表示へ変換する
     body_fat_text = (
         f"{body_fat_percentage}%"

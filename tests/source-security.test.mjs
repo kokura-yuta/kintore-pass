@@ -372,3 +372,44 @@ test("Python身体分析APIはTypeScriptバックエンドの内部秘密鍵を�
     /PYTHON_INTERNAL_API_KEY/,
   );
 });
+
+test("身体写真はDBへ保存せずPython処理後に一時ファイルを閉じる", async () => {
+  const pythonSource = await readFile(
+    path.join(
+      projectRoot,
+      "python-analysis/app/main.py",
+    ),
+    "utf8",
+  );
+  const schemaSource = await readFile(
+    path.join(projectRoot, "db/schema.ts"),
+    "utf8",
+  );
+
+  assert.match(pythonSource, /store=False/);
+  assert.match(
+    pythonSource,
+    /await front_image\.close\(\)/,
+  );
+  assert.match(
+    pythonSource,
+    /await side_image\.close\(\)/,
+  );
+  assert.match(
+    pythonSource,
+    /await back_image\.close\(\)/,
+  );
+
+  const bodyAnalysisSchema = schemaSource.slice(
+    schemaSource.indexOf(
+      "export const bodyAnalyses",
+    ),
+    schemaSource.indexOf(
+      "export const bodyAnalysisAreas",
+    ),
+  );
+  assert.doesNotMatch(
+    bodyAnalysisSchema,
+    /image|photo|url/i,
+  );
+});

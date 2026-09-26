@@ -350,6 +350,9 @@ async function beginAnalysis() {
       );
 
     setAnalysisResult(result);
+    // 分析成功後は、アプリの画面状態に保持していた画像URIを破棄する。
+    // 端末の写真ライブラリにある利用者自身の元画像は削除しない。
+    setPhotos({ front: null, side: null, back: null });
     setAnalysisRemaining(result.usage.remaining);
     setAccessMessage(
       result.usage.firstAnalysisFree
