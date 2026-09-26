@@ -1,5 +1,6 @@
 # 身体画像を分析し、TypeScriptバックエンドへ結果JSONを返すPython API
 import base64
+import hmac
 import json
 import logging
 import os
@@ -16,9 +17,11 @@ from openai import (
     RateLimitError,
 )
 from fastapi import (
+    Depends,
     FastAPI,
     File,
     Form,
+    Header,
     HTTPException,
     Response,
     UploadFile,
@@ -71,8 +74,8 @@ OPENAI_MAX_RETRIES = read_non_negative_int_env(
 )
 OPENAI_BODY_ANALYSIS_MODEL = os.getenv(
     "OPENAI_BODY_ANALYSIS_MODEL",
-    "gpt-5.6",
-).strip() or "gpt-5.6"
+    "gpt-5.6-luna",
+).strip() or "gpt-5.6-luna"
 OPENAI_BODY_ANALYSIS_MAX_OUTPUT_TOKENS = (
     max(
         1,
@@ -85,6 +88,38 @@ OPENAI_BODY_ANALYSIS_MAX_OUTPUT_TOKENS = (
         ),
     )
 )
+
+# 公開URLを知っている第三者がOpenAI分析を直接実行できないよう、
+# TypeScriptバックエンドとPython APIだけが共有する秘密鍵を使う。
+PYTHON_INTERNAL_API_KEY = os.getenv(
+    "PYTHON_INTERNAL_API_KEY",
+    "",
+).strip()
+
+
+def require_internal_api_key(
+    x_internal_api_key: str | None = Header(
+        None,
+        alias="X-Internal-API-Key",
+    ),
+) -> None:
+    if not PYTHON_INTERNAL_API_KEY:
+        raise HTTPException(
+            status_code=503,
+            detail="身体分析サービスの内部認証が未設定です。",
+        )
+
+    if (
+        x_internal_api_key is None
+        or not hmac.compare_digest(
+            x_internal_api_key,
+            PYTHON_INTERNAL_API_KEY,
+        )
+    ):
+        raise HTTPException(
+            status_code=401,
+            detail="身体分析サービスを利用できません。",
+        )
 
 # OpenAI APIへ画像分析を依頼する共通クライアントを作る
 openai_client = AsyncOpenAI(
@@ -256,6 +291,9 @@ def health_check():
 )
 async def analyze_body(
     http_response: Response,
+    _internal_auth: None = Depends(
+        require_internal_api_key
+    ),
     front_image: UploadFile = File(...),
     side_image: UploadFile = File(...),
     back_image: UploadFile = File(...),

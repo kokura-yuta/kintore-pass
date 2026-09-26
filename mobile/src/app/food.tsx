@@ -1,6 +1,4 @@
 import { useAuth } from '@clerk/expo';
-import { BlurView } from 'expo-blur';
-import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -8,7 +6,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { BottomNavigation } from '@/components/BottomNavigation';
 import { isApiBypassEnabled } from '@/lib/api';
 import { createFoodRecord, deleteFoodRecord, fetchFoodRecords, updateFoodRecord, type FoodRecord, type MealType } from '@/lib/foodRecords';
-import { fetchSubscriptionStatus } from '@/lib/subscription';
 
 const mealTypes: MealType[] = ['朝食', '昼食', '夕食', '間食'];
 
@@ -26,7 +23,6 @@ function isValidDate(value: string) {
 
 export default function FoodScreen() {
   const { getToken } = useAuth({ treatPendingAsSignedOut: false });
-  const router = useRouter();
   const getTokenRef = useRef(getToken);
   const scrollRef = useRef<ScrollView>(null);
   const savingLock = useRef(false);
@@ -47,41 +43,15 @@ export default function FoodScreen() {
   const [success, setSuccess] = useState('');
   const [isLoading, setIsLoading] = useState(!isApiBypassEnabled);
   const [isSaving, setIsSaving] = useState(false);
-  const [accessState, setAccessState] = useState<'loading' | 'premium' | 'free' | 'error'>(isApiBypassEnabled ? 'premium' : 'loading');
 
   const totalCalories = entries.reduce((total, entry) => total + entry.calories, 0);
   const totalProtein = entries.reduce((total, entry) => total + entry.proteinGrams, 0);
 
   useEffect(() => { getTokenRef.current = getToken; }, [getToken]);
 
-  const loadSubscription = useCallback(async () => {
-    if (isApiBypassEnabled) {
-      setAccessState('premium');
-      return;
-    }
-    setAccessState('loading');
-    try {
-      const token = await getTokenRef.current();
-      if (!token) throw new Error('ログイン状態を確認できませんでした。');
-      const subscription = await fetchSubscriptionStatus(token);
-      setAccessState(subscription.features.calorieTracking ? 'premium' : 'free');
-    } catch {
-      setAccessState('error');
-    }
-  }, []);
-
-  useEffect(() => {
-    const timerId = setTimeout(() => { void loadSubscription(); }, 0);
-    return () => clearTimeout(timerId);
-  }, [loadSubscription]);
-
   const loadEntries = useCallback(async (date: string) => {
     if (isApiBypassEnabled) {
       setEntries(localEntries.filter((entry) => entry.recordedDate === date));
-      setIsLoading(false);
-      return;
-    }
-    if (accessState !== 'premium') {
       setIsLoading(false);
       return;
     }
@@ -96,7 +66,7 @@ export default function FoodScreen() {
       setEntries([]);
       setError(loadError instanceof Error ? loadError.message : '食事記録を読み込めませんでした。');
     } finally { setIsLoading(false); }
-  }, [accessState, localEntries]);
+  }, [localEntries]);
 
   useEffect(() => {
     const timerId = setTimeout(() => { void loadEntries(viewDate); }, 0);
@@ -196,38 +166,6 @@ export default function FoodScreen() {
             {isLoading ? <View style={styles.emptyCard}><ActivityIndicator color="#00D4FF" /><Text style={styles.emptyText}>食事記録を読み込んでいます。</Text></View> : entries.length === 0 ? <View style={styles.emptyCard}><Text style={styles.emptyTitle}>この日の食事記録はありません</Text><Text style={styles.emptyText}>食べたものを追加すると、この日の合計を確認できます。</Text></View> : <View style={styles.entryList}>{entries.map((entry) => <View key={entry.id} style={styles.entryCard}><View style={styles.entryCopy}><Text style={styles.entryType}>{entry.mealType}</Text><Text style={styles.entryName}>{entry.name}</Text><Text style={styles.entryProtein}>P {entry.proteinGrams.toFixed(1)} g</Text></View><View style={styles.entryNumbers}><Text style={styles.entryCalories}>{entry.calories.toLocaleString()} kcal</Text><Pressable accessibilityLabel={`${entry.name}を編集`} accessibilityRole="button" onPress={() => startEdit(entry)} style={styles.actionButton}><Text style={styles.actionText}>編集</Text></Pressable><Pressable accessibilityLabel={`${entry.name}を削除`} accessibilityRole="button" onPress={() => setDeletingId(entry.id)} style={styles.actionButton}><Text style={styles.deleteText}>削除</Text></Pressable></View></View>)}</View>}
           </ScrollView>
         </KeyboardAvoidingView>
-        {accessState !== 'premium' ? (
-          <BlurView
-            blurMethod={Platform.OS === 'android' ? 'dimezisBlurViewSdk31Plus' : undefined}
-            intensity={75}
-            style={styles.accessOverlay}
-            tint="dark">
-            {accessState === 'loading' ? (
-              <View style={styles.accessCard}>
-                <ActivityIndicator color="#00D4FF" />
-                <Text style={styles.accessDescription}>プランを確認しています。</Text>
-              </View>
-            ) : accessState === 'error' ? (
-              <View style={styles.accessCard}>
-                <Text style={styles.accessTitle}>プランを確認できませんでした</Text>
-                <Text style={styles.accessDescription}>通信状態を確認して、もう一度お試しください。</Text>
-                <Pressable accessibilityRole="button" onPress={() => { void loadSubscription(); }} style={styles.accessButton}>
-                  <Text style={styles.accessButtonText}>もう一度試す</Text>
-                </Pressable>
-              </View>
-            ) : (
-              <View style={styles.accessCard}>
-                <Text style={styles.accessEyebrow}>PREMIUM</Text>
-                <Text style={styles.accessTitle}>食事管理＋身体分析</Text>
-                <Text style={styles.accessPrice}>月額 1,000円</Text>
-                <Text style={styles.accessDescription}>食事の記録・編集・履歴と、身体分析を毎月4回まで利用できます。</Text>
-                <Pressable accessibilityRole="button" onPress={() => router.push('/subscription')} style={styles.accessButton}>
-                  <Text style={styles.accessButtonText}>プラン内容を見る</Text>
-                </Pressable>
-              </View>
-            )}
-          </BlurView>
-        ) : null}
         </View>
       </SafeAreaView>
       <BottomNavigation />

@@ -125,6 +125,20 @@ export async function PATCH(request: Request) {
     // Neon PostgreSQLを操作する共通のDB接続を取得する
     const db = getDb();
 
+    const matchedUsers = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(eq(users.clerkUserId, clerkUserId))
+      .limit(1);
+    const currentUser = matchedUsers[0] ?? null;
+
+    if (!currentUser) {
+      return Response.json(
+        { error: "ユーザーが見つかりません。" },
+        { status: 404 },
+      );
+    }
+
     // ClerkユーザーIDが一致する本人だけの理想体型と更新日時を変更する
     const updatedUsers = await db
       .update(users)

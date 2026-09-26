@@ -12,10 +12,11 @@ import {
   eq,
   gte,
   lt,
+  sql,
 } from "drizzle-orm";
 import {
   decideBodyAnalysisAccess,
-  getPremiumAccess,
+  getAppAccess,
   premiumBodyAnalysisMonthlyLimit,
   premiumRequiredResponse,
 } from "@/app/lib/subscriptions/entitlements";
@@ -31,6 +32,10 @@ import {
 const pythonAnalysisUrl =
   process.env.PYTHON_ANALYSIS_URL ??
   "http://127.0.0.1:8000";
+
+const pythonInternalApiKey =
+  process.env.PYTHON_INTERNAL_API_KEY?.trim() ??
+  "";
 
 const parsedPythonAnalysisTimeout =
   Number.parseInt(
@@ -312,12 +317,17 @@ export async function POST(request: Request) {
       );
     }
 
-    // 初回無料か、有料会員の今月4回以内かをOpenAI通信前に確認する
+    // 無料体験中の1回またはPremiumの月4回以内かをOpenAI通信前に確認する
     const now = new Date();
     const { start, end } =
       getJapanMonthRange(now);
 
-    const [totalAnalysisResults, monthlyAnalysisResults] =
+    const appAccess =
+      await getAppAccess(user.id, now);
+    const trialStart = appAccess.trialStartedAt;
+    const trialEnd = appAccess.trialEndsAt;
+
+    const [trialAnalysisResults, monthlyAnalysisResults] =
       await Promise.all([
         db
           .select({
@@ -328,6 +338,12 @@ export async function POST(request: Request) {
             and(
               eq(bodyAnalyses.userId, user.id),
               eq(bodyAnalyses.status, "completed"),
+              ...(trialStart && trialEnd
+                ? [
+                    gte(bodyAnalyses.analyzedAt, trialStart),
+                    lt(bodyAnalyses.analyzedAt, trialEnd),
+                  ]
+                : [sql`false`]),
             ),
           ),
         db
@@ -345,27 +361,18 @@ export async function POST(request: Request) {
           ),
       ]);
 
-    const totalAnalysisCount = Number(
-      totalAnalysisResults[0]?.usageCount ?? 0,
+    const trialAnalysisCount = Number(
+      trialAnalysisResults[0]?.usageCount ?? 0,
     );
     const monthlyAnalysisCount = Number(
       monthlyAnalysisResults[0]?.usageCount ?? 0,
     );
-    const isFirstFreeAnalysis =
-      totalAnalysisCount === 0;
-
-    const premiumAccess =
-      isFirstFreeAnalysis
-        ? null
-        : await getPremiumAccess(user.id, now);
-
     const accessDecision =
       decideBodyAnalysisAccess({
-        totalCompleted: totalAnalysisCount,
+        trialCompleted: trialAnalysisCount,
         completedThisMonth:
           monthlyAnalysisCount,
-        isPremium:
-          premiumAccess?.isPremium ?? false,
+        accessLevel: appAccess.accessLevel,
       });
 
     if (
@@ -616,10 +623,21 @@ export async function POST(request: Request) {
     let pythonResponseBody: unknown;
 
     try {
+      if (!pythonInternalApiKey) {
+        throw new PythonAnalysisApiError(
+          503,
+          "Python画像分析APIの内部認証が未設定です。",
+        );
+      }
+
       pythonResponse = await fetch(
         `${pythonAnalysisUrl}/analyze`,
         {
           method: "POST",
+          headers: {
+            "X-Internal-API-Key":
+              pythonInternalApiKey,
+          },
           body: pythonFormData,
           signal:
             pythonAbortController.signal,
@@ -773,16 +791,24 @@ export async function POST(request: Request) {
         analysis: analysisResult,
         usage: {
           firstAnalysisFree:
-            isFirstFreeAnalysis,
-          limit:
-            premiumBodyAnalysisMonthlyLimit,
-          used: monthlyAnalysisCount + 1,
+            accessDecision.allowed &&
+            accessDecision.firstAnalysisFree,
+          limit: appAccess.bodyAnalysisLimit,
+          used:
+            appAccess.accessLevel === "trial"
+              ? trialAnalysisCount + 1
+              : monthlyAnalysisCount + 1,
           remaining: Math.max(
             0,
-            premiumBodyAnalysisMonthlyLimit -
-              (monthlyAnalysisCount + 1),
+            appAccess.bodyAnalysisLimit -
+              (appAccess.accessLevel === "trial"
+                ? trialAnalysisCount + 1
+                : monthlyAnalysisCount + 1),
           ),
-          resetsAt: end.toISOString(),
+          resetsAt:
+            appAccess.accessLevel === "trial"
+              ? appAccess.trialEndsAt?.toISOString() ?? null
+              : end.toISOString(),
         },
       },
       { status: 201 },

@@ -94,8 +94,10 @@ export default function AdminDashboardPage() {
       ).get("preview") === "1";
 
     if (!preview && !isSignedIn) {
-      setLoading(false);
-      return;
+      const timerId = setTimeout(() => {
+        setLoading(false);
+      }, 0);
+      return () => clearTimeout(timerId);
     }
 
     let active = true;

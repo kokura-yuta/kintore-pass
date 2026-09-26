@@ -9,6 +9,7 @@ import { ProfileNumberField } from '@/components/ProfileNumberField';
 import { type ProfileDraft, type TrainingLocation, type TrainingStyle, useOnboarding } from '@/contexts/OnboardingContext';
 import { isApiBypassEnabled } from '@/lib/api';
 import { deleteAccount } from '@/lib/account';
+import { checkAdminAccess } from '@/lib/admin';
 import { getGoalBodyLabel } from '@/lib/initialAnalysisPreview';
 import {
   fetchUserProfile,
@@ -50,6 +51,7 @@ export default function MyPageScreen() {
   const [deleteConfirmation, setDeleteConfirmation] = useState('');
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
   const [accountError, setAccountError] = useState('');
+  const [isAdmin, setIsAdmin] = useState(false);
   const getTokenRef = useRef(getToken);
   const savingLock = useRef(false);
 
@@ -114,6 +116,26 @@ export default function MyPageScreen() {
 
     return () => clearTimeout(timerId);
   }, [loadProfile]);
+
+  // 本人が管理者の場合だけ、現在のExpoアプリ内に運営画面への入口を表示する
+  useEffect(() => {
+    if (isApiBypassEnabled) return;
+
+    let active = true;
+    const loadAdminAccess = async () => {
+      try {
+        const token = await getTokenRef.current();
+        if (!token) return;
+        const allowed = await checkAdminAccess(token);
+        if (active) setIsAdmin(allowed);
+      } catch {
+        // 運営画面の判定失敗で、通常のマイページ操作は止めない
+      }
+    };
+
+    void loadAdminAccess();
+    return () => { active = false; };
+  }, []);
 
   function updateField<K extends keyof ProfileDraft>(field: K, value: ProfileDraft[K]) {
     setForm((current) => ({ ...current, [field]: value }));
@@ -270,6 +292,20 @@ export default function MyPageScreen() {
               <ShortcutCard label="分析履歴" onPress={() => router.push('/analysis-history' as Href)} value="結果を見る" />
             </View>
 
+            {isAdmin ? (
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => router.push('/admin' as Href)}
+                style={styles.adminButton}
+              >
+                <View>
+                  <Text style={styles.adminEyebrow}>ADMIN ONLY</Text>
+                  <Text style={styles.adminTitle}>運営ダッシュボード</Text>
+                </View>
+                <Text style={styles.adminArrow}>›</Text>
+              </Pressable>
+            ) : null}
+
             <View style={styles.card}>
               <View style={styles.cardHeading}>
                 <View>
@@ -399,6 +435,10 @@ const styles = StyleSheet.create({
   shortcutLabel: { color: '#E8EBE8', fontSize: 11, fontWeight: '700' },
   shortcutValue: { marginTop: 9, color: '#657681', fontSize: 8, fontWeight: '600' },
   activeShortcut: { color: '#73E7FF' },
+  adminButton: { minHeight: 70, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 13, paddingHorizontal: 16, borderWidth: 1, borderColor: '#176A88', borderRadius: 16, backgroundColor: '#0B1B25' },
+  adminEyebrow: { color: '#73E7FF', fontSize: 8, fontWeight: '800', letterSpacing: 1.4 },
+  adminTitle: { marginTop: 5, color: '#F4F6F3', fontSize: 14, fontWeight: '800' },
+  adminArrow: { color: '#73E7FF', fontSize: 28, fontWeight: '300' },
   card: { marginTop: 13, padding: 16, borderWidth: 1, borderColor: '#203441', borderRadius: 17, backgroundColor: '#0C151D' },
   cardHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   cardTitle: { color: '#F4F6F3', fontSize: 16, fontWeight: '700' },

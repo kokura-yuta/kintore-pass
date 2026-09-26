@@ -6,10 +6,6 @@ import {
 } from "@/app/lib/auth/clerk-auth";
 import { logServerError } from "@/app/lib/observability/serverLog";
 import {
-  getPremiumAccess,
-  premiumRequiredResponse,
-} from "@/app/lib/subscriptions/entitlements";
-import {
   calendarDateSchema,
   foodRecordCreateSchema,
   foodRecordUpdateSchema,
@@ -77,16 +73,6 @@ export async function POST(request: Request) {
       );
     }
 
-    // カロリー管理はAppleで有効な月額プランを確認できた本人だけ保存できる
-    const premiumAccess =
-      await getPremiumAccess(userId);
-
-    if (!premiumAccess.isPremium) {
-      return premiumRequiredResponse(
-        "calorie_tracking",
-      );
-    }
-
     const createdRecords = await getDb()
       .insert(foodRecords)
       .values({
@@ -141,15 +127,7 @@ export async function GET(request: Request) {
       );
     }
 
-    // 無料ユーザーへ食事内容やカロリー集計を返さない
-    const premiumAccess =
-      await getPremiumAccess(userId);
-
-    if (!premiumAccess.isPremium) {
-      return premiumRequiredResponse(
-        "calorie_tracking",
-      );
-    }
+    // 体験終了後も過去データは消さず、読み取りだけは許可する
 
     const records = await getDb()
       .select({
@@ -233,16 +211,6 @@ export async function PATCH(request: Request) {
       );
     }
 
-    // 変更時にも毎回サーバー側で有料状態を確認する
-    const premiumAccess =
-      await getPremiumAccess(userId);
-
-    if (!premiumAccess.isPremium) {
-      return premiumRequiredResponse(
-        "calorie_tracking",
-      );
-    }
-
     const { recordId, ...recordValues } = parsedBody.data;
     const updatedRecords = await getDb()
       .update(foodRecords)
@@ -307,16 +275,6 @@ export async function DELETE(request: Request) {
       return Response.json(
         { error: "ユーザーが見つかりません。" },
         { status: 404 },
-      );
-    }
-
-    // 削除APIも直接呼べるため、他の操作と同じ有料判定を行う
-    const premiumAccess =
-      await getPremiumAccess(userId);
-
-    if (!premiumAccess.isPremium) {
-      return premiumRequiredResponse(
-        "calorie_tracking",
       );
     }
 

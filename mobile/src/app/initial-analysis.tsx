@@ -94,7 +94,7 @@ export default function InitialAnalysisScreen() {
             初回分析
           </Text>
           <Text style={styles.lead}>
-            保存した身体情報を確認し、正面・横・背面の写真から最初の身体分析を行います。
+            保存した身体情報を確認します。Premiumまたは無料体験中は、写真から身体分析も行えます。
           </Text>
 
           <View style={styles.card}>
@@ -139,7 +139,7 @@ export default function InitialAnalysisScreen() {
               分析に必要な写真
             </Text>
             <Text style={styles.noticeText}>
-              身体分析は任意です。今は行わず、ホームやマイページから後で分析することもできます。
+              身体分析は任意のPremium機能です。Freeのままホームへ進み、後から無料体験を開始することもできます。
             </Text>
           </View>
 
@@ -172,7 +172,7 @@ export default function InitialAnalysisScreen() {
             ]}
           >
             <Text style={styles.primaryButtonText}>
-              身体写真を設定して分析する
+              Premium身体分析を利用する
             </Text>
             <Text style={styles.primaryArrow}>→</Text>
           </Pressable>

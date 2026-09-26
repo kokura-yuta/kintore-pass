@@ -1,6 +1,6 @@
 import { useAuth } from '@clerk/expo';
 import * as Crypto from 'expo-crypto';
-import { Redirect } from 'expo-router';
+import { Redirect, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import Markdown from 'react-native-markdown-display';
 import {
@@ -12,7 +12,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { BottomNavigation } from '@/components/BottomNavigation';
 import { type ChatMessage, useChatHistory } from '@/contexts/ChatHistoryContext';
 import { deleteChatConversation, fetchChatHistory, sendChatMessage } from '@/lib/chatApi';
-import { isApiBypassEnabled } from '@/lib/api';
+import { ApiError, isApiBypassEnabled } from '@/lib/api';
 
 // API料金と入力負荷を抑えるため、1回の質問は500文字までにする
 const MAX_MESSAGE_LENGTH = 500;
@@ -23,6 +23,7 @@ function toTimestamp(value: string) {
 }
 
 export default function ChatScreen() {
+  const router = useRouter();
   const { getToken, isLoaded, isSignedIn } = useAuth({ treatPendingAsSignedOut: false });
   const {
     conversations, createConversation, deleteConversation, addMessage,
@@ -36,6 +37,7 @@ export default function ChatScreen() {
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const [deletingConversationId, setDeletingConversationId] = useState<string | null>(null);
   const [error, setError] = useState('');
+  const [premiumRequired, setPremiumRequired] = useState(false);
   const [failedMessage, setFailedMessage] = useState('');
   const [historyReloadKey, setHistoryReloadKey] = useState(0);
   const scrollRef = useRef<ScrollView>(null);
@@ -137,6 +139,7 @@ export default function ChatScreen() {
     setActiveId(id);
     setDrawerVisible(false);
     setError('');
+    setPremiumRequired(false);
     setFailedMessage('');
   }
 
@@ -167,6 +170,7 @@ export default function ChatScreen() {
       setInput('');
     }
     setError('');
+    setPremiumRequired(false);
     setFailedMessage('');
     setIsSending(true);
 
@@ -194,7 +198,9 @@ export default function ChatScreen() {
       });
     } catch (sendError) {
       setError(sendError instanceof Error ? sendError.message : 'AIからの返信を取得できませんでした。');
-      setFailedMessage(cleanContent);
+      const requiresPremium = sendError instanceof ApiError && sendError.status === 402;
+      setPremiumRequired(requiresPremium);
+      setFailedMessage(requiresPremium ? '' : cleanContent);
     } finally {
       pendingSendRequestId.current = null;
       setIsSending(false);
@@ -267,7 +273,7 @@ export default function ChatScreen() {
             {isSending ? <View style={[styles.bubbleRow, styles.assistantRow]}><View style={styles.assistantBubbleLoading}><ActivityIndicator color="#00D4FF" size="small" /><Text style={styles.thinkingText}>回答を生成しています…</Text></View></View> : null}
           </ScrollView>
 
-          {error ? <View style={styles.errorRow}><Text style={styles.errorText}>{error}</Text>{failedMessage ? <Pressable disabled={isSending} onPress={() => void submitMessage(failedMessage, false)} style={styles.retrySmall}><Text style={styles.retrySmallText}>再送する</Text></Pressable> : <Pressable disabled={isLoadingHistory} onPress={() => setHistoryReloadKey((value) => value + 1)} style={styles.retrySmall}><Text style={styles.retrySmallText}>再読み込み</Text></Pressable>}</View> : null}
+          {error ? <View style={styles.errorRow}><Text style={styles.errorText}>{error}</Text>{premiumRequired ? <Pressable onPress={() => router.push('/subscription')} style={styles.retrySmall}><Text style={styles.retrySmallText}>Premiumを見る</Text></Pressable> : failedMessage ? <Pressable disabled={isSending} onPress={() => void submitMessage(failedMessage, false)} style={styles.retrySmall}><Text style={styles.retrySmallText}>再送する</Text></Pressable> : <Pressable disabled={isLoadingHistory} onPress={() => setHistoryReloadKey((value) => value + 1)} style={styles.retrySmall}><Text style={styles.retrySmallText}>再読み込み</Text></Pressable>}</View> : null}
           <View style={styles.inputArea}>
             <View style={styles.inputWrap}>
               <TextInput accessibilityLabel="AIコーチへの質問" accessibilityState={{ disabled: isSending }} editable={!isSending} multiline onChangeText={(value) => { setInput(value); setError(''); setFailedMessage(''); }} placeholder="筋トレについて相談する" placeholderTextColor="#657681" style={[styles.input, isTooLong && styles.inputError]} textAlignVertical="top" value={input} />

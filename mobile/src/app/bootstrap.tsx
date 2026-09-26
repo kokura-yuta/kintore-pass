@@ -41,6 +41,12 @@ export default function BootstrapScreen() {
       const data =
         await fetchBootstrap(token);
 
+      // 初回だけ、Premium体験を始めるかFreeで進むか本人に選んでもらう。
+      if (!data.trialChoiceCompleted) {
+        router.replace('/subscription?onboarding=1');
+        return;
+      }
+
       // Neonの理想体型をReact Contextへ戻し、各画面で再表示できるようにする
       if (data.goalBodyType !== null) {
         const restoredGoal =

@@ -140,14 +140,12 @@ export default function BodyAnalysisScreen() {
   const [isCompleting, setIsCompleting] =
     useState(false);
   const [accessStatus, setAccessStatus] = useState<AccessStatus>(
-    isInitialAnalysis || isApiBypassEnabled ? 'ready' : 'loading',
+    isApiBypassEnabled ? 'ready' : 'loading',
   );
   const [analysisRemaining, setAnalysisRemaining] = useState<number | null>(
-    isInitialAnalysis ? 1 : null,
+    null,
   );
-  const [accessMessage, setAccessMessage] = useState(
-    isInitialAnalysis ? '初回の身体分析は無料です。' : '',
-  );
+  const [accessMessage, setAccessMessage] = useState('');
   // APIから返った分析結果を画面表示用に保存する
   const [analysisResult, setAnalysisResult] =
   useState<BodyAnalysisApiResponse | null>(
@@ -159,12 +157,6 @@ export default function BodyAnalysisScreen() {
   useEffect(() => { getTokenRef.current = getToken; }, [getToken]);
 
   const loadAnalysisAccess = useCallback(async () => {
-    if (isInitialAnalysis) {
-      setAccessStatus('ready');
-      setAnalysisRemaining(1);
-      setAccessMessage('初回の身体分析は無料です。');
-      return;
-    }
     if (isApiBypassEnabled) {
       setAccessStatus('ready');
       setAnalysisRemaining(4);
@@ -181,16 +173,24 @@ export default function BodyAnalysisScreen() {
         fetchBodyAnalysisHistory(token),
       ]);
 
-      if (history.analyses.length === 0) {
-        setAccessStatus('ready');
-        setAnalysisRemaining(1);
-        setAccessMessage('初回の身体分析は無料です。');
-        return;
-      }
-      if (subscription.plan !== 'premium') {
+      if (!subscription.canUseAiFeatures) {
         setAccessStatus('locked');
         setAnalysisRemaining(0);
-        setAccessMessage('2回目以降の身体分析はプレミアムプランで利用できます。');
+        setAccessMessage('身体分析はPremium機能です。7日間無料で試すか、Premiumをご契約ください。');
+        return;
+      }
+
+      if (subscription.accessLevel === 'trial') {
+        const trialStart = subscription.trial.startedAt ? new Date(subscription.trial.startedAt).getTime() : 0;
+        const trialEnd = subscription.trial.endsAt ? new Date(subscription.trial.endsAt).getTime() : 0;
+        const usedDuringTrial = history.analyses.filter((analysis) => {
+          const analyzedAt = analysis.analyzedAt ? new Date(analysis.analyzedAt).getTime() : 0;
+          return analyzedAt >= trialStart && analyzedAt < trialEnd;
+        }).length;
+        const remaining = Math.max(0, 1 - usedDuringTrial);
+        setAccessStatus(remaining > 0 ? 'ready' : 'locked');
+        setAnalysisRemaining(remaining);
+        setAccessMessage(remaining > 0 ? '無料体験中に1回分析できます。' : '無料体験中の身体分析1回を利用済みです。');
         return;
       }
 
@@ -208,7 +208,7 @@ export default function BodyAnalysisScreen() {
       setAccessStatus('error');
       setAccessMessage('身体分析の利用状況を確認できませんでした。');
     }
-  }, [isInitialAnalysis]);
+  }, []);
 
   useEffect(() => {
     const timerId = setTimeout(() => { void loadAnalysisAccess(); }, 0);
@@ -353,7 +353,7 @@ async function beginAnalysis() {
     setAnalysisRemaining(result.usage.remaining);
     setAccessMessage(
       result.usage.firstAnalysisFree
-        ? '初回無料の身体分析が完了しました。'
+        ? '無料体験中の身体分析が完了しました。'
         : `今月あと${result.usage.remaining}回利用できます。`,
     );
     setStatus('result');
@@ -443,7 +443,7 @@ async function finishAnalysis() {
           <Text style={styles.resultTitle}>身体分析の利用について</Text>
           <View style={styles.lockedCard}>
             <Text style={styles.lockedMessage}>{accessMessage}</Text>
-            <Text style={styles.lockedPrice}>食事管理＋身体分析　月額1,000円</Text>
+            <Text style={styles.lockedPrice}>Premium　月額1,000円</Text>
             <Text style={styles.lockedNote}>プレミアム会員は身体分析を毎月4回まで利用できます。</Text>
             <Pressable accessibilityRole="button" onPress={() => router.push('/subscription')} style={styles.primaryButton}>
               <Text style={styles.primaryText}>プラン内容を見る</Text><Text style={styles.primaryArrow}>›</Text>
@@ -593,7 +593,7 @@ if (
         <ScrollView automaticallyAdjustKeyboardInsets contentContainerStyle={styles.content} keyboardDismissMode="interactive" keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
           <View style={styles.header}><Pressable accessibilityLabel="分析履歴へ戻る" accessibilityRole="button" onPress={() => router.back()} style={styles.backButton}><Text style={styles.backText}>‹</Text></Pressable><View><Text style={styles.eyebrow}>BODY ANALYSIS</Text><Text style={styles.title}>身体写真を設定</Text></View></View>
           <Text style={styles.lead}>正面・横・背面の3枚を、できるだけ同じ場所と明るさで撮影してください。</Text>
-          <View style={styles.usageCard}><Text style={styles.usageTitle}>{isInitialAnalysis ? '初回無料' : '身体分析の利用状況'}</Text><Text style={styles.usageText}>{accessMessage}</Text>{analysisRemaining !== null && !isInitialAnalysis ? <Text style={styles.usageCount}>残り {analysisRemaining} / 4回</Text> : null}</View>
+          <View style={styles.usageCard}><Text style={styles.usageTitle}>身体分析の利用状況</Text><Text style={styles.usageText}>{accessMessage}</Text>{analysisRemaining !== null ? <Text style={styles.usageCount}>残り {analysisRemaining}回</Text> : null}</View>
           <View style={styles.progressRow}>
             <Text style={styles.progressLabel}>写真の準備状況</Text>
             <Text style={[styles.progressCount, hasAllPhotos && styles.progressComplete]}>{selectedPhotoCount}/3枚</Text>

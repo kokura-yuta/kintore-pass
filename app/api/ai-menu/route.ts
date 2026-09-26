@@ -44,6 +44,10 @@ import {
 import {
   recordOpenAiUsage,
 } from "@/app/lib/ai/recordOpenAiUsage";
+import {
+  getAppAccess,
+  premiumRequiredResponse,
+} from "@/app/lib/subscriptions/entitlements";
 
 // 1日と日本時間の時差をミリ秒で表す
 const millisecondsPerDay =
@@ -51,23 +55,6 @@ const millisecondsPerDay =
 
 const japanTimeOffsetMilliseconds =
   9 * 60 * 60 * 1000;
-
-// 環境変数からAIメニューの1日上限を読み取る
-const parsedDailyMenuLimit =
-  Number.parseInt(
-    process.env.AI_MENU_DAILY_LIMIT ??
-      "3",
-    10,
-  );
-
-// 設定が不正な場合は1日3回を使用する
-const dailyMenuLimit =
-  Number.isInteger(
-    parsedDailyMenuLimit,
-  ) &&
-  parsedDailyMenuLimit > 0
-    ? parsedDailyMenuLimit
-    : 3;
 
 // AIへの連続送信を止める秒数を環境変数から読み取る
 const parsedRequestCooldownSeconds =
@@ -264,6 +251,29 @@ export async function POST(
     const db = getDb();
     const { start, end } =
       getJapanDayRange(new Date());
+
+    // Clerk IDに対応するNeonユーザーを取得し、体験または契約が有効か確認する
+    const accessUsers = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(eq(users.clerkUserId, clerkUserId))
+      .limit(1);
+    const accessUser = accessUsers[0] ?? null;
+
+    if (!accessUser) {
+      return Response.json(
+        { error: "ユーザー情報が見つかりません。" },
+        { status: 404 },
+      );
+    }
+
+    const appAccess = await getAppAccess(accessUser.id);
+
+    if (!appAccess.canUseAiFeatures) {
+      return premiumRequiredResponse("menu");
+    }
+
+    const dailyMenuLimit = appAccess.menuDailyLimit;
 
     // 本人が今日生成したAIメニュー数をNeonから数える
     const dailyUsageResults = await db
