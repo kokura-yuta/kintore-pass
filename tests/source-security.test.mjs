@@ -413,3 +413,50 @@ test("身体写真はDBへ保存せずPython処理後に一時ファイルを閉
     /image|photo|url/i,
   );
 });
+
+test("iOS提出設定に暗号化申告・Privacy Manifest・権限説明を含める", async () => {
+  const appConfig = JSON.parse(
+    await readFile(
+      path.join(projectRoot, "mobile/app.json"),
+      "utf8",
+    ),
+  ).expo;
+  const easConfig = JSON.parse(
+    await readFile(
+      path.join(projectRoot, "mobile/eas.json"),
+      "utf8",
+    ),
+  );
+
+  assert.equal(
+    appConfig.ios.config.usesNonExemptEncryption,
+    false,
+  );
+  assert.equal(
+    appConfig.ios.privacyManifests.NSPrivacyTracking,
+    false,
+  );
+  assert.ok(
+    appConfig.ios.privacyManifests
+      .NSPrivacyAccessedAPITypes.length > 0,
+  );
+  assert.match(appConfig.ios.buildNumber, /^\d+$/);
+  assert.ok(easConfig.build.development);
+  assert.ok(easConfig.build.preview);
+  assert.ok(easConfig.build.production);
+
+  const imagePickerPlugin = appConfig.plugins.find(
+    (plugin) =>
+      Array.isArray(plugin) &&
+      plugin[0] === "expo-image-picker",
+  );
+  assert.ok(imagePickerPlugin);
+  assert.match(
+    imagePickerPlugin[1].photosPermission,
+    /身体分析/,
+  );
+  assert.match(
+    imagePickerPlugin[1].cameraPermission,
+    /身体分析/,
+  );
+});
