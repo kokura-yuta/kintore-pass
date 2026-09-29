@@ -24,6 +24,20 @@ EXPO_PUBLIC_SCREENSHOT_MODE=true
 6. `/chat`：利用者の質問とMarkdown形式のAI回答
 7. `/my-page`：身体情報、目標、トレーニング設定
 
+## 撮影済みファイル
+
+`app-store-screenshots`フォルダへ、以下の7枚を保存済みです。すべて1320×2868、PNG、透過なしです。
+
+- `01-home.png`
+- `02-training.png`
+- `03-calendar.png`
+- `04-food.png`
+- `05-body-analysis.png`
+- `06-chat.png`
+- `07-my-page.png`
+
+現時点の画像はExpo WebをiPhone相当比率で撮影した提出素材案です。App Store Connectへ登録する前に、TestFlight版を実機またはiOS Simulatorで撮影し直せる場合は、ネイティブ版を最終素材として優先します。
+
 ## 撮影前の確認
 
 - 実在するメールアドレス、人物写真、会話、健康情報が映っていない
