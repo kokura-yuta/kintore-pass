@@ -189,6 +189,28 @@ test("運営ダッシュボードはDB集計前に管理者権限を確認する
   assert.match(adminGuard, /status: 403/);
 });
 
+test("Expoの管理画面入口もサーバー側の管理者判定を使う", async () => {
+  const accessRoute = await readFile(
+    path.join(
+      projectRoot,
+      "app/api/admin/access/route.ts",
+    ),
+    "utf8",
+  );
+  const mobileAdminApi = await readFile(
+    path.join(
+      projectRoot,
+      "mobile/src/lib/admin.ts",
+    ),
+    "utf8",
+  );
+
+  assert.match(accessRoute, /getAdminIdentity\(request\)/);
+  assert.match(accessRoute, /status: admin\.status/);
+  assert.match(mobileAdminApi, /Authorization|apiRequest/);
+  assert.doesNotMatch(mobileAdminApi, /ADMIN_CLERK_USER_IDS/);
+});
+
 test("Clerkの開発用キーと本番用キーを値を見せず判定する", () => {
   assert.equal(
     getAuthenticationMode({
@@ -254,4 +276,187 @@ test("AIチャットの短い要約へ食事情報を含める", async () => {
   assert.match(summarySource, /recentFoodRecords/);
   assert.match(summarySource, /calories/);
   assert.match(summarySource, /たんぱく質/);
+});
+
+test("AI APIはサーバー側の利用権確認後だけAI処理へ進む", async () => {
+  for (const relativePath of [
+    "app/api/chat/route.ts",
+    "app/api/ai-menu/route.ts",
+    "app/api/body-analysis/route.ts",
+  ]) {
+    const source = await readFile(
+      path.join(projectRoot, relativePath),
+      "utf8",
+    );
+    assert.match(source, /getClerkUserId\(request\)/);
+    assert.match(source, /getAppAccess\(/);
+    assert.match(source, /premiumRequiredResponse\(/);
+  }
+
+  const chatSource = await readFile(
+    path.join(projectRoot, "app/api/chat/route.ts"),
+    "utf8",
+  );
+  assert.ok(
+    chatSource.indexOf("getAppAccess(user.id)") <
+      chatSource.indexOf("checkModeration(message)"),
+    "無料ユーザーへModeration料金を発生させない必要があります",
+  );
+  assert.ok(
+    chatSource.indexOf("checkModeration(message)") <
+      chatSource.indexOf("openai.responses.create"),
+    "回答生成前に安全確認する必要があります",
+  );
+});
+
+test("Freeの基本記録APIにはPremium判定を置かない", async () => {
+  for (const relativePath of [
+    "app/api/training-records/route.ts",
+    "app/api/weight-records/route.ts",
+    "app/api/food-records/route.ts",
+    "app/api/users/profile/route.ts",
+    "app/api/users/goal/route.ts",
+  ]) {
+    const source = await readFile(
+      path.join(projectRoot, relativePath),
+      "utf8",
+    );
+    assert.doesNotMatch(source, /get(?:Paid|Ai)FeatureBlockResponse/);
+  }
+});
+
+test("無料体験は本人操作かつ未使用アカウントだけ開始できる", async () => {
+  const source = await readFile(
+    path.join(
+      projectRoot,
+      "app/api/subscription/trial/route.ts",
+    ),
+    "utf8",
+  );
+  assert.match(source, /getClerkUserId\(request\)/);
+  assert.match(source, /eq\(users\.trialUsed, false\)/);
+  assert.match(source, /trialUsed: true/);
+  assert.match(source, /trialChoiceCompleted: true/);
+});
+
+test("Python身体分析APIはTypeScriptバックエンドの内部秘密鍵を必須にする", async () => {
+  const pythonSource = await readFile(
+    path.join(
+      projectRoot,
+      "python-analysis/app/main.py",
+    ),
+    "utf8",
+  );
+  const bodyAnalysisRoute = await readFile(
+    path.join(
+      projectRoot,
+      "app/api/body-analysis/route.ts",
+    ),
+    "utf8",
+  );
+
+  assert.match(
+    pythonSource,
+    /Depends\(\s*require_internal_api_key/,
+  );
+  assert.match(
+    pythonSource,
+    /hmac\.compare_digest/,
+  );
+  assert.match(
+    bodyAnalysisRoute,
+    /"X-Internal-API-Key"/,
+  );
+  assert.match(
+    bodyAnalysisRoute,
+    /PYTHON_INTERNAL_API_KEY/,
+  );
+});
+
+test("身体写真はDBへ保存せずPython処理後に一時ファイルを閉じる", async () => {
+  const pythonSource = await readFile(
+    path.join(
+      projectRoot,
+      "python-analysis/app/main.py",
+    ),
+    "utf8",
+  );
+  const schemaSource = await readFile(
+    path.join(projectRoot, "db/schema.ts"),
+    "utf8",
+  );
+
+  assert.match(pythonSource, /store=False/);
+  assert.match(
+    pythonSource,
+    /await front_image\.close\(\)/,
+  );
+  assert.match(
+    pythonSource,
+    /await side_image\.close\(\)/,
+  );
+  assert.match(
+    pythonSource,
+    /await back_image\.close\(\)/,
+  );
+
+  const bodyAnalysisSchema = schemaSource.slice(
+    schemaSource.indexOf(
+      "export const bodyAnalyses",
+    ),
+    schemaSource.indexOf(
+      "export const bodyAnalysisAreas",
+    ),
+  );
+  assert.doesNotMatch(
+    bodyAnalysisSchema,
+    /image|photo|url/i,
+  );
+});
+
+test("iOS提出設定に暗号化申告・Privacy Manifest・権限説明を含める", async () => {
+  const appConfig = JSON.parse(
+    await readFile(
+      path.join(projectRoot, "mobile/app.json"),
+      "utf8",
+    ),
+  ).expo;
+  const easConfig = JSON.parse(
+    await readFile(
+      path.join(projectRoot, "mobile/eas.json"),
+      "utf8",
+    ),
+  );
+
+  assert.equal(
+    appConfig.ios.config.usesNonExemptEncryption,
+    false,
+  );
+  assert.equal(
+    appConfig.ios.privacyManifests.NSPrivacyTracking,
+    false,
+  );
+  assert.ok(
+    appConfig.ios.privacyManifests
+      .NSPrivacyAccessedAPITypes.length > 0,
+  );
+  assert.match(appConfig.ios.buildNumber, /^\d+$/);
+  assert.ok(easConfig.build.development);
+  assert.ok(easConfig.build.preview);
+  assert.ok(easConfig.build.production);
+
+  const imagePickerPlugin = appConfig.plugins.find(
+    (plugin) =>
+      Array.isArray(plugin) &&
+      plugin[0] === "expo-image-picker",
+  );
+  assert.ok(imagePickerPlugin);
+  assert.match(
+    imagePickerPlugin[1].photosPermission,
+    /身体分析/,
+  );
+  assert.match(
+    imagePickerPlugin[1].cameraPermission,
+    /身体分析/,
+  );
 });

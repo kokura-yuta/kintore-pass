@@ -40,6 +40,10 @@
     "react-loading-skeleton": "3.5.0",
     "zod": "^4.4.3"
   },
+  "overrides": {
+    "baseline-browser-mapping": "^2.11.0",
+    "ws": "^8.21.0"
+  },
   "devDependencies": {
     "@cloudflare/vite-plugin": "1.37.1",
     "@tailwindcss/postcss": "4.2.1",

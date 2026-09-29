@@ -43,6 +43,10 @@ import {
   users,
 } from "@/db/schema";
 import { logServerError } from "@/app/lib/observability/serverLog";
+import {
+  getAppAccess,
+  premiumRequiredResponse,
+} from "@/app/lib/subscriptions/entitlements";
 
 // 1日と日本時間の時差をミリ秒で表す
 const millisecondsPerDay =
@@ -50,23 +54,6 @@ const millisecondsPerDay =
 
 const japanTimeOffsetMilliseconds =
   9 * 60 * 60 * 1000;
-
-// 環境変数からAIチャットの1日上限を読み取る
-const parsedDailyChatLimit =
-  Number.parseInt(
-    process.env.AI_CHAT_DAILY_LIMIT ??
-      "30",
-    10,
-  );
-
-// 不正な設定値だった場合も1日30回を使用する
-const dailyChatLimit =
-  Number.isInteger(
-    parsedDailyChatLimit,
-  ) &&
-  parsedDailyChatLimit > 0
-    ? parsedDailyChatLimit
-    : 30;
 
 // AIへの連続送信を止める秒数を環境変数から読み取る
 const parsedRequestCooldownSeconds =
@@ -380,40 +367,6 @@ export async function POST(request: Request) {
     const body = parsedBody.data;
     const { message, requestId } = body;
 
-    // 質問を保存・回答生成する前に重大な危険内容がないか確認する
-    const moderationDecision =
-      await checkModeration(message);
-
-    if (
-      moderationDecision.status ===
-      "self_harm_support"
-    ) {
-      return Response.json(
-        {
-          error:
-            "今すぐ自分を傷つける可能性がある場合は、一人にならず、身近な人や地域の緊急窓口へ連絡してください。差し迫った危険がある場合は119へ連絡してください。",
-          moderationStatus:
-            moderationDecision.status,
-        },
-        { status: 400 },
-      );
-    }
-
-    if (
-      moderationDecision.status ===
-      "blocked"
-    ) {
-      return Response.json(
-        {
-          error:
-            "安全上の理由により、この内容には回答できません。筋力トレーニングに関する別の表現で質問してください。",
-          moderationStatus:
-            moderationDecision.status,
-        },
-        { status: 400 },
-      );
-    }
-
         // ClerkユーザーIDからNeon内の本人を取得する
     const db = getDb();
 
@@ -440,6 +393,15 @@ export async function POST(request: Request) {
         },
       );
     }
+
+    // 体験期限またはApple月額契約を確認し、期限切れならOpenAIを呼ばない
+    const appAccess = await getAppAccess(user.id);
+
+    if (!appAccess.canUseAiFeatures) {
+      return premiumRequiredResponse("chat");
+    }
+
+    const dailyChatLimit = appAccess.chatDailyLimit;
 
     // 日本時間で今日の開始時刻と終了時刻を作る
     const { start, end } =
@@ -551,6 +513,40 @@ export async function POST(request: Request) {
               String(retryAfterSeconds),
           },
         },
+      );
+    }
+
+    // 利用権と回数上限を通過した質問だけをOpenAI Moderationへ送る。
+    const moderationDecision =
+      await checkModeration(message);
+
+    if (
+      moderationDecision.status ===
+      "self_harm_support"
+    ) {
+      return Response.json(
+        {
+          error:
+            "今すぐ自分を傷つける可能性がある場合は、一人にならず、身近な人や地域の緊急窓口へ連絡してください。差し迫った危険がある場合は119へ連絡してください。",
+          moderationStatus:
+            moderationDecision.status,
+        },
+        { status: 400 },
+      );
+    }
+
+    if (
+      moderationDecision.status ===
+      "blocked"
+    ) {
+      return Response.json(
+        {
+          error:
+            "安全上の理由により、この内容には回答できません。筋力トレーニングに関する別の表現で質問してください。",
+          moderationStatus:
+            moderationDecision.status,
+        },
+        { status: 400 },
       );
     }
 

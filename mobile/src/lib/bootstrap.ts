@@ -7,6 +7,11 @@ export type BootstrapResponse = {
   goalBodyType: string | null;
   profileCompleted: boolean;
   initialAnalysisCompleted: boolean;
+  accessLevel: 'free' | 'trial' | 'premium';
+  canUseAiFeatures: boolean;
+  trialChoiceCompleted: boolean;
+  trialUsed: boolean;
+  trialEndsAt: string | null;
 };
 
 export function fetchBootstrap(token: string) {

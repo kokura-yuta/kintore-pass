@@ -47,6 +47,26 @@ export const users = pgTable("users", {
     .notNull()
     .default(false),
 
+  // 無料体験は本人が選んだときだけ開始する。未開始中は日時をnullにする。
+  trialChoiceCompleted: boolean(
+    "trial_choice_completed",
+  )
+    .notNull()
+    .default(false),
+
+  // 1アカウント1回だけの無料体験を再利用できないように記録する
+  trialUsed: boolean("trial_used")
+    .notNull()
+    .default(false),
+
+  trialStartedAt: timestamp("trial_started_at", {
+    withTimezone: true,
+  }),
+
+  trialEndsAt: timestamp("trial_ends_at", {
+    withTimezone: true,
+  }),
+
   // ユーザー情報を作成した日時と最後に更新した日時
   createdAt: timestamp("created_at", {
     withTimezone: true,

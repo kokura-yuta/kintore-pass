@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 
 import { getClerkUserId } from "@/app/lib/auth/clerk-auth";
 import {
-  getPremiumAccess,
+  getAppAccess,
   premiumBodyAnalysisMonthlyLimit,
   premiumMonthlyPriceYen,
 } from "@/app/lib/subscriptions/entitlements";
@@ -35,23 +35,44 @@ export async function GET(request: Request) {
     );
   }
 
-  const access = await getPremiumAccess(user.id);
+  const access = await getAppAccess(user.id);
 
   return Response.json({
     appAccountToken: user.id,
     plan: access.isPremium ? "premium" : "free",
+    accessLevel: access.accessLevel,
+    canUseAiFeatures: access.canUseAiFeatures,
     status: access.status,
     productId: access.productId,
     expiresAt: access.expiresAt,
+    trial: {
+      startedAt: access.trialStartedAt,
+      endsAt: access.trialEndsAt,
+      durationDays: access.trialDays,
+      used: access.trialUsed,
+      choiceCompleted:
+        access.trialChoiceCompleted,
+      eligibleToStart:
+        !access.trialUsed && !access.isPremium,
+    },
     price: {
       amount: premiumMonthlyPriceYen,
       currency: "JPY",
       interval: "month",
     },
     features: {
-      calorieTracking: access.isPremium,
+      manualFoodTracking: true,
+      aiFoodAnalysis: access.canUseAiFeatures,
+      chat: {
+        dailyLimit: access.chatDailyLimit,
+      },
+      aiMenu: {
+        dailyLimit: access.menuDailyLimit,
+      },
       bodyAnalysis: {
-        firstAnalysisFree: true,
+        firstAnalysisFree:
+          access.accessLevel === "trial",
+        currentLimit: access.bodyAnalysisLimit,
         monthlyLimitForPremium:
           premiumBodyAnalysisMonthlyLimit,
       },

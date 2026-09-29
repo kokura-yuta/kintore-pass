@@ -27,6 +27,17 @@ test("公開APIのヘルスチェックが成功する", async () => {
   assert.equal(result.body.service, "musclepas-api");
 });
 
+test("App Store提出用の公開ページをログインなしで閲覧できる", async () => {
+  for (const path of ["/support", "/privacy", "/terms"]) {
+    const response = await fetch(`${baseUrl}${path}`, {
+      redirect: "error",
+      signal: AbortSignal.timeout(20_000),
+    });
+
+    assert.equal(response.status, 200, `${path} must be public`);
+  }
+});
+
 test("未ログイン利用者から本人データAPIを保護する", async () => {
   const protectedRequests = [
     ["/api/users/bootstrap", { method: "POST" }],
@@ -51,7 +62,12 @@ test("未ログイン利用者から本人データAPIを保護する", async ()
     ["/api/food-records", { method: "DELETE" }],
     ["/api/body-analysis"],
     ["/api/body-analysis", { method: "POST" }],
+    ["/api/admin/access"],
+    ["/api/admin/dashboard"],
+    ["/api/admin/dashboard?preview=1"],
     ["/api/subscription"],
+    ["/api/subscription/trial", { method: "POST" }],
+    ["/api/subscription/apple/verify", { method: "POST" }],
     ["/api/ai-menu"],
     ["/api/ai-menu", { method: "POST" }],
     ["/api/ai-menu/history"],
@@ -71,4 +87,22 @@ test("未ログイン利用者から本人データAPIを保護する", async ()
     );
     assert.equal(typeof result.body.error, "string");
   }
+});
+
+test("Apple通知口は不正な署名データを保存せずHTTP 400で拒否する", async () => {
+  const result = await request(
+    "/api/subscription/apple/notifications",
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        signedPayload: "invalid",
+      }),
+    },
+  );
+
+  assert.equal(result.status, 400);
+  assert.equal(typeof result.body.error, "string");
 });

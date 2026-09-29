@@ -6,6 +6,7 @@ const targets = [
     url:
       process.env.PUBLIC_API_HEALTH_URL ??
       "https://musclepas-api.y0u2t1a8.chatgpt.site/api/health",
+    timeoutMilliseconds: 30_000,
     validate(body) {
       assert.equal(body?.status, "ok");
 
@@ -20,24 +21,37 @@ const targets = [
     url:
       process.env.PYTHON_API_HEALTH_URL ??
       "https://musclepas-body-analysis.onrender.com/health",
+    // 無料プランでは停止中のサービスが起動するまで時間がかかる。
+    timeoutMilliseconds: 60_000,
     validate(body) {
       assert.equal(body?.status, "ok");
     },
   },
 ];
 
-const timeoutMilliseconds = 30_000;
 const results = [];
 
 for (const target of targets) {
   const startedAt = Date.now();
-  const response = await fetch(target.url, {
-    signal: AbortSignal.timeout(timeoutMilliseconds),
-    headers: {
-      "user-agent": "musclepas-health-check/1.0",
-    },
-  });
-  const body = await response.json();
+  let response;
+  let body;
+
+  try {
+    response = await fetch(target.url, {
+      signal: AbortSignal.timeout(
+        target.timeoutMilliseconds,
+      ),
+      headers: {
+        "user-agent": "musclepas-health-check/1.0",
+      },
+    });
+    body = await response.json();
+  } catch (error) {
+    throw new Error(
+      `${target.name} health check failed after ${Date.now() - startedAt}ms`,
+      { cause: error },
+    );
+  }
 
   assert.equal(
     response.ok,

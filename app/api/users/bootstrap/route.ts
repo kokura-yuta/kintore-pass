@@ -13,6 +13,7 @@ import {
 import { getDb } from "@/db";
 import { users } from "@/db/schema";
 import { logServerError } from "@/app/lib/observability/serverLog";
+import { getAppAccess } from "@/app/lib/subscriptions/entitlements";
 
 // POST通信を受け取り、ユーザー初期化処理を開始する場所
 export async function POST(
@@ -52,6 +53,8 @@ export async function POST(
 
     // 登録済みならClerkユーザーIDと初回設定の完了状態を返して処理を終了する
     if (existingUser) {
+      const access = await getAppAccess(existingUser.id);
+
       // 初回設定全体と各段階の進行状態をフロントエンドへ返す
       return Response.json({
         userId: clerkUserId,
@@ -63,6 +66,13 @@ export async function POST(
           existingUser.profileCompleted,
         initialAnalysisCompleted:
           existingUser.initialAnalysisCompleted,
+        accessLevel: access.accessLevel,
+        canUseAiFeatures:
+          access.canUseAiFeatures,
+        trialChoiceCompleted:
+          access.trialChoiceCompleted,
+        trialUsed: access.trialUsed,
+        trialEndsAt: access.trialEndsAt,
       });
     }
 
@@ -109,6 +119,7 @@ export async function POST(
 
     // PostgreSQLから配列で返された新規ユーザーを取り出す
     const createdUser = createdUsers[0];
+    const access = await getAppAccess(createdUser.id);
 
     // ClerkユーザーIDと初回設定の完了状態をHTTP 201で返す
     // 新規ユーザーの初回設定状態をフロントエンドへ返す
@@ -123,6 +134,13 @@ export async function POST(
           createdUser.profileCompleted,
         initialAnalysisCompleted:
           createdUser.initialAnalysisCompleted,
+        accessLevel: access.accessLevel,
+        canUseAiFeatures:
+          access.canUseAiFeatures,
+        trialChoiceCompleted:
+          access.trialChoiceCompleted,
+        trialUsed: access.trialUsed,
+        trialEndsAt: access.trialEndsAt,
       },
       {
         status: 201,

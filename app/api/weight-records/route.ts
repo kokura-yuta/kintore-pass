@@ -96,6 +96,7 @@ export async function POST(
       );
     }
 
+
     // 本人の体重記録をNeonへ追加する
     const createdRecords = await db
       .insert(weightRecords)
@@ -350,6 +351,7 @@ export async function PATCH(
       );
     }
 
+
     // 記録IDと本人のユーザーIDが両方一致する記録だけを更新する
     const updatedRecords = await db
       .update(weightRecords)
@@ -483,6 +485,7 @@ export async function DELETE(
         { status: 404 },
       );
     }
+
 
     // 記録IDと本人のユーザーIDが一致する記録だけを削除する
     const deletedRecords = await db

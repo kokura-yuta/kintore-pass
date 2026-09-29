@@ -1,8 +1,18 @@
 # 筋トレPAS コードガイド
 
-最終更新：2026年9月20日
+最終更新：2026年9月21日
 
 このガイドは、現在のコードを理解するための説明書です。
+
+## 15日学習版はこちらから開始
+
+長いガイドを毎回スクロールしなくてよいように、1日ずつ別ファイルへ分けました。
+
+**[Day 1から学習を始める](CODE_GUIDE_DAYS/DAY_01.md)**
+
+**[Day 1〜Day 15の一覧を開く](CODE_GUIDE_DAYS/README.md)**
+
+各Dayの最後に「次のDayへ」があります。この`CODE_GUIDE.md`は、分からない項目を詳しく調べるための全体辞書として使います。
 
 過去の作業順ではなく、アプリ全体の仕組みを上から順番に学べる構成にしています。
 
@@ -1857,119 +1867,815 @@ Renderの公開Python APIを使う場合、ローカルPythonの起動は不要�
 
 ---
 
-# 31. 15日で1周する学習プラン
+# 31. バックエンドを15日で1周する学習コース
 
-毎日60〜90分を目安にします。最初の40〜60分で対象章とファイルを読み、残りの20〜30分で「確認」に自分の言葉で答えます。
+この章は「今のコードを読みながら、バックエンドを自分で説明できるようになる」ための教材です。毎日60〜90分を目安にします。
 
-## 1日目：アプリ全体と言語
+各ファイル名はリンクになっています。ファイル名を押すと、その日の学習対象へ移動できます。
 
-- 読む：1〜3章
-- 見る：`mobile/src/app`、`app/api`、`db`、`python-analysis`
-- 目標：Expo、TypeScript、Neon、Python、OpenAIの担当を言える
-- 確認：`.ts`、`.tsx`、`.py`、`.sql`の違いは何か
+## 最初に覚える全体像
 
-## 2日目：起動からホームまで
+通常の機能は、次の順番で動きます。
 
-- 読む：4章、6章
-- 見る：`mobile/src/app/index.tsx`、`mobile/src/app/bootstrap.tsx`
-- 目標：起動、ログイン判定、初回設定判定、画面遷移を説明できる
-- 確認：`push`と`replace`を使い分ける理由は何か
+`Expo画面 → mobile/src/libの通信関数 → app/apiのroute.ts → Clerk本人確認 → Zod入力検査 → Neon取得・保存 → JSON応答 → Expo画面`
 
-## 3日目：React画面の基本
+AI機能では、途中に次の処理が増えます。
 
-- 読む：5章、26章の`.map()`まで
-- 見る：入力フォームがある好きな`.tsx`ファイル1つ
-- 目標：`useState`、`onChangeText`、`onPress`、条件表示、`.map()`を読める
-- 確認：`const [value, setValue] = useState("")`を一文ずつ説明する
+`本人データ収集 → プロンプト作成 → OpenAI呼び出し → AI出力検査 → Neon保存 → トークン・料金記録`
 
-## 4日目：Contextと長期保存
+身体分析では、さらにPython APIが入ります。
 
-- 読む：7章
-- 見る：プロフィールまたは初回設定のContextとAPI通信
-- 目標：画面内の一時状態とNeonの永続データを区別できる
-- 確認：アプリ再起動後に残すデータはどこへ保存するか
+`Expo → TypeScript API → Python FastAPI → OpenAI画像分析 → TypeScript API → Neon → Expo`
 
-## 5日目：API通信とHTTP
+## バックエンドのファイルを読む基本順序
 
-- 読む：8〜10章
-- 見る：`mobile/src/lib`の通信ファイルと対応する`app/api/**/route.ts`
-- 目標：JSON、GET、POST、PATCH、DELETE、`async / await`を説明できる
-- 確認：フロントの入力がAPIに届き、JSONで戻るまでを紙に書く
+新しい機能を理解するときは、毎回この順番で読んでください。
 
-## 6日目：Clerk認証と本人データ
+1. [db/schema.ts](db/schema.ts)：何を保存できるか確認する
+2. [app/lib/validation/apiSchemas.ts](app/lib/validation/apiSchemas.ts)：何を入力として許可するか確認する
+3. 対象の`app/api/**/route.ts`：認証・検査・DB処理・応答の順番を見る
+4. `app/lib/**`：routeから切り出された共通処理を見る
+5. `mobile/src/lib/**`：ExpoがどのURLへ何を送るか見る
+6. `mobile/src/app/**`：利用者が入力し、結果を見る画面を確認する
+7. `tests/**`：その機能が守るべき条件を確認する
 
-- 読む：11章、22章の認証・認可
-- 見る：共通認証ファイルとユーザー検索処理
-- 目標：Clerk IDとNeonの`users.id`の役割の違いを理解する
-- 確認：ログイン済みでもAPIごとに本人確認する理由は何か
+`route.ts`だけを最初に読むと、型・DB・通信先が一度に出てきて難しく見えます。先に「保存の形」と「入力の形」を知ると、routeの意味を追いやすくなります。
 
-## 7日目：Zodとエラー処理
+## コードを読むときの印
 
-- 読む：12章、24章
-- 見る：`safeParse`を使っている`route.ts`
-- 目標：フロントとバックエンド両方で検査する理由を説明できる
-- 確認：400、401、403、404、429、500の違いを言える
+- `import`：別ファイルの機能をこのファイルへ持ってくる
+- `export`：このファイルの機能を別ファイルから使えるようにする
+- `type`：データの形をTypeScriptへ教える。実行時には存在しない
+- `const`：再代入しない名前を作る
+- `function`：何度も使う処理へ名前を付ける
+- `async`：時間のかかる非同期処理を含む関数
+- `await`：その非同期処理が終わるまで、この関数の次の行を待つ
+- `return`：呼び出し元へ値を返し、その関数を終了する
+- `?.`：左側が`null`や`undefined`なら安全に`undefined`を返す
+- `??`：左側が`null`または`undefined`のときだけ右側を使う
+- `.map()`：配列の各要素を別の形へ変換し、新しい配列を作る
+- `.filter()`：条件に合う要素だけを残した新しい配列を作る
+- `.find()`：条件に合う最初の1件を探す
+- `Promise<T>`：今すぐではなく、将来`T`型の結果が返る約束
+- `Promise<T | null>`：将来`T`か「見つからない」を表す`null`が返る約束
 
-## 8日目：Neon・PostgreSQL・Drizzle
+---
 
-- 読む：13章、27章
-- 見る：`db/schema.ts`、`drizzle.config.ts`、`drizzle-postgres`
-- 目標：テーブル、行、列、主キー、外部キー、indexを理解する
-- 確認：`schema.ts`、`route.ts`、マイグレーションの役割を分けて説明する
+## 1日目：バックエンド全体の地図
 
-## 9日目：主要データの流れ
+### 今日の目的
 
-- 読む：14章
-- 見る：理想体型、プロフィール、トレーニング、体重、食事のAPI
-- 目標：1機能を「入力 → API → 認証 → DB → 応答 → 表示」で追える
-- 確認：トレーニング本体・種目・セットが親子に分かれる理由は何か
+フロント、TypeScriptバックエンド、Neon、Python、OpenAIの境界を理解します。コードを暗記する日ではなく、「どこを直せば何が変わるか」を判断できるようにする日です。
 
-## 10日目：AIに渡す本人情報
+### 読むファイルの順番
 
-- 読む：15章
-- 見る：`app/lib/ai/getUserAiContext.ts`
-- 目標：Neonから目標、身体、運動、食事、分析を集める理由を理解する
-- 確認：`Promise<UserAiContext | null>`が何を約束する型か説明する
+1. [package.json](package.json)
+2. [mobile/package.json](mobile/package.json)
+3. [db/index.ts](db/index.ts)
+4. [app/api/health/route.ts](app/api/health/route.ts)
+5. [python-analysis/app/main.py](python-analysis/app/main.py)
+6. [mobile/src/lib/api.ts](mobile/src/lib/api.ts)
 
-## 11日目：AIチャット
+### ファイル同士の関係
 
-- 読む：16章、23章のAIチャット
-- 見る：`app/api/chat/route.ts`、`app/lib/ai/runChatTool.ts`、`app/lib/ai/chatTools.ts`
-- 目標：要約＋直近5往復＋今回の質問を送る構成を理解する
-- 確認：Toolと普通の会話履歴の違いは何か
+- `mobile`は利用者のiPhone・Android・Web画面です。
+- `mobile/src/lib/api.ts`は、画面と公開バックエンドをつなぐ共通の通信口です。
+- `app/api`はTypeScriptで書かれたバックエンドAPIです。
+- `db/index.ts`はNeonへの接続を1か所にまとめます。
+- `db/schema.ts`はPostgreSQLに保存する表の設計です。
+- `python-analysis`は身体画像の検査とOpenAI画像分析を担当します。
 
-## 12日目：AIメニュー
+### コードの書き方
 
-- 読む：17章、23章のAIメニュー
-- 見る：`app/api/ai-menu/route.ts`、`app/lib/ai/menuPrompt.ts`、`app/lib/ai/menuSchema.ts`
-- 目標：プロンプト、Structured Outputs、Zod検査、保存の順番を説明できる
-- 確認：AIの文章をそのままDBに保存しない理由は何か
+`export async function GET()`は「このURLへGET通信が来たときに実行する非同期関数」です。`Response.json(...)`は、JavaScriptの値をJSON応答へ変えます。
 
-## 13日目：身体分析とPython
+### 工夫点
 
-- 読む：18章
-- 見る：`app/api/body-analysis/route.ts`、`python-analysis/app/main.py`
-- 目標：Expo → TypeScript → Python → OpenAI → TypeScript → Neonの流れを理解する
-- 確認：JSONと`FormData`の使い分け、Pythonを挟む理由を説明する
+画面、API、DB、画像分析を分離しています。画面デザインを変えてもDB処理を壊しにくく、Python分析だけ別サービスへ公開できます。
 
-## 14日目：課金・二重送信・一括保存
+### 理解チェック
 
-- 読む：19〜21章
-- 見る：課金API、`requestId`を扱うAPI、`db.transaction()`または`db.batch()`
-- 目標：Appleの購入情報をサーバーで確かめる理由と、途中保存を防ぐ仕組みを理解する
-- 確認：同じ保存ボタンを2回押しても1件にする方法は何か
+- アプリを閉じても残すデータは、最終的にどこへ保存するか。
+- Pythonを止めても、プロフィール取得まで止まるか。
+- `package.json`が二つある理由を説明できるか。
 
-## 15日目：セキュリティ・管理画面・テスト
+---
 
-- 読む：22〜25章、28〜30章
-- 見る：`app/api/admin/dashboard/route.ts`、`app/admin/page.tsx`、`tests`
-- 目標：管理者限定、秘密鍵、利用制限、料金記録、公開前テストを説明できる
-- 確認：売上、Apple手数料、OpenAI料金、Neon料金、税引前利益の関係を式で書く
+## 2日目：Neon接続とDBスキーマ
 
-## 1周した後の判定
+### 今日の目的
 
-次の流れをコードを見ながら自分の言葉で説明できれば1周完了です。
+「DBへ接続するコード」と「保存する表の設計」を分けて理解します。
 
-`Expoの入力 → API通信 → Clerk認証 → Zod検査 → Neon取得・保存 → 応答JSON → Expo表示`
+### 読むファイルの順番
 
-AI機能はさらに「本人情報の収集 → OpenAIへ送信 → 出力検査 → 保存 → 使用量記録」が加わります。
+1. [db/index.ts](db/index.ts)
+2. [db/schema.ts](db/schema.ts)
+3. [drizzle.config.ts](drizzle.config.ts)
+4. [drizzle-postgres/0000_create_users.sql](drizzle-postgres/0000_create_users.sql)
+5. [drizzle-postgres/0013_add_openai_estimated_cost.sql](drizzle-postgres/0013_add_openai_estimated_cost.sql)
+
+### データの流れ
+
+`route.ts → getDb() → Drizzleのselect/insert/update/delete → DATABASE_URL → Neon PostgreSQL`
+
+`db/index.ts`は`.env.local`や公開環境の`DATABASE_URL`を使ってNeonへ接続します。`schema.ts`は接続を行わず、テーブル名・列・型・制約をTypeScriptで宣言します。
+
+### コードの書き方
+
+```ts
+export const users = pgTable("users", {
+  id: uuid("id").primaryKey(),
+});
+```
+
+- `pgTable`はPostgreSQLの表を定義します。
+- `"users"`はDB内の実際の表名です。
+- `id`はTypeScript側で使う列名です。
+- `uuid("id")`はDB側の列名と型です。
+- `.primaryKey()`は行を一意に特定する主キーです。
+
+### 外部キーの読み方
+
+```ts
+userId: uuid("user_id")
+  .notNull()
+  .references(() => users.id, { onDelete: "cascade" })
+```
+
+これは「`user_id`は必須で、`users.id`に実在する利用者だけを保存でき、利用者を削除したら関連行も削除する」という意味です。
+
+### セキュリティ
+
+`DATABASE_URL`を`mobile`へ書いてはいけません。アプリ利用者へ配布され、第三者がDBへ直接接続できてしまうためです。DB接続はサーバーだけが持ちます。
+
+### 理解チェック
+
+- `schema.ts`とマイグレーションSQLの違いは何か。
+- `users.id`と`users.clerkUserId`は何を識別するか。
+- `onDelete: "cascade"`が必要な理由は何か。
+
+---
+
+## 3日目：マイグレーション・制約・インデックス
+
+### 今日の目的
+
+コードで設計した変更を、既存データを守りながらNeonへ反映する方法を理解します。
+
+### 読むファイルの順番
+
+1. [drizzle.config.ts](drizzle.config.ts)
+2. [drizzle-postgres/0008_add_data_consistency_constraints.sql](drizzle-postgres/0008_add_data_consistency_constraints.sql)
+3. [drizzle-postgres/0012_orange_arclight.sql](drizzle-postgres/0012_orange_arclight.sql)
+4. [drizzle-postgres/0013_add_openai_estimated_cost.sql](drizzle-postgres/0013_add_openai_estimated_cost.sql)
+5. [tests/db-integration.test.mjs](tests/db-integration.test.mjs)
+
+### 役割
+
+- マイグレーションはDBを古い形から新しい形へ進める履歴です。
+- `UNIQUE`は同じデータの重複をDB側で防ぎます。
+- `CHECK`は重量や回数などの範囲外をDB側でも拒否します。
+- `INDEX`は検索場所の目印を作り、履歴取得を速くします。
+
+### 工夫点
+
+アプリの検査だけでなくDB制約も置きます。古いアプリや不具合のあるAPIから不正データが来ても、最後の防波堤としてDBが拒否します。
+
+### 安全な変更順序
+
+1. `schema.ts`を変更する
+2. SQLを生成・確認する
+3. Neonの開発ブランチで適用する
+4. DBテストを実行する
+5. バックアップ・復元方法を確認する
+6. 本番へ適用する
+
+### 理解チェック
+
+- `push`だけに頼らずSQL履歴を残す理由は何か。
+- インデックスを増やしすぎる欠点は何か。
+- 開発用Neonブランチで先に試す理由は何か。
+
+---
+
+## 4日目：Clerk認証と本人の特定
+
+### 今日の目的
+
+「ログイン」と「そのデータを操作してよいか」を分けて理解します。
+
+### 読むファイルの順番
+
+1. [app/lib/auth/clerk-auth.ts](app/lib/auth/clerk-auth.ts)
+2. [app/api/users/bootstrap/route.ts](app/api/users/bootstrap/route.ts)
+3. [app/lib/admin/requireAdmin.ts](app/lib/admin/requireAdmin.ts)
+4. [app/api/admin/access/route.ts](app/api/admin/access/route.ts)
+5. [tests/source-security.test.mjs](tests/source-security.test.mjs)
+
+### データの流れ
+
+`Clerkログイン → Expoがトークン取得 → Authorization: Bearer ... → API → Clerkがトークン検証 → clerkUserId取得 → Neon usersを検索`
+
+Clerkはパスワード・メール認証・セッションを担当します。Neonの`users`は筋トレPAS内のプロフィールや記録を結び付ける親データです。
+
+### 認証と認可
+
+- 認証：誰であるか確かめる
+- 認可：その人がその処理をしてよいか確かめる
+
+ログイン済みでも、他人のIDをURLやJSONへ入れられる可能性があります。そのためAPIごとにトークンから本人を特定し、クライアントが送った`userId`を信用しません。
+
+### 管理者の仕組み
+
+`ADMIN_CLERK_USER_IDS`はサーバー環境変数だけに保存します。`GET /api/admin/access`と`GET /api/admin/dashboard`は、同じ`getAdminIdentity()`を通ります。Expo側でボタンを隠すだけではセキュリティにならないため、APIでも必ず403を返します。
+
+### 理解チェック
+
+- 401と403の違いは何か。
+- Clerk IDをExpoからJSONで送らせない理由は何か。
+- 一般ユーザーが`/admin`を直接開いたら、どこで止まるか。
+
+---
+
+## 5日目：APIルート・HTTP・JSON・Zod
+
+### 今日の目的
+
+バックエンドの基本形を一行ずつ読めるようにします。
+
+### 読むファイルの順番
+
+1. [app/lib/validation/jsonValidation.ts](app/lib/validation/jsonValidation.ts)
+2. [app/lib/validation/apiSchemas.ts](app/lib/validation/apiSchemas.ts)
+3. [app/api/users/profile/route.ts](app/api/users/profile/route.ts)
+4. [mobile/src/lib/profiles.ts](mobile/src/lib/profiles.ts)
+5. [mobile/src/lib/api.ts](mobile/src/lib/api.ts)
+
+### route.tsの基本順序
+
+1. Clerkトークンから本人を確認する
+2. `request.json()`でJSONを受け取る
+3. Zodの`safeParse()`で検査する
+4. Neonの本人行を探す
+5. DBを取得・保存する
+6. `Response.json()`で必要な値だけ返す
+7. 例外時は秘密情報を含まないエラーを返す
+
+### HTTPメソッド
+
+- `GET`：情報を取得する。通常DBを変更しない
+- `POST`：新しい処理・行を作る
+- `PATCH`：既存データの一部を変更する
+- `DELETE`：削除する
+
+GETは「情報を渡す」のではなく、サーバーから情報を受け取る通信です。POSTは保存だけでなく、AI生成のような新しい処理開始にも使います。
+
+### Zodの理由
+
+TypeScriptの型は実行前の開発支援であり、外部から来たJSONを実行時には守りません。Zodは実行中に文字数・数値範囲・必須項目を確かめます。
+
+### 理解チェック
+
+- `request.json()`と`Response.json()`は向きがどう違うか。
+- フロントで検査済みでもバックエンドで再検査する理由は何か。
+- 400、404、409、429、500を使う場面を言えるか。
+
+---
+
+## 6日目：初回設定・プロフィール・理想体型
+
+### 今日の目的
+
+アプリ起動後に、保存済みの情報が戻る仕組みを追います。
+
+### 読むファイルの順番
+
+1. [app/api/users/bootstrap/route.ts](app/api/users/bootstrap/route.ts)
+2. [app/api/users/goal/route.ts](app/api/users/goal/route.ts)
+3. [app/api/users/profile/route.ts](app/api/users/profile/route.ts)
+4. [app/api/users/onboarding-complete/route.ts](app/api/users/onboarding-complete/route.ts)
+5. [mobile/src/lib/bootstrap.ts](mobile/src/lib/bootstrap.ts)
+6. [mobile/src/app/bootstrap.tsx](mobile/src/app/bootstrap.tsx)
+
+### データの流れ
+
+`起動 → Clerkセッション確認 → GET bootstrap → Neon users/profile取得 → onboardingCompletedで分岐 → Contextへ復元 → 初回設定またはホーム`
+
+### 保存データ
+
+- `users`：Clerk ID、理想体型、初回設定完了状態
+- `userProfiles`：身長、体重、体脂肪率、場所、頻度、時間、苦手部位
+
+身長・体重だけを必須にし、それ以外は`null`または空配列を許可します。分からない値を適当な数値で保存させないためです。
+
+### 工夫点
+
+bootstrapは起動に必要な小さい情報をまとめます。画面ごとに何回もAPIを呼ぶより、初回の分岐が安定します。
+
+### 理解チェック
+
+- `onboardingCompleted`が端末Stateだけでは不十分な理由は何か。
+- `null`と`0`はどう違うか。
+- 2台目の端末でもプロフィールが戻る理由を説明できるか。
+
+---
+
+## 7日目：トレーニング・体重・食事記録
+
+### 今日の目的
+
+利用者の入力が、親子関係を持つDBへ保存される流れを理解します。
+
+### 読むファイルの順番
+
+1. [app/api/training-records/route.ts](app/api/training-records/route.ts)
+2. [app/api/weight-records/route.ts](app/api/weight-records/route.ts)
+3. [app/api/food-records/route.ts](app/api/food-records/route.ts)
+4. [mobile/src/lib/trainingRecords.ts](mobile/src/lib/trainingRecords.ts)
+5. [mobile/src/lib/weightRecords.ts](mobile/src/lib/weightRecords.ts)
+6. [mobile/src/lib/foodRecords.ts](mobile/src/lib/foodRecords.ts)
+
+### トレーニングの親子構造
+
+- `trainingSessions`：日付、時間、調子、メモ
+- `trainingExercises`：その日に行った種目
+- `trainingSets`：各種目の重量、回数、セット番号
+
+1回のトレーニングに複数種目、1種目に複数セットがあるため、表を分けます。全部を1行へ詰めると検索・編集が難しくなります。
+
+### データの取得元と行き先
+
+- Expoの入力フォームからJSONを受け取る
+- Clerkから本人IDを受け取る
+- Zodから検査済みデータを受け取る
+- Neonへ本人の記録として保存する
+- Neonから取得した親子データを画面向けJSONへ組み直して返す
+
+### セキュリティ
+
+更新・削除では「記録IDが存在するか」だけでなく「その記録の`userId`が本人か」をWHERE条件へ入れます。他人のUUIDを知っていても編集できないようにします。
+
+### 理解チェック
+
+- 履歴の検索条件に日付と部位を入れる理由は何か。
+- 食事管理が有料機能の場合、画面を隠すだけでは不足する理由は何か。
+- 更新時に親データだけ書き換えると何が起きるか。
+
+---
+
+## 8日目：一括保存・二重送信・アカウント削除
+
+### 今日の目的
+
+途中失敗しても中途半端なデータを残さない設計を理解します。
+
+### 読むファイルの順番
+
+1. [app/lib/idempotency/createRequestFingerprint.ts](app/lib/idempotency/createRequestFingerprint.ts)
+2. [app/api/training-records/route.ts](app/api/training-records/route.ts)
+3. [app/api/body-analysis/route.ts](app/api/body-analysis/route.ts)
+4. [app/api/users/account/route.ts](app/api/users/account/route.ts)
+5. [mobile/src/lib/account.ts](mobile/src/lib/account.ts)
+
+### 一括保存
+
+親・種目・セットを別々に保存すると、2回目で失敗したとき親だけが残ります。`db.transaction()`または一括処理を使い、全部成功したときだけ確定します。
+
+### 二重送信対策
+
+スマホ通信が遅いと、利用者が保存を2回押すことがあります。`requestId`や入力の指紋を記録し、同じ操作を再送しても同じ結果を返す設計をidempotencyと呼びます。
+
+### アカウント削除
+
+1. Clerkで本人再確認
+2. 確認文字`DELETE`をサーバーでも検査
+3. Neonの本人行を削除
+4. `cascade`で関連記録を削除
+5. Clerkアカウントを削除
+
+取り消せないため、通常の保存より強い本人確認が必要です。
+
+### 理解チェック
+
+- トランザクションと二重送信対策は何が違うか。
+- 外部サービス削除とDB削除の両方がある難しさは何か。
+- `requestId`を画面だけで管理してはいけない理由は何か。
+
+---
+
+## 9日目：AIへ渡す本人情報の収集
+
+### 今日の目的
+
+AIが「理想体型を知っている」仕組みを理解します。
+
+### 読むファイルの順番
+
+1. [app/lib/ai/getUserAiContext.ts](app/lib/ai/getUserAiContext.ts)
+2. [db/schema.ts](db/schema.ts)の`users`、`userProfiles`、記録、分析、食事部分
+3. [app/lib/ai/chatSummary.ts](app/lib/ai/chatSummary.ts)
+4. [app/api/home/route.ts](app/api/home/route.ts)
+
+### 集める情報
+
+- `users`から理想体型
+- `userProfiles`から身長・体重・体脂肪率・頻度・時間・場所・苦手部位
+- `bodyAnalyses`から最新分析
+- `trainingSessions`以下から最近のトレーニング
+- `foodRecords`から最近の食事
+- `aiMenus`から最近のメニュー
+
+### コードの読み方
+
+```ts
+export async function getUserAiContext(
+  clerkUserId: string,
+): Promise<UserAiContext | null>
+```
+
+これは「Clerk IDを受け取り、非同期でAI用情報か、利用者が見つからない場合の`null`を返す関数」です。本人認証そのものではなく、認証後にNeonから本人データを集める処理です。
+
+### 工夫点
+
+全履歴を毎回送ると料金と待ち時間が増えます。最新・直近・集計値へ絞り、AIに必要な意味を残しながら入力トークンを減らします。
+
+### セキュリティ
+
+Clerk IDは認証済みリクエストから取得します。AIへ不要なメール、内部ID、画像URL、秘密情報を渡しません。
+
+### 理解チェック
+
+- `leftJoin`を使う理由は何か。
+- プロフィール未作成でも利用者行を取得したい場合、`innerJoin`では何が起きるか。
+- 全トレーニング履歴をAIへ送らない理由は何か。
+
+---
+
+## 10日目：OpenAI共通設定・モデル・出力検査
+
+### 今日の目的
+
+OpenAI呼び出しを安全・安価・変更しやすくする共通部品を理解します。
+
+### 読むファイルの順番
+
+1. [app/lib/ai/openAiClient.ts](app/lib/ai/openAiClient.ts)
+2. [app/lib/ai/config.ts](app/lib/ai/config.ts)
+3. [app/lib/ai/menuSchema.ts](app/lib/ai/menuSchema.ts)
+4. [app/lib/ai/bodyAnalysisSchema.ts](app/lib/ai/bodyAnalysisSchema.ts)
+5. [app/lib/ai/recordOpenAiUsage.ts](app/lib/ai/recordOpenAiUsage.ts)
+
+### モデル分離
+
+- `OPENAI_CHAT_MODEL`：通常チャット用の安価なモデル
+- `OPENAI_MENU_MODEL`：決まったJSONを返すメニュー用モデル
+- Python側の身体分析モデル：画像理解が必要な機能だけで使う
+
+モデル名をコードへ固定しないため、公開後も環境変数で料金と精度を調整できます。
+
+### 出力制限
+
+- チャット入力は最大500文字
+- 通常回答は約400文字を目安
+- `max_output_tokens`で出力量を制限
+- 直近5往復だけを通常履歴として送る
+- 古い内容は短いsummaryへまとめる
+
+### AI出力の検査
+
+AIは毎回完全に正しいJSONを返すとは限りません。`menuSchema`や`bodyAnalysisResultSchema`で項目・型・範囲を検査してから保存します。
+
+### 料金記録
+
+OpenAI応答の`usage`からinput/output/total tokensを取り出し、モデル・機能・ユーザー・推定料金と一緒に`openAiUsageRecords`へ保存します。
+
+### 理解チェック
+
+- TypeScript型だけではAI出力検査にならない理由は何か。
+- input単価とoutput単価を分ける理由は何か。
+- 同じ質問でOpenAIを何回も呼ばない理由は何か。
+
+---
+
+## 11日目：AIチャット・Tool・長期記憶
+
+### 今日の目的
+
+会話、DBの最新情報、Tool、要約がどう組み合わさるか理解します。
+
+### 読むファイルの順番
+
+1. [app/lib/ai/systemPrompt.js](app/lib/ai/systemPrompt.js)
+2. [app/lib/ai/chatTools.ts](app/lib/ai/chatTools.ts)
+3. [app/lib/ai/runChatTool.ts](app/lib/ai/runChatTool.ts)
+4. [app/lib/ai/chatSummary.ts](app/lib/ai/chatSummary.ts)
+5. [app/api/chat/route.ts](app/api/chat/route.ts)
+6. [mobile/src/lib/chatApi.ts](mobile/src/lib/chatApi.ts)
+
+### プロンプトの内容
+
+system promptはAIの役割と禁止事項を決めます。
+
+- 筋トレ支援に集中する
+- 保存済みの目標・身体・運動・食事を使う
+- 短く具体的に答える
+- 医療診断をしない
+- 鋭い痛み・しびれでは運動中止と医療相談を案内する
+- 薬の処方や断定をしない
+
+### 1回の送信でOpenAIへ渡すもの
+
+1. system prompt
+2. 短い長期summary
+3. 直近5往復
+4. 今回の質問
+5. 必要に応じて呼べるTool定義
+
+### Toolとは
+
+ToolはAIが必要だと判断したとき、サーバーへ「最新身体分析を取得」「最近の記録を取得」「最新メニューを取得」などを依頼する仕組みです。`chatTools.ts`は使えるToolの名前と引数、`runChatTool.ts`は実際にNeonを検索する処理です。
+
+### 長期記憶
+
+会話全文を永久にOpenAIへ送り続けません。DBには履歴を保存し、古い会話から目標・頻度・苦手部位・器具・重要相談だけをsummaryへ圧縮します。
+
+### コストと安全の工夫
+
+- 1日30回をサーバー側で制限
+- Tool実行回数にも上限
+- 最大入力・最大出力を制限
+- Moderationで危険な入力を分類
+- AI回答前後に使用量を記録
+
+### 理解チェック
+
+- Toolと`getUserAiContext`はどう違うか。
+- チャット履歴をDBへ保存することと、OpenAIへ全部送ることは同じか。
+- summaryに残すべき情報と残さない情報を3つずつ挙げられるか。
+
+---
+
+## 12日目：AIメニュー生成
+
+### 今日の目的
+
+自由な会話ではなく、アプリが表示できる決まった形式をAIから受け取る流れを理解します。
+
+### 読むファイルの順番
+
+1. [app/lib/ai/menuPrompt.ts](app/lib/ai/menuPrompt.ts)
+2. [app/lib/ai/menuSchema.ts](app/lib/ai/menuSchema.ts)
+3. [app/lib/ai/getUserAiContext.ts](app/lib/ai/getUserAiContext.ts)
+4. [app/api/ai-menu/route.ts](app/api/ai-menu/route.ts)
+5. [app/api/ai-menu/history/route.ts](app/api/ai-menu/history/route.ts)
+6. [mobile/src/lib/aiMenus.ts](mobile/src/lib/aiMenus.ts)
+
+### プロンプトの内容
+
+menu promptは次をAIへ求めます。
+
+- 利用者の目標、頻度、時間、場所を守る
+- 最近鍛えた部位と身体分析を考慮する
+- 種目、セット、回数、重量目安、理由、注意点を返す
+- 医療診断をしない
+- 痛み・しびれがある場合は無理にメニューを作らない
+- 指定されたJSON形式だけで返す
+
+### データの流れ
+
+`POST /api/ai-menu → 本人確認 → 1日3回制限 → aiContext取得 → promptと入力をOpenAIへ送信 → menuSchema検査 → aiMenusと種目を保存 → JSON返却`
+
+1日3回には最初の生成と再生成2回を含みます。画面側だけでなくAPIが制限するため、改造アプリからも超過できません。
+
+### 工夫点
+
+過去メニューを参照して同じ内容が続きすぎないようにします。Structured OutputsとZodを組み合わせ、画面が期待する形を守ります。
+
+### 理解チェック
+
+- `aiInput`はOpenAIの返信を待つコードか、それとも送るデータか。
+- `menuPrompt`と`route.ts`の役割はどう違うか。
+- 生成成功後にDB保存が失敗した場合、画面はどう扱うべきか。
+
+---
+
+## 13日目：身体分析・Python・画像セキュリティ
+
+### 今日の目的
+
+画像3枚が二つのバックエンドを通り、分析結果だけが保存される流れを理解します。
+
+### 読むファイルの順番
+
+1. [mobile/src/lib/bodyAnalyses.ts](mobile/src/lib/bodyAnalyses.ts)
+2. [app/api/body-analysis/route.ts](app/api/body-analysis/route.ts)
+3. [python-analysis/app/main.py](python-analysis/app/main.py)
+4. [app/lib/ai/bodyAnalysisSchema.ts](app/lib/ai/bodyAnalysisSchema.ts)
+5. [python-analysis/tests/test_openai_errors.py](python-analysis/tests/test_openai_errors.py)
+
+### 受け渡しの流れ
+
+1. Expoが正面・横・背面を`FormData`で送る
+2. TypeScript APIがClerk本人確認・回数・容量・形式を検査
+3. TypeScriptがPythonの公開URLへ画像と身体情報を送る
+4. Pythonが破損画像・形式・容量を再検査
+5. PythonがOpenAIへ画像、理想体型、身体情報を送る
+6. OpenAIが決まったJSON形式の分析結果を返す
+7. Pythonが検査済みJSONをTypeScriptへ返す
+8. TypeScriptがZodで再検査し、Neonへ保存する
+9. TypeScriptがExpoへ分析結果を返す
+
+### Pythonを使う理由
+
+画像処理ライブラリが豊富で、画像の形式・寸法・破損確認・将来の姿勢推定などを追加しやすいためです。ただし、Pythonだから自動的に分析精度が上がるわけではありません。現在の実際の評価はOpenAI画像モデルが行います。
+
+### 課金・回数
+
+- 初回1回は無料
+- 2回目以降は有料会員だけ
+- 有料会員も月4回まで
+- 最終判定はTypeScriptバックエンド
+
+### セキュリティ
+
+- ファイル拡張子だけでなくMIME・実体を確認
+- 1枚と全体の容量上限を確認
+- 生画像をログへ出さない
+- OpenAIへ不要な氏名・メールを送らない
+- 医療診断ではなく、筋トレ上の見た目の傾向として返す
+- タイムアウトと一時的エラーだけの再試行を設定
+
+### 理解チェック
+
+- JSONではなく`FormData`を使う理由は何か。
+- TypeScriptとPythonの両方で画像検査する理由は何か。
+- 画像そのものをNeonの通常テーブルへ入れない理由は何か。
+
+---
+
+## 14日目：Apple課金・権利判定・運営ダッシュボード
+
+### 今日の目的
+
+購入画面ではなく、バックエンドが「有料機能を使えるか」と「運営利益」を判断する仕組みを学びます。
+
+### 読むファイルの順番
+
+1. [app/lib/subscriptions/policy.ts](app/lib/subscriptions/policy.ts)
+2. [app/lib/subscriptions/entitlements.ts](app/lib/subscriptions/entitlements.ts)
+3. [app/lib/subscriptions/appleVerification.ts](app/lib/subscriptions/appleVerification.ts)
+4. [app/api/subscription/route.ts](app/api/subscription/route.ts)
+5. [app/api/subscription/apple/verify/route.ts](app/api/subscription/apple/verify/route.ts)
+6. [app/api/subscription/apple/notifications/route.ts](app/api/subscription/apple/notifications/route.ts)
+7. [app/lib/admin/costConfig.ts](app/lib/admin/costConfig.ts)
+8. [app/api/admin/dashboard/route.ts](app/api/admin/dashboard/route.ts)
+9. [mobile/src/lib/admin.ts](mobile/src/lib/admin.ts)
+10. [mobile/src/app/admin.tsx](mobile/src/app/admin.tsx)
+
+### 課金データの流れ
+
+`iPhone StoreKit購入 → 署名付き取引情報 → TypeScript API → Apple公開鍵で検証 → productId・期限・環境確認 → userSubscriptions保存 → 有料機能APIが権利確認`
+
+Appleからの情報を画面だけで信用しません。改造アプリが`premium: true`を送れてしまうため、サーバーが署名を検証します。更新・解約・返金はApple Server Notificationで反映します。
+
+### 管理データの場所
+
+現在のExpoアプリでは、管理者本人のマイページにだけ「運営ダッシュボード」が表示されます。
+
+- [app/api/admin/access/route.ts](app/api/admin/access/route.ts)：管理者かだけを軽く確認
+- [app/api/admin/dashboard/route.ts](app/api/admin/dashboard/route.ts)：Neonを集計して管理JSONを返す
+- [mobile/src/lib/admin.ts](mobile/src/lib/admin.ts)：Clerkトークン付きで管理APIを呼ぶ
+- [mobile/src/app/admin.tsx](mobile/src/app/admin.tsx)：現在のExpoアプリで管理データを表示
+
+旧Web管理画面[app/admin/page.tsx](app/admin/page.tsx)も、PCで確認する予備の運営画面として残しています。どちらも同じ管理APIを使用するため、計算結果は共通です。
+
+### 収益計算
+
+- 売上 = 有料ユーザー数 × 月額料金
+- Apple入金見込 = 売上 − Apple手数料
+- 合計運営コスト = Apple手数料 + OpenAI + Neon + その他
+- 税引前利益 = 売上 − 合計運営コスト
+- 利益率 = 税引前利益 ÷ 売上 × 100
+
+税金は事業形態・経費・所得によって変わるため自動計算せず、画面では税引前と明記します。収入は青、支出は赤、利益は緑で表示します。
+
+### 実測値と推定値
+
+- DBの行数・容量：Neonから取得した実測値
+- OpenAI tokens：API応答usageから得た実測値
+- OpenAI円換算：設定単価を掛けた推定値
+- Neon料金：環境変数へ設定する推定値
+- 売上：現在の有効な有料ユーザー数からの推定値
+
+### 理解チェック
+
+- App Store Connectの売上と「有料人数×1000円」が一致しない場合がある理由は何か。
+- 管理画面のボタンを一般ユーザーから隠すだけでは不足する理由は何か。
+- `ADMIN_CLERK_USER_IDS`をmobileへ書いてはいけない理由は何か。
+
+---
+
+## 15日目：セキュリティ・監視・テスト・公開
+
+### 今日の目的
+
+機能が動くだけでなく、他人のデータ・秘密情報・運営費を守れるか確認します。
+
+### 読むファイルの順番
+
+1. [app/lib/observability/serverLog.ts](app/lib/observability/serverLog.ts)
+2. [app/lib/ai/checkModeration.ts](app/lib/ai/checkModeration.ts)
+3. [app/lib/ai/moderationDecision.ts](app/lib/ai/moderationDecision.ts)
+4. [app/lib/ai/createSafetyIdentifier.ts](app/lib/ai/createSafetyIdentifier.ts)
+5. [tests/source-security.test.mjs](tests/source-security.test.mjs)
+6. [tests/api-safety.test.mjs](tests/api-safety.test.mjs)
+7. [tests/db-integration.test.mjs](tests/db-integration.test.mjs)
+8. [tests/public-api-smoke.test.mjs](tests/public-api-smoke.test.mjs)
+9. [.gitignore](.gitignore)
+
+### セキュリティを層で考える
+
+#### 1. 端末に秘密を置かない
+
+Expoへ置けるのは公開してよい`EXPO_PUBLIC_*`だけです。DB接続文字列、Clerk Secret Key、OpenAI API Key、Apple秘密鍵、管理者ID一覧は公開バックエンドの環境変数へ置きます。
+
+#### 2. 全APIで本人を確認する
+
+トークンからClerk IDを取得し、Neonの利用者へ結び付けます。更新・削除は本人の`userId`をWHERE条件へ入れます。
+
+#### 3. 入力を信用しない
+
+Zodで文字数、数値、日付、配列件数、UUIDを検査します。画像は形式、実体、容量、破損を検査します。
+
+#### 4. 利用量を制限する
+
+- AIチャット：1日30回
+- AIメニュー：1日3回
+- 身体分析：初回無料、有料は月4回
+- チャット入力：500文字
+- AI出力・Tool回数・タイムアウトにも上限
+
+これは料金対策であると同時に、大量リクエストによる攻撃対策です。
+
+#### 5. ログへ個人情報を残さない
+
+画像、トークン、APIキー、質問本文、身体情報をそのままログへ出しません。request ID、機能名、エラー分類、token数など調査に必要な最小情報だけを残します。
+
+#### 6. AIを信用しすぎない
+
+Moderation、system prompt、出力文字数制限、Zod出力検査を重ねます。怪我・しびれ・痛みは医療診断をせず、運動中止と専門家相談を案内します。
+
+#### 7. 管理機能を分離する
+
+管理APIは一般ユーザーのAPIとは別URLにし、`ADMIN_CLERK_USER_IDS`で認可します。管理者判定に失敗したら、DB集計より前に401/403を返します。
+
+### テストの意味
+
+- unit：入力検査、料金計算、プロンプトの安全ルール
+- source-security：秘密情報、認証、管理者ガードをコード上で点検
+- Python：画像・OpenAIエラー処理
+- mobile API：Expo側のURL、method、JSONを確認
+- DB integration：実際のNeonで制約と保存を確認
+- public smoke：公開URLが応答し、認証なしで保護APIへ入れないことを確認
+
+### 公開前の順序
+
+1. 開発Neonでマイグレーション
+2. 自動テスト
+3. 本番Neonへマイグレーション
+4. 公開先へ秘密環境変数を設定
+5. バックエンドを公開
+6. ExpoのAPI URLを公開先へ変更
+7. 2ユーザーでデータ分離確認
+8. Sandbox課金確認
+9. iPhone実機・TestFlight確認
+
+### 理解チェック
+
+- フロントのボタン非表示と、バックエンド認可の違いは何か。
+- エラー調査に必要だがログへ残してはいけないものは何か。
+- 公開環境で最低限確認するAPIを挙げられるか。
+
+---
+
+## 15日後に説明できれば合格する内容
+
+次の質問へ、コードを見ながら自分の言葉で答えられれば1周完了です。
+
+1. Expoの入力は、どの通信ファイルとroute.tsを通ってNeonへ入るか。
+2. ClerkのユーザーとNeonのユーザーをどう結び付けているか。
+3. `schema.ts`、マイグレーション、route.tsは何が違うか。
+4. JSON、FormData、TypeScriptの型、Zodは何が違うか。
+5. AIはどの本人情報を、どのファイルから集めるか。
+6. system prompt、user input、Tool、AI出力Schemaは何が違うか。
+7. チャットの長期記憶を、料金を抑えながらどう実現しているか。
+8. 身体画像がExpoからPythonを通り、結果がNeonへ保存されるまでを説明できるか。
+9. Apple購入情報をバックエンドで検証する理由は何か。
+10. 一般ユーザーが他人のデータや管理画面へ入れない仕組みを説明できるか。
+
+最後に、好きな機能を一つ選び、次の形式で紙へ書いてください。
+
+`画面ファイル → mobile通信ファイル → API URL → route.ts → 認証 → Zod → DBテーブル → 応答JSON → 画面表示`
+
+これを書けるようになると、新機能を追加するときも「どこへ何を書くか」を自分で判断しやすくなります。

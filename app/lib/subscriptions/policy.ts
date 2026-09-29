@@ -5,6 +5,46 @@ export const premiumMonthlyPriceYen =
     ? configuredMonthlyPrice
     : 1_000;
 export const premiumBodyAnalysisMonthlyLimit = 4;
+export const trialDurationDays = 7;
+export const trialDailyChatLimit = 30;
+export const premiumDailyChatLimit = 30;
+export const trialDailyMenuLimit = 3;
+export const premiumDailyMenuLimit = 3;
+export const trialBodyAnalysisTotalLimit = 1;
+
+export type AppAccessLevel =
+  | "free"
+  | "trial"
+  | "premium";
+
+export type AiFeature =
+  | "chat"
+  | "menu"
+  | "calorie_ai"
+  | "body_analysis";
+
+// DBや画面に依存せず、月額契約と無料体験期限から現在の利用段階を決める
+export function resolveAppAccessLevel(input: {
+  isPremium: boolean;
+  trialUsed: boolean;
+  trialStartedAt: Date | null;
+  trialEndsAt: Date | null;
+  now: Date;
+}): AppAccessLevel {
+  if (input.isPremium) return "premium";
+
+  if (
+    input.trialUsed &&
+    input.trialStartedAt !== null &&
+    input.trialEndsAt !== null &&
+    input.trialStartedAt.getTime() <= input.now.getTime() &&
+    input.trialEndsAt.getTime() > input.now.getTime()
+  ) {
+    return "trial";
+  }
+
+  return "free";
+}
 
 export type BodyAnalysisAccessDecision =
   | { allowed: true; firstAnalysisFree: boolean }
@@ -15,18 +55,21 @@ export type BodyAnalysisAccessDecision =
 
 // 完了済み回数と課金状態だけで身体分析の利用可否を決める
 export function decideBodyAnalysisAccess(input: {
-  totalCompleted: number;
+  trialCompleted: number;
   completedThisMonth: number;
-  isPremium: boolean;
+  accessLevel: AppAccessLevel;
 }): BodyAnalysisAccessDecision {
-  if (input.totalCompleted === 0) {
+  if (
+    input.accessLevel === "trial" &&
+    input.trialCompleted < trialBodyAnalysisTotalLimit
+  ) {
     return {
       allowed: true,
       firstAnalysisFree: true,
     };
   }
 
-  if (!input.isPremium) {
+  if (input.accessLevel !== "premium") {
     return {
       allowed: false,
       reason: "premium_required",
@@ -51,14 +94,18 @@ export function decideBodyAnalysisAccess(input: {
 
 // 有料機能へ無料ユーザーがアクセスしたときに返す共通レスポンス
 export function premiumRequiredResponse(
-  feature: "calorie_tracking" | "body_analysis",
+  feature: AiFeature,
 ) {
+  const featureNames = {
+    chat: "AIチャット",
+    menu: "AIメニュー生成",
+    calorie_ai: "AI食事・カロリー分析",
+    body_analysis: "身体分析",
+  } as const;
+
   return Response.json(
     {
-      error:
-        feature === "calorie_tracking"
-          ? "カロリー管理はプレミアムプランで利用できます。"
-          : "2回目以降の身体分析はプレミアムプランで利用できます。",
+      error: `${featureNames[feature]}はPremium機能です。未使用の場合は7日間無料で試すか、月額プランをご契約ください。`,
       code: "PREMIUM_REQUIRED",
       feature,
       monthlyPriceYen: premiumMonthlyPriceYen,

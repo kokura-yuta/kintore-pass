@@ -34,8 +34,15 @@ import { decideModeration } from "../app/lib/ai/moderationDecision.ts";
 import {
   decideBodyAnalysisAccess,
   premiumBodyAnalysisMonthlyLimit,
+  premiumDailyChatLimit,
+  premiumDailyMenuLimit,
   premiumMonthlyPriceYen,
   premiumRequiredResponse,
+  resolveAppAccessLevel,
+  trialBodyAnalysisTotalLimit,
+  trialDailyChatLimit,
+  trialDailyMenuLimit,
+  trialDurationDays,
 } from "../app/lib/subscriptions/policy.ts";
 import { estimateOpenAiCostMicrosYen } from "../app/lib/admin/costConfig.ts";
 
@@ -522,51 +529,99 @@ test("AIチャットのTool回数と回答文字数に上限がある", () => {
   assert.ok(maxChatAnswerCharacters <= 800);
 });
 
-test("月額1000円の有料機能と初回無料の身体分析を判定する", async () => {
+test("7日間無料体験と月額1000円の有料上限を判定する", async () => {
   assert.equal(premiumMonthlyPriceYen, 1000);
+  assert.equal(trialDurationDays, 7);
+  assert.equal(trialDailyChatLimit, 30);
+  assert.equal(premiumDailyChatLimit, 30);
+  assert.equal(trialDailyMenuLimit, 3);
+  assert.equal(premiumDailyMenuLimit, 3);
+  assert.equal(trialBodyAnalysisTotalLimit, 1);
   assert.equal(premiumBodyAnalysisMonthlyLimit, 4);
+
+  const now = new Date("2026-09-22T00:00:00.000Z");
+  assert.equal(
+    resolveAppAccessLevel({
+      isPremium: false,
+      trialUsed: true,
+      trialStartedAt: new Date("2026-09-21T00:00:00.000Z"),
+      trialEndsAt: new Date("2026-09-23T00:00:00.000Z"),
+      now,
+    }),
+    "trial",
+  );
+  assert.equal(
+    resolveAppAccessLevel({
+      isPremium: false,
+      trialUsed: true,
+      trialStartedAt: new Date("2026-09-15T00:00:00.000Z"),
+      trialEndsAt: now,
+      now,
+    }),
+    "free",
+  );
+  assert.equal(
+    resolveAppAccessLevel({
+      isPremium: false,
+      trialUsed: false,
+      trialStartedAt: null,
+      trialEndsAt: null,
+      now,
+    }),
+    "free",
+  );
+  assert.equal(
+    resolveAppAccessLevel({
+      isPremium: true,
+      trialUsed: false,
+      trialStartedAt: null,
+      trialEndsAt: new Date("2026-09-01T00:00:00.000Z"),
+      now,
+    }),
+    "premium",
+  );
 
   assert.deepEqual(
     decideBodyAnalysisAccess({
-      totalCompleted: 0,
+      trialCompleted: 0,
       completedThisMonth: 0,
-      isPremium: false,
+      accessLevel: "trial",
     }),
     { allowed: true, firstAnalysisFree: true },
   );
 
   assert.deepEqual(
     decideBodyAnalysisAccess({
-      totalCompleted: 1,
+      trialCompleted: 1,
       completedThisMonth: 1,
-      isPremium: false,
+      accessLevel: "trial",
     }),
     { allowed: false, reason: "premium_required" },
   );
 
   assert.equal(
     decideBodyAnalysisAccess({
-      totalCompleted: 3,
+      trialCompleted: 0,
       completedThisMonth: 3,
-      isPremium: true,
+      accessLevel: "premium",
     }).allowed,
     true,
   );
 
   assert.deepEqual(
     decideBodyAnalysisAccess({
-      totalCompleted: 4,
+      trialCompleted: 0,
       completedThisMonth: 4,
-      isPremium: true,
+      accessLevel: "premium",
     }),
     { allowed: false, reason: "monthly_limit" },
   );
 
-  const calorieResponse =
-    premiumRequiredResponse("calorie_tracking");
-  assert.equal(calorieResponse.status, 402);
+  const aiFoodResponse =
+    premiumRequiredResponse("calorie_ai");
+  assert.equal(aiFoodResponse.status, 402);
   assert.equal(
-    (await calorieResponse.json()).code,
+    (await aiFoodResponse.json()).code,
     "PREMIUM_REQUIRED",
   );
 });

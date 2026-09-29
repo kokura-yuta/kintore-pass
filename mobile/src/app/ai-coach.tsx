@@ -32,6 +32,7 @@ export default function AiCoachScreen() {
   const [status, setStatus] = useState<GenerationStatus>('condition');
   const [menu, setMenu] = useState<GeneratedMenuPreview | null>(null);
   const [error, setError] = useState('');
+  const [premiumRequired, setPremiumRequired] = useState(false);
   const [isLoadingSavedMenu, setIsLoadingSavedMenu] = useState(!isApiBypassEnabled);
   const [savedMenuError, setSavedMenuError] = useState('');
   const [savedMenuReloadKey, setSavedMenuReloadKey] = useState(0);
@@ -103,6 +104,7 @@ export default function AiCoachScreen() {
     setSelectedBodyPart(bodyPart);
     setTodayBodyPart(bodyPart);
     setError('');
+    setPremiumRequired(false);
   }
 
   // 今日の調子をバックエンドへ送り、OpenAI生成とNeon保存の完了を待つ
@@ -118,6 +120,7 @@ export default function AiCoachScreen() {
       return;
     }
     setError('');
+    setPremiumRequired(false);
     setSavedMenuError('');
     setStatus('loading');
 
@@ -158,6 +161,7 @@ export default function AiCoachScreen() {
       setStatus('result');
     } catch (generationError) {
       setError(generationError instanceof Error ? generationError.message : 'AIメニューの生成に失敗しました。');
+      setPremiumRequired(generationError instanceof ApiError && generationError.status === 402);
       setStatus(menu ? 'result' : 'condition');
     } finally {
       pendingMenuRequestId.current = null;
@@ -230,6 +234,7 @@ export default function AiCoachScreen() {
               </View>
               <View style={styles.referenceCard}><Text style={styles.referenceTitle}>AIが参考にする情報</Text><View style={styles.chipRow}>{['目標体型', '身体データ', '過去の記録', '前回の部位', '最近鍛えていない部位'].map((label) => <View key={label} style={styles.infoChip}><Text style={styles.infoChipText}>{label}</Text></View>)}</View></View>
               {error ? <Text style={styles.error}>{error}</Text> : null}
+              {premiumRequired ? <Pressable onPress={() => router.push('/subscription')} style={styles.secondaryButton}><Text style={styles.secondaryText}>Premiumを見る</Text></Pressable> : null}
               <Pressable onPress={generateMenu} style={styles.primaryButton}><Text style={styles.primaryText}>AIメニューを生成</Text><Text style={styles.primaryArrow}>›</Text></Pressable>
             </>
           ) : null}
