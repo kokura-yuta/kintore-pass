@@ -1,5 +1,7 @@
 import { createContext, type PropsWithChildren, useCallback, useContext, useMemo, useState } from 'react';
 
+import { isScreenshotMode } from '@/lib/api';
+
 export type ChatMessage = {
   id: string;
   role: 'user' | 'assistant';
@@ -28,8 +30,21 @@ type ChatHistoryContextValue = {
 
 const ChatHistoryContext = createContext<ChatHistoryContextValue | null>(null);
 
+const screenshotConversations: ChatConversation[] = [{
+  id: 'screenshot-chat',
+  serverConversationId: null,
+  title: 'ベンチプレスを伸ばしたい',
+  updatedAt: Date.now(),
+  messages: [
+    { id: 'screenshot-user', role: 'user', content: 'ベンチプレスを伸ばすために意識することは？', createdAt: Date.now() - 60_000 },
+    { id: 'screenshot-assistant', role: 'assistant', content: '## 伸ばすためのポイント\n\n1. **フォームを安定させる**\n   肩甲骨を寄せ、毎回同じ軌道で押しましょう。\n2. **少しずつ負荷を上げる**\n   余裕を残して成功したら、次回は重量か回数を少し増やします。\n3. **回復も記録する**\n   胸・肩・腕の疲労が強い日は、重量を下げて丁寧に行いましょう。', createdAt: Date.now() },
+  ],
+}];
+
 export function ChatHistoryProvider({ children }: PropsWithChildren) {
-  const [conversations, setConversations] = useState<ChatConversation[]>([]);
+  const [conversations, setConversations] = useState<ChatConversation[]>(
+    isScreenshotMode ? screenshotConversations : [],
+  );
 
   // 画面上へ空の新規チャットを追加する
   const createConversation = useCallback(() => {

@@ -9,7 +9,7 @@ import { BottomNavigation } from '@/components/BottomNavigation';
 import { ScreenStateCard } from '@/components/ScreenStateCard';
 import { useOnboarding } from '@/contexts/OnboardingContext';
 import { useTrainingDraft } from '@/contexts/TrainingDraftContext';
-import { ApiError, isApiBypassEnabled } from '@/lib/api';
+import { ApiError, isApiBypassEnabled, isScreenshotMode } from '@/lib/api';
 import { getMenuPreview, type GeneratedMenuPreview, type MenuBodyPart } from '@/lib/aiMenuPreview';
 import { generateAiMenu, toGeneratedMenuPreview, type SavedAiMenu } from '@/lib/aiMenus';
 import { fetchHome, type HomeResponse } from '@/lib/homeApi';
@@ -329,7 +329,7 @@ export default function HomeScreen() {
             </>
           ) : null}
 
-          {isApiBypassEnabled && !isLoading && !error ? <Text style={styles.previewNote}>開発用プレビューデータを表示しています。</Text> : null}
+          {isApiBypassEnabled && !isScreenshotMode && !isLoading && !error ? <Text style={styles.previewNote}>開発用プレビューデータを表示しています。</Text> : null}
         </ScrollView>
       </SafeAreaView>
       <BottomNavigation />

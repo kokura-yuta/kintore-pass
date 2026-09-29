@@ -2,6 +2,7 @@ import { useAuth } from '@clerk/expo';
 import { createContext, type PropsWithChildren, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 
 import { exerciseCatalog } from '@/lib/exerciseCatalog';
+import { isScreenshotMode } from '@/lib/api';
 import { getTrainingRecords } from '@/lib/trainingRecords';
 
 export type SavedTrainingSet = {
@@ -38,6 +39,21 @@ type TrainingHistoryContextValue = {
 
 const TrainingHistoryContext = createContext<TrainingHistoryContextValue | null>(null);
 
+const screenshotTrainingRecords: SavedTrainingRecord[] = [{
+  id: 'screenshot-training',
+  performedAt: new Date().toISOString(),
+  performedOn: formatLocalDate(new Date()),
+  menuId: 'screenshot-menu',
+  exercises: [
+    { exerciseId: 'bench-press', name: 'ベンチプレス', sets: [{ weightKg: '60', reps: '10' }, { weightKg: '65', reps: '8' }, { weightKg: '65', reps: '8' }] },
+    { exerciseId: 'incline-dumbbell-press', name: 'インクラインダンベルプレス', sets: [{ weightKg: '20', reps: '10' }, { weightKg: '20', reps: '10' }, { weightKg: '20', reps: '8' }] },
+    { exerciseId: 'side-raise', name: 'サイドレイズ', sets: [{ weightKg: '8', reps: '12' }, { weightKg: '8', reps: '12' }, { weightKg: '8', reps: '12' }] },
+  ],
+  trainingMinutes: 58,
+  condition: 8,
+  memo: 'フォームを意識して最後まで安定してできた。',
+}];
+
 export function TrainingHistoryProvider({ children }: PropsWithChildren) {
   const { getToken, isLoaded, isSignedIn } = useAuth();
   // ClerkのgetTokenが更新されても履歴取得関数を作り直さず、APIの無限呼び出しを防ぐ
@@ -46,7 +62,9 @@ export function TrainingHistoryProvider({ children }: PropsWithChildren) {
   const hasAutomaticallyLoadedRef = useRef(false);
   // 通信中に同じAPIが重ねて呼ばれるのを防ぐための印
   const isReloadingRef = useRef(false);
-  const [records, setRecords] = useState<SavedTrainingRecord[]>([]);
+  const [records, setRecords] = useState<SavedTrainingRecord[]>(
+    isScreenshotMode ? screenshotTrainingRecords : [],
+  );
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 

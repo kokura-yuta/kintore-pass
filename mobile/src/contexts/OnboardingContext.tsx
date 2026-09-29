@@ -1,5 +1,7 @@
 import { createContext, type PropsWithChildren, useContext, useMemo, useState } from 'react';
 
+import { isScreenshotMode } from '@/lib/api';
+
 export type GoalBodySelection =
   | { kind: 'preset'; bodyTypeId: 'lean-muscle' | 'v-shape' | 'physique' | 'bulk-up' }
   | { kind: 'custom-image'; imageUri: string; fileName: string | null };
@@ -19,14 +21,14 @@ export type ProfileDraft = {
 };
 
 const initialProfile: ProfileDraft = {
-  heightCm: '',
-  weightKg: '',
-  bodyFatPercentage: '',
-  weeklyTrainingDays: null,
-  availableMinutes: null,
-  trainingLocation: null,
-  trainingStyle: null,
-  weakBodyParts: [],
+  heightCm: isScreenshotMode ? '175' : '',
+  weightKg: isScreenshotMode ? '67.8' : '',
+  bodyFatPercentage: isScreenshotMode ? '13.2' : '',
+  weeklyTrainingDays: isScreenshotMode ? 4 : null,
+  availableMinutes: isScreenshotMode ? 60 : null,
+  trainingLocation: isScreenshotMode ? 'gym' : null,
+  trainingStyle: isScreenshotMode ? 'split' : null,
+  weakBodyParts: isScreenshotMode ? ['背中', '肩'] : [],
 };
 
 type OnboardingContextValue = {
@@ -39,7 +41,9 @@ type OnboardingContextValue = {
 const OnboardingContext = createContext<OnboardingContextValue | null>(null);
 
 export function OnboardingProvider({ children }: PropsWithChildren) {
-  const [goalBody, setGoalBody] = useState<GoalBodySelection | null>(null);
+  const [goalBody, setGoalBody] = useState<GoalBodySelection | null>(
+    isScreenshotMode ? { kind: 'preset', bodyTypeId: 'lean-muscle' } : null,
+  );
   const [profile, setProfile] = useState<ProfileDraft>(initialProfile);
   const value = useMemo(
     () => ({ goalBody, profile, setGoalBody, setProfile }),

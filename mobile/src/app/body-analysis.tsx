@@ -23,6 +23,7 @@ import {
   ApiError,
   apiUploadRequest,
   isApiBypassEnabled,
+  isScreenshotMode,
 } from '@/lib/api';
 import { fetchBodyAnalysisHistory } from '@/lib/bodyAnalyses';
 import { completeOnboarding } from '@/lib/onboarding';
@@ -168,7 +169,7 @@ export default function BodyAnalysisScreen() {
     if (isApiBypassEnabled) {
       setAccessStatus('ready');
       setAnalysisRemaining(4);
-      setAccessMessage('開発用表示：今月あと4回利用できます。');
+      setAccessMessage(isScreenshotMode ? '今月あと4回利用できます。' : '開発用表示：今月あと4回利用できます。');
       return;
     }
 

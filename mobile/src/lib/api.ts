@@ -1,9 +1,16 @@
 const apiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL?.replace(/\/$/, '');
 
+// App Store掲載画像を、実ユーザーの個人情報なしで撮影するための開発専用モード。
+export const isScreenshotMode =
+  __DEV__ && process.env.EXPO_PUBLIC_SCREENSHOT_MODE === 'true';
+
 // 公開APIが未用意の間だけ初回設定を端末内Stateで確認するための明示的な開発フラグ。
 // __DEV__も必須にすることで、本番ビルドでは環境変数が残っていても無効になる。
 export const isApiBypassEnabled =
-  __DEV__ && process.env.EXPO_PUBLIC_ENABLE_API_BYPASS === 'true';
+  __DEV__ && (
+    process.env.EXPO_PUBLIC_ENABLE_API_BYPASS === 'true' ||
+    isScreenshotMode
+  );
 
 export class ApiError extends Error {
   constructor(

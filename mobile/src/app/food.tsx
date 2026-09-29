@@ -6,11 +6,20 @@ import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, Pressable, Sc
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { BottomNavigation } from '@/components/BottomNavigation';
-import { isApiBypassEnabled } from '@/lib/api';
+import { isApiBypassEnabled, isScreenshotMode } from '@/lib/api';
 import { createFoodRecord, deleteFoodRecord, fetchFoodRecords, updateFoodRecord, type FoodRecord, type MealType } from '@/lib/foodRecords';
 import { fetchSubscriptionStatus } from '@/lib/subscription';
 
 const mealTypes: MealType[] = ['朝食', '昼食', '夕食', '間食'];
+
+function screenshotFoodRecords(): FoodRecord[] {
+  const recordedDate = today();
+  return [
+    { id: 'screenshot-breakfast', recordedDate, mealType: '朝食', name: 'オートミール・ヨーグルト・バナナ', calories: 430, proteinGrams: 21 },
+    { id: 'screenshot-lunch', recordedDate, mealType: '昼食', name: '鶏むね肉と玄米', calories: 620, proteinGrams: 48 },
+    { id: 'screenshot-snack', recordedDate, mealType: '間食', name: 'プロテイン', calories: 120, proteinGrams: 24 },
+  ];
+}
 
 function today() {
   const date = new Date();
@@ -32,7 +41,9 @@ export default function FoodScreen() {
   const savingLock = useRef(false);
   const deletingLock = useRef(false);
   const [entries, setEntries] = useState<FoodRecord[]>([]);
-  const [localEntries, setLocalEntries] = useState<FoodRecord[]>([]);
+  const [localEntries, setLocalEntries] = useState<FoodRecord[]>(
+    isScreenshotMode ? screenshotFoodRecords : [],
+  );
   const [viewDate, setViewDate] = useState(today);
   const [dateInput, setDateInput] = useState(today);
   const [entryDate, setEntryDate] = useState(today);
@@ -188,7 +199,7 @@ export default function FoodScreen() {
               {success ? <Text style={styles.success}>{success}</Text> : null}
               <Pressable accessibilityRole="button" disabled={isSaving} onPress={() => { void saveEntry(); }} style={[styles.addButton, isSaving && styles.disabledButton]}>{isSaving ? <ActivityIndicator color="#050A0F" /> : <Text style={styles.addButtonText}>{editingId ? '変更を保存' : 'この食事を追加'}</Text>}</Pressable>
               {editingId ? <Pressable accessibilityRole="button" onPress={resetForm} style={styles.cancelButton}><Text style={styles.actionText}>編集をやめる</Text></Pressable> : null}
-              <Text style={styles.previewNote}>{isApiBypassEnabled ? '開発用の仮記録です。画面を閉じると消えます。' : '保存した食事はログイン中の本人の記録として残ります。'}</Text>
+              {!isScreenshotMode ? <Text style={styles.previewNote}>{isApiBypassEnabled ? '開発用の仮記録です。画面を閉じると消えます。' : '保存した食事はログイン中の本人の記録として残ります。'}</Text> : null}
             </View>
             <View style={styles.listHeading}><Text style={styles.sectionTitle}>日付別の食事履歴</Text><Text style={styles.count}>{entries.length}件</Text></View>
             <View style={styles.dateSelector}><TextInput accessibilityLabel="履歴の日付" keyboardType="numbers-and-punctuation" maxLength={10} onChangeText={setDateInput} placeholder="YYYY-MM-DD" placeholderTextColor="#556772" style={[styles.input, styles.dateInput]} value={dateInput} /><Pressable accessibilityRole="button" onPress={() => { if (!isValidDate(dateInput)) { setError('履歴の日付を正しく入力してください。'); return; } setError(''); setViewDate(dateInput); if (dateInput === viewDate) void loadEntries(viewDate); }} style={styles.dateButton}><Text style={styles.dateButtonText}>表示</Text></Pressable></View>
