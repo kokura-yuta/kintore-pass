@@ -459,4 +459,27 @@ test("iOS提出設定に暗号化申告・Privacy Manifest・権限説明を含�
     imagePickerPlugin[1].cameraPermission,
     /身体分析/,
   );
+
+  const backendEnvExample = await readFile(
+    path.join(projectRoot, ".env.example"),
+    "utf8",
+  );
+  const mobileEnvExample = await readFile(
+    path.join(projectRoot, "mobile/.env.example"),
+    "utf8",
+  );
+  const productId = "com.kintorepas.premium.monthly";
+
+  assert.match(
+    backendEnvExample,
+    new RegExp(`^APPLE_BUNDLE_ID=${appConfig.ios.bundleIdentifier}$`, "m"),
+  );
+  assert.match(
+    backendEnvExample,
+    new RegExp(`^APPLE_PREMIUM_PRODUCT_ID=${productId}$`, "m"),
+  );
+  assert.match(
+    mobileEnvExample,
+    new RegExp(`^EXPO_PUBLIC_APPLE_PREMIUM_PRODUCT_ID=${productId}$`, "m"),
+  );
 });

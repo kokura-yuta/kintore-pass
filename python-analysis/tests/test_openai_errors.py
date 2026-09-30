@@ -12,7 +12,7 @@ PYTHON_ANALYSIS_ROOT = Path(__file__).resolve().parents[1]
 if str(PYTHON_ANALYSIS_ROOT) not in sys.path:
     sys.path.insert(0, str(PYTHON_ANALYSIS_ROOT))
 
-import httpx2
+import httpx
 from fastapi import HTTPException, Response, UploadFile
 from PIL import Image
 from starlette.datastructures import Headers
@@ -45,9 +45,9 @@ def make_test_image() -> UploadFile:
     )
 
 
-def make_openai_request() -> httpx2.Request:
+def make_openai_request() -> httpx.Request:
     """OpenAI SDKエラーに必要なテスト用リクエストを作る。"""
-    return httpx2.Request(
+    return httpx.Request(
         "POST",
         "https://api.openai.com/v1/responses",
     )
@@ -55,9 +55,9 @@ def make_openai_request() -> httpx2.Request:
 
 def make_openai_response(
     status_code: int,
-) -> httpx2.Response:
+) -> httpx.Response:
     """OpenAI SDKエラーに必要なテスト用レスポンスを作る。"""
-    return httpx2.Response(
+    return httpx.Response(
         status_code,
         request=make_openai_request(),
     )

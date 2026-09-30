@@ -12,7 +12,7 @@
     "test": "npm run build && npm run test:unit",
     "test:unit": "node --experimental-strip-types --test tests/api-safety.test.mjs",
     "test:source-security": "node --experimental-strip-types --test tests/source-security.test.mjs",
-    "test:python": "python-analysis/.venv/bin/python -m unittest discover -s python-analysis/tests -v",
+    "test:python": "node scripts/run-python-tests.mjs",
     "test:mobile-api": "node --test mobile/scripts/api-request.test.mjs mobile/scripts/weight-records.test.mjs mobile/scripts/training-records.test.mjs mobile/scripts/food-records.test.mjs mobile/scripts/account.test.mjs",
     "test:mobile-types": "tsc --noEmit --project mobile/tsconfig.json",
     "test:db": "node --test tests/db-integration.test.mjs",
