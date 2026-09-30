@@ -10,7 +10,7 @@
     "backgroundColor": "#050A0F",
     "ios": {
       "icon": "./assets/images/kintore-pas-app-store-1024.png",
-      "bundleIdentifier": "com.yoshida.kintorepas",
+      "bundleIdentifier": "com.kintorepas.app",
       "buildNumber": "1",
       "supportsTablet": false,
       "config": {

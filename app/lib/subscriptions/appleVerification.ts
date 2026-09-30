@@ -8,7 +8,7 @@ import type {
 
 const bundleId =
   process.env.APPLE_BUNDLE_ID?.trim() ||
-  "com.yoshida.kintorepas";
+  "com.kintorepas.app";
 
 function readRootCertificates() {
   const encodedCertificates = [
