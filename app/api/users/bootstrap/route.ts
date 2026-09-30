@@ -19,6 +19,8 @@ import { getAppAccess } from "@/app/lib/subscriptions/entitlements";
 export async function POST(
   request: Request,
 ) {
+  let failureStage = "authentication";
+
   // 認証・DB検索・新規登録で発生したエラーをまとめて捕まえる
   try {
     // リクエストのClerkトークンを検証してログイン中のユーザーIDを取得する
@@ -37,6 +39,7 @@ export async function POST(
     const db = getDb();
 
     // 検証済みのClerkユーザーIDと一致するNeonユーザーを最大1件検索する
+    failureStage = "user_lookup";
     const existingUsers = await db
       .select()
       .from(users)
@@ -53,6 +56,7 @@ export async function POST(
 
     // 登録済みならClerkユーザーIDと初回設定の完了状態を返して処理を終了する
     if (existingUser) {
+      failureStage = "existing_user_access";
       const access = await getAppAccess(existingUser.id);
 
       // 初回設定全体と各段階の進行状態をフロントエンドへ返す
@@ -77,6 +81,7 @@ export async function POST(
     }
 
     // Neonに未登録の場合だけClerkからメールアドレスや名前を取得する
+    failureStage = "clerk_user_details";
     const clerkUserDetails =
       await getClerkUserDetails(
         clerkUserId,
@@ -108,6 +113,8 @@ export async function POST(
         .join(" ") || email;
 
     // 未登録なら認証情報を使ってusersテーブルへ新規登録する
+    // この段階名だけを安全なサーバーログへ残し、個人情報やSQL本文は記録しない。
+    failureStage = "user_insert";
     const createdUsers = await db
       .insert(users)
       .values({
@@ -119,6 +126,7 @@ export async function POST(
 
     // PostgreSQLから配列で返された新規ユーザーを取り出す
     const createdUser = createdUsers[0];
+    failureStage = "created_user_access";
     const access = await getAppAccess(createdUser.id);
 
     // ClerkユーザーIDと初回設定の完了状態をHTTP 201で返す
@@ -148,7 +156,10 @@ export async function POST(
     );
   } catch (error) {
     // 詳しい原因は利用者へ返さず、開発者が確認するサーバーログへ残す
-    logServerError("user_bootstrap_failed", error);
+    logServerError(
+      `user_bootstrap_failed_${failureStage}`,
+      error,
+    );
 
     // フロントエンドへ安全なメッセージとHTTP 500を返す
     return Response.json(
