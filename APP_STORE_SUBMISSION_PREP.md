@@ -1,6 +1,6 @@
 # 筋トレPAS App Store提出準備
 
-更新日：2026-09-27
+更新日：2026-09-28
 
 この文書はApp Store Connectへ入力する内容の下書きです。`未確定`の項目は、提出前に運営メンバーで決定してください。
 
@@ -185,3 +185,22 @@ AI機能はトレーニングメニュー提案と一般的なフィットネス
 - [ ] EAS CLIへExpoアカウントでログイン（2026年9月27日時点では未ログイン）
 - [ ] iPhone実機用productionビルドとTestFlight提出
 - [ ] 共同口座の準備後にAppleの銀行・税務情報を確定
+
+## 13. 購入・更新・解約・返金の準備状況
+
+- [x] App Storeの署名付き購入情報をバックエンドで検証
+- [x] 購入者のアプリ内ユーザーIDとAppleの`appAccountToken`を照合
+- [x] 同じ購入を別アカウントへ付け替えられないように制限
+- [x] 更新中は`active`、請求猶予中は`grace_period`、期限切れは`expired`、返金後は`revoked`としてNeonへ反映
+- [x] Appleから返金申請の利用情報通知を受けたとき、購入後のOpenAI利用回数を取得
+- [x] 利用実績に応じた返金希望をApp Store Server APIへ返す処理を追加
+- [x] Apple通知の署名が不正な場合は保存せず拒否
+- [x] 一時的なApple通信エラーはHTTP 503にして再送可能にする
+- [ ] App Store ConnectでIn-App Purchase用Server APIキーを発行
+- [ ] 公開バックエンドへIssuer ID・Key ID・秘密鍵をsecretとして設定
+- [ ] App Store ConnectへServer Notifications V2の本番URLとSandbox URLを登録
+- [ ] Sandboxアカウントで購入・復元・自動更新・解約・請求猶予・返金を実通信確認
+
+返金の最終判断と返金処理はAppleが行います。本アプリは、利用者がAppleへの情報送信に同意した場合だけ、機能を提供できたかとAI利用実績をAppleへ伝えます。
+
+Appleの秘密鍵、Issuer ID、Key IDはモバイルアプリやGitへ入れず、公開バックエンドのsecretだけに保存します。

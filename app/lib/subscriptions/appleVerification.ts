@@ -1,6 +1,7 @@
 import { Buffer } from "node:buffer";
 
 import type {
+  ConsumptionRequest,
   JWSRenewalInfoDecodedPayload,
   ResponseBodyV2DecodedPayload,
   JWSTransactionDecodedPayload,
@@ -64,6 +65,50 @@ async function createVerifier() {
   );
 }
 
+function requiredServerApiSetting(
+  name:
+    | "APPLE_IAP_ISSUER_ID"
+    | "APPLE_IAP_KEY_ID"
+    | "APPLE_IAP_PRIVATE_KEY_BASE64",
+) {
+  const value = process.env[name]?.trim();
+
+  if (!value) {
+    throw new Error(`${name}_MISSING`);
+  }
+
+  return value;
+}
+
+async function createServerApiClient() {
+  const {
+    AppStoreServerAPIClient,
+    Environment,
+  } = await import("@apple/app-store-server-library");
+  const environment =
+    configuredEnvironmentName() === "production"
+      ? Environment.PRODUCTION
+      : Environment.SANDBOX;
+  const privateKey = Buffer.from(
+    requiredServerApiSetting(
+      "APPLE_IAP_PRIVATE_KEY_BASE64",
+    ).replace(/\s/g, ""),
+    "base64",
+  ).toString("utf8");
+
+  if (!privateKey.includes("PRIVATE KEY")) {
+    throw new Error("APPLE_IAP_PRIVATE_KEY_INVALID");
+  }
+
+  return new AppStoreServerAPIClient(
+    privateKey,
+    requiredServerApiSetting("APPLE_IAP_KEY_ID"),
+    requiredServerApiSetting("APPLE_IAP_ISSUER_ID"),
+    bundleId,
+    environment,
+  );
+}
+
 export async function verifyAppleTransaction(
   signedTransactionInfo: string,
 ): Promise<JWSTransactionDecodedPayload> {
@@ -88,6 +133,17 @@ export async function verifyAppleRenewalInfo(
   const verifier = await createVerifier();
   return verifier.verifyAndDecodeRenewalInfo(
     signedRenewalInfo,
+  );
+}
+
+export async function sendAppleConsumptionInformation(
+  transactionId: string,
+  consumptionRequest: ConsumptionRequest,
+) {
+  const client = await createServerApiClient();
+  await client.sendConsumptionInformation(
+    transactionId,
+    consumptionRequest,
   );
 }
 

@@ -3,6 +3,7 @@ import { and, eq, gt, inArray } from "drizzle-orm";
 
 import { getDb } from "@/db";
 import { users, userSubscriptions } from "@/db/schema";
+import { isConfiguredAdminClerkUserId } from "@/app/lib/admin/requireAdmin";
 import {
   premiumBodyAnalysisMonthlyLimit,
   premiumDailyChatLimit,
@@ -99,6 +100,7 @@ export async function getAppAccess(
     getPremiumAccess(userId, now),
     getDb()
       .select({
+        clerkUserId: users.clerkUserId,
         trialStartedAt: users.trialStartedAt,
         trialEndsAt: users.trialEndsAt,
         trialChoiceCompleted: users.trialChoiceCompleted,
@@ -115,8 +117,21 @@ export async function getAppAccess(
     throw new Error("User not found while checking app access");
   }
 
+  // 運営者IDはApp Store契約なしでも全機能を点検できる。
+  // ADMIN_CLERK_USER_IDSに登録された本人だけをサーバー側で判定する。
+  const hasOperatorAccess =
+    isConfiguredAdminClerkUserId(user.clerkUserId);
+  const effectivePremium = hasOperatorAccess
+    ? {
+        isPremium: true,
+        status: "operator",
+        productId: null,
+        expiresAt: null,
+      }
+    : premium;
+
   const accessLevel = resolveAppAccessLevel({
-    isPremium: premium.isPremium,
+    isPremium: effectivePremium.isPremium,
     trialUsed: user.trialUsed,
     trialStartedAt: user.trialStartedAt,
     trialEndsAt: user.trialEndsAt,
@@ -124,7 +139,7 @@ export async function getAppAccess(
   });
 
   return {
-    ...premium,
+    ...effectivePremium,
     accessLevel,
     canUseAiFeatures: accessLevel !== "free",
     trialChoiceCompleted: user.trialChoiceCompleted,
