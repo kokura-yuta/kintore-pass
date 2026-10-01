@@ -9,6 +9,7 @@ import {
   integer,
   bigint,
   pgTable,
+  primaryKey,
   real,
   text,
   timestamp,
@@ -844,6 +845,17 @@ export const openAiUsageRecords = pgTable(
 );
 
 // AI・記録保存・身体分析の二重送信を防ぐため、処理開始済みのリクエストを保存する
+export const aiDailyQuotas = pgTable("ai_daily_quotas", {
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  feature: text("feature").notNull(),
+  dayStart: timestamp("day_start", { withTimezone: true }).notNull(),
+  used: integer("used").notNull().default(0),
+}, (table) => [
+  primaryKey({ columns: [table.userId, table.feature, table.dayStart] }),
+  check("ai_daily_quotas_feature_check", sql`${table.feature} in ('chat', 'menu')`),
+  check("ai_daily_quotas_used_check", sql`${table.used} >= 0`),
+]);
+
 export const aiRequestGuards = pgTable(
   "ai_request_guards",
   {

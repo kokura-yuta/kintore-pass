@@ -1,3 +1,4 @@
+import { readDailyQuota, reserveDailyQuota, releaseDailyQuota, type DailyQuota } from "@/app/lib/ai/dailyQuota";
 import type {
   ResponseInput,
 } from "openai/resources/responses/responses";
@@ -325,6 +326,8 @@ export async function DELETE(request: Request) {
 // フロントから質問を受け取り、本人確認後にOpenAIへ送る
 export async function POST(request: Request) {
   let requestGuardId: string | null = null;
+  let reservedQuota: DailyQuota | null = null;
+  let quotaUsed = 0;
 
   try {
     const clerkUserId =
@@ -407,10 +410,9 @@ export async function POST(request: Request) {
     const { start, end } =
       getJapanDayRange(new Date());
 
-    // 本人が今日送った質問数をNeonから数える
+    // 履歴は連続送信の間隔確認だけに使う。回数制限は独立した台帳を参照する。
     const dailyUsageResults = await db
       .select({
-        usageCount: count(chatMessages.id),
         latestCreatedAt: max(
           chatMessages.createdAt,
         ),
@@ -435,11 +437,9 @@ export async function POST(request: Request) {
         ),
       );
 
-    // 検索結果から今日の質問数を取り出す
-    const usedChatCount =
-      Number(
-        dailyUsageResults[0]?.usageCount ?? 0,
-      );
+    // 会話削除に左右されない今日の使用数。
+    const quotaKey: DailyQuota = { userId: user.id, feature: "chat", start };
+    const usedChatCount = await readDailyQuota(quotaKey);
 
     const latestQuestionCreatedAt =
       dailyUsageResults[0]?.latestCreatedAt ??
@@ -584,6 +584,16 @@ export async function POST(request: Request) {
         },
       );
     }
+
+    const reservedUsed = await reserveDailyQuota(quotaKey, dailyChatLimit);
+    if (reservedUsed === null) {
+      await db.delete(aiRequestGuards).where(eq(aiRequestGuards.id, requestGuardId));
+      requestGuardId = null;
+      return Response.json({ error: "本日のAIチャット利用上限に達しました。", limit: dailyChatLimit, remaining: 0, nextAvailableAt: end.toISOString() },
+        { status: 429, headers: { "Retry-After": String(retryAfterSeconds) } });
+    }
+    reservedQuota = quotaKey;
+    quotaUsed = reservedUsed;
 
     let conversationId =
       body?.conversationId?.trim() || null;
@@ -844,7 +854,7 @@ export async function POST(request: Request) {
       );
       // 今回保存した質問を含めた使用回数を計算する
     const updatedUsedChatCount =
-      usedChatCount + 1;
+      quotaUsed;
 
     // 今日あと何回質問できるか計算する
     const remainingChatCount =
@@ -855,6 +865,7 @@ export async function POST(request: Request) {
       );
 
     // AIの回答と今日の利用状況をフロントへ返す
+    reservedQuota = null; // 保存成功後は会話を削除しても利用枠を戻さない。
     return Response.json({
       conversationId,
       reply,
@@ -917,5 +928,10 @@ export async function POST(request: Request) {
         status: 500,
       },
     );
+  } finally {
+    if (reservedQuota) {
+      try { await releaseDailyQuota(reservedQuota); }
+      catch (error) { logServerError("chat_quota_release_failed", error); }
+    }
   }
 }

@@ -1,3 +1,4 @@
+import { readDailyQuota, reserveDailyQuota, releaseDailyQuota, type DailyQuota } from "@/app/lib/ai/dailyQuota";
 // 本人情報を使って今日のAIトレーニングメニューを生成するAPI
 // OpenAI APIのタイムアウトエラー型を読み込む
 import {
@@ -7,7 +8,6 @@ import { createSafetyIdentifier } from "@/app/lib/ai/createSafetyIdentifier";
 import { zodTextFormat } from "openai/helpers/zod";
 import {
   and,
-  count,
   desc,
   eq,
   gte,
@@ -196,6 +196,8 @@ export async function POST(
   request: Request,
 ) {
   let requestGuardId: string | null = null;
+  let reservedQuota: DailyQuota | null = null;
+  let quotaUsed = 0;
 
   // 本人確認中に発生したエラーを捕まえる
   try {
@@ -275,10 +277,9 @@ export async function POST(
 
     const dailyMenuLimit = appAccess.menuDailyLimit;
 
-    // 本人が今日生成したAIメニュー数をNeonから数える
+    // 履歴は連続生成の間隔確認だけに使う。
     const dailyUsageResults = await db
       .select({
-        usageCount: count(aiGeneratedMenus.id),
         latestCreatedAt: max(
           aiGeneratedMenus.createdAt,
         ),
@@ -296,9 +297,8 @@ export async function POST(
         ),
       );
 
-    const usedMenuCount = Number(
-      dailyUsageResults[0]?.usageCount ?? 0,
-    );
+    const quotaKey: DailyQuota = { userId: accessUser.id, feature: "menu", start };
+    const usedMenuCount = await readDailyQuota(quotaKey);
 
     const latestMenuCreatedAt =
       dailyUsageResults[0]?.latestCreatedAt ??
@@ -427,6 +427,16 @@ export async function POST(
       );
     }
 
+    const reservedUsed = await reserveDailyQuota(quotaKey, dailyMenuLimit);
+    if (reservedUsed === null) {
+      await db.delete(aiRequestGuards).where(eq(aiRequestGuards.id, requestGuardId));
+      requestGuardId = null;
+      return Response.json({ error: "本日のAIメニュー生成上限に達しました。", limit: dailyMenuLimit, remaining: 0, nextAvailableAt: end.toISOString() },
+        { status: 429, headers: { "Retry-After": String(retryAfterSeconds) } });
+    }
+    reservedQuota = quotaKey;
+    quotaUsed = reservedUsed;
+
     // AIの判断に必要な情報だけを送信用データへまとめる
     const aiInput = {
       goalBodyType:
@@ -549,7 +559,7 @@ ${JSON.stringify(aiInput, null, 2)}`,
     ]);
 
     const updatedUsedMenuCount =
-      usedMenuCount + 1;
+      quotaUsed;
 
     const remainingMenuCount = Math.max(
       0,
@@ -557,6 +567,7 @@ ${JSON.stringify(aiInput, null, 2)}`,
     );
 
     // 保存済みIDと日時も含め、検証済みAIメニューをフロントへ返す
+    reservedQuota = null;
     return Response.json({
       requestId,
       menu: {
@@ -626,5 +637,10 @@ ${JSON.stringify(aiInput, null, 2)}`,
         status: 500,
       },
     );
+  } finally {
+    if (reservedQuota) {
+      try { await releaseDailyQuota(reservedQuota); }
+      catch (error) { logServerError("menu_quota_release_failed", error); }
+    }
   }
 }
