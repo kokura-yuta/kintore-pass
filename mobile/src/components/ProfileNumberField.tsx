@@ -61,7 +61,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#050A0F',
   },
   inputError: { borderColor: '#FF7676' },
-  input: { flex: 1, paddingHorizontal: 14, color: '#F4F6F3', fontSize: 16 },
+  input: { flex: 1, minWidth: 0, paddingHorizontal: 14, color: '#F4F6F3', fontSize: 16 },
   unit: { paddingRight: 14, color: '#8B9CA6', fontSize: 12, fontWeight: '700' },
   error: { marginTop: 6, color: '#FF7676', fontSize: 11, lineHeight: 16 },
 });

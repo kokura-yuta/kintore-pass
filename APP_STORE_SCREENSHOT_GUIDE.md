@@ -2,6 +2,14 @@
 
 更新日：2026-09-24
 
+## 2026-10-01 再撮影版
+
+最新候補は `app-store-screenshots/retake-2026-10-01` の7画面と補足 `08-food-history.png`。
+全て1320×2868 PNG。旧画像は比較用に保持。Web版のサンプル表示であり、実機検証・App Store登録は未実施。
+`mobile/scripts/capture-store-screenshots.cjs` を利用。専用Expoを8083番で起動し、起動プロセスに限ってEXPO_PUBLIC_SCREENSHOT_MODE=trueを設定する。
+PlaywrightとMicrosoft Edgeが必要。PLAYWRIGHT_MODULE_PATHで既存のPlaywrightを指定可能。
+データとフォントの読み込みを待ち、画面の内容を加工せずに撮影する。
+
 ## 撮影モード
 
 `mobile/.env.local`へ次を一時設定し、Expoを再起動します。
