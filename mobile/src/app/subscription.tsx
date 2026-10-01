@@ -63,9 +63,9 @@ export default function SubscriptionScreen() {
       <ScrollView contentContainerStyle={styles.content}>
         <Text style={styles.eyebrow}>PREMIUM PLAN</Text>
         <Text style={styles.title}>筋トレPAS プレミアム</Text>
-        <Text style={styles.price}>月額 1,000円</Text>
+        <Text style={styles.price}>{subscription?.status === 'complimentary' ? '運営アカウント：無料' : '月額 1,000円'}</Text>
         <Text style={styles.description}>記録機能はずっと無料。AIコーチを使いたい場合だけPremiumを選べます。</Text>
-        <Text style={styles.renewalNote}>1か月ごとに自動更新されます。解約はiPhoneのサブスクリプション管理からいつでも行えます。</Text>
+        {subscription?.status !== 'complimentary' ? <Text style={styles.renewalNote}>1か月ごとに自動更新されます。解約はiPhoneのサブスクリプション管理からいつでも行えます。</Text> : null}
 
         <View style={styles.card}>
           <Text style={styles.item}>・AIチャットを1日30回まで</Text>
@@ -92,7 +92,7 @@ export default function SubscriptionScreen() {
         ) : null}
 
         {subscription?.plan === 'premium' ? (
-          <View style={styles.activeCard}><Text style={styles.activeTitle}>プレミアムプラン利用中</Text><Text style={styles.preparationText}>有効期限：{subscription.expiresAt ? new Date(subscription.expiresAt).toLocaleDateString('ja-JP') : '確認中'}</Text></View>
+          <View style={styles.activeCard}><Text style={styles.activeTitle}>{subscription.status === 'complimentary' ? '運営用Premiumを無料で利用中' : 'プレミアムプラン利用中'}</Text><Text style={styles.preparationText}>{subscription.status === 'complimentary' ? '購入は不要です。通常のPremiumと同じ利用回数で使えます。' : `有効期限：${subscription.expiresAt ? new Date(subscription.expiresAt).toLocaleDateString('ja-JP') : '確認中'}`}</Text></View>
         ) : subscription?.accessLevel === 'trial' && subscription.trial.endsAt ? (
           <View style={styles.activeCard}><Text style={styles.activeTitle}>7日間の無料体験中</Text><Text style={styles.preparationText}>体験終了日：{new Date(subscription.trial.endsAt).toLocaleDateString('ja-JP')}</Text><Text style={styles.preparationText}>終了後はFreeへ戻り、自動課金はされません。記録データはそのまま残ります。</Text></View>
         ) : subscription?.trial.eligibleToStart ? null : token && subscription && appleProductId ? (

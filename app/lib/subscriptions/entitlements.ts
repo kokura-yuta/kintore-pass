@@ -3,6 +3,7 @@ import { and, eq, gt, inArray } from "drizzle-orm";
 
 import { getDb } from "@/db";
 import { users, userSubscriptions } from "@/db/schema";
+import { hasOwnerAccess } from "@/app/lib/admin/ownerAccess";
 import {
   premiumBodyAnalysisMonthlyLimit,
   premiumDailyChatLimit,
@@ -61,6 +62,15 @@ export async function getPremiumAccess(
   userId: string,
   now = new Date(),
 ): Promise<PremiumAccess> {
+  const [account] = await getDb()
+    .select({ clerkUserId: users.clerkUserId })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+  if (account?.clerkUserId && await hasOwnerAccess(account.clerkUserId)) {
+    // Apple契約を偽造せず、運営用の無償権限として返す。
+    return { isPremium: true, status: "complimentary", productId: null, expiresAt: null };
+  }
   const subscriptions = await getDb()
     .select({
       status: userSubscriptions.status,
@@ -127,7 +137,7 @@ export async function getAppAccess(
     ...premium,
     accessLevel,
     canUseAiFeatures: accessLevel !== "free",
-    trialChoiceCompleted: user.trialChoiceCompleted,
+    trialChoiceCompleted: premium.isPremium || user.trialChoiceCompleted,
     trialUsed: user.trialUsed,
     trialStartedAt: user.trialStartedAt,
     trialEndsAt: user.trialEndsAt,

@@ -184,7 +184,9 @@ test("運営ダッシュボードはDB集計前に管理者権限を確認する
       adminRoute.indexOf("const db = getDb()"),
     "管理者確認はDB集計より前に実行する必要があります",
   );
-  assert.match(adminGuard, /ADMIN_CLERK_USER_IDS/);
+  assert.match(adminGuard, /await hasOwnerAccess\(clerkUserId\)/);
+  assert.doesNotMatch(adminGuard, /ADMIN_CLERK_USER_IDS/);
+  assert.ok(adminRoute.indexOf("if (!admin.allowed)") < adminRoute.indexOf("if (localPreview)"));
   assert.match(adminGuard, /status: 401/);
   assert.match(adminGuard, /status: 403/);
 });

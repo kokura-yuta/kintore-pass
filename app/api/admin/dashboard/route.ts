@@ -56,6 +56,13 @@ function groupCost(rows: UsageRow[], key: "feature" | "model") {
 }
 
 export async function GET(request: Request) {
+  const admin = await getAdminIdentity(request);
+  if (!admin.allowed) {
+    return Response.json(
+      { error: admin.status === 401 ? "ログインが必要です。" : "管理者権限がありません。" },
+      { status: admin.status, headers: { "Cache-Control": "no-store" } },
+    );
+  }
   const requestedPreview =
     new URL(request.url).searchParams.get("preview") === "1";
   const localPreview =
@@ -68,14 +75,6 @@ export async function GET(request: Request) {
     return Response.json(createAdminPreviewDashboard(), {
       headers: { "Cache-Control": "no-store" },
     });
-  }
-
-  const admin = await getAdminIdentity(request);
-  if (!admin.allowed) {
-    return Response.json(
-      { error: admin.status === 401 ? "ログインが必要です。" : "管理者権限がありません。" },
-      { status: admin.status },
-    );
   }
 
   try {
