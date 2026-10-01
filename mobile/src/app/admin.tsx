@@ -28,6 +28,22 @@ const featureLabels: Record<string, string> = {
   summary: '会話要約',
   other: 'その他',
 };
+const productFeatureLabels: Record<string, string> = {
+  training_records: 'トレーニング記録',
+  weight_records: '体重記録',
+  food_records: '食事記録',
+  body_analyses: '身体分析',
+  ai_menus: 'AIメニュー生成',
+  chat_questions: 'AIチャット質問',
+};
+const audienceLabels: Record<string, string> = {
+  home: '自宅',
+  gym: 'ジム',
+  both: '自宅・ジム両方',
+  'full-body': '全身',
+  split: '部位別',
+  ai: 'AIおまかせ',
+};
 
 export default function AdminScreen() {
   const router = useRouter();
@@ -136,6 +152,45 @@ export default function AdminScreen() {
               <MetricCard label="1人平均AI原価" tone="cost" value={money(data.summary.averageAiCostPerPaidUserYen)} />
             </View>
 
+            <Section title="利用者の状況">
+              <DataRow label="登録ユーザー" value={`${number(data.analytics.users.total)}人`} />
+              <DataRow label="今月利用したユーザー" value={`${number(data.analytics.users.activeThisMonth)}人`} />
+              <DataRow label="今月の新規ユーザー" value={`${number(data.analytics.users.newThisMonth)}人`} />
+              <DataRow label="初回設定完了" value={`${number(data.analytics.users.onboardingCompleted)}人`} />
+              <DataRow label="Premium" value={`${number(data.analytics.users.access.premium)}人`} />
+              <DataRow label="無料体験中" value={`${number(data.analytics.users.access.trial)}人`} />
+              <DataRow label="Free" value={`${number(data.analytics.users.access.free)}人`} />
+              <DataRow label="運営者" value={`${number(data.analytics.users.access.operator)}人`} />
+            </Section>
+
+            <Section title="今月の機能利用数">
+              {data.analytics.featureUsage.map((item) => (
+                <DataRow
+                  key={item.name}
+                  label={productFeatureLabels[item.name] ?? item.name}
+                  value={`${number(item.month)}回（累計 ${number(item.total)}）`}
+                />
+              ))}
+            </Section>
+
+            <AudienceSection
+              items={data.analytics.audience.byGoalBodyType}
+              title="目標体型の傾向"
+            />
+            <AudienceSection
+              items={data.analytics.audience.byTrainingLocation}
+              title="利用者のトレーニング場所"
+            />
+            <AudienceSection
+              items={data.analytics.audience.byTrainingStyle}
+              title="利用者のメニュー形式"
+            />
+            <AudienceSection
+              items={data.analytics.audience.byWeeklyTrainingDays}
+              suffix="日/週"
+              title="希望する週の回数"
+            />
+
             <Section title="OpenAI利用状況">
               <DataRow label="今月の総トークン" value={number(data.summary.totalTokens)} />
               <DataRow label="API呼び出し回数" value={`${number(data.summary.apiCalls)}回`} />
@@ -198,6 +253,28 @@ function MetricCard({
 
 function Section({ children, title }: { children: React.ReactNode; title: string }) {
   return <View style={styles.section}><Text style={styles.sectionTitle}>{title}</Text>{children}</View>;
+}
+
+function AudienceSection({
+  items,
+  suffix = '',
+  title,
+}: {
+  items: { name: string; users: number }[];
+  suffix?: string;
+  title: string;
+}) {
+  return (
+    <Section title={title}>
+      {items.map((item) => (
+        <DataRow
+          key={item.name}
+          label={`${audienceLabels[item.name] ?? item.name}${item.name === '未設定' ? '' : suffix}`}
+          value={`${number(item.users)}人`}
+        />
+      ))}
+    </Section>
+  );
 }
 
 function DataRow({ label, tone, value }: { label: string; tone?: 'cost'; value: string }) {

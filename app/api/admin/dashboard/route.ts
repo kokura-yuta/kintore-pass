@@ -4,7 +4,10 @@ import {
   adminCostConfig,
   estimateOpenAiCostMicrosYen,
 } from "@/app/lib/admin/costConfig";
-import { getAdminIdentity } from "@/app/lib/admin/requireAdmin";
+import {
+  getAdminIdentity,
+  isConfiguredAdminClerkUserId,
+} from "@/app/lib/admin/requireAdmin";
 import { createAdminPreviewDashboard } from "@/app/lib/admin/previewDashboard";
 import { logServerError } from "@/app/lib/observability/serverLog";
 import { getDb } from "@/db";
@@ -14,6 +17,7 @@ import {
   openAiUsageRecords,
   trainingSessions,
   users,
+  userProfiles,
   userSubscriptions,
 } from "@/db/schema";
 
@@ -55,6 +59,22 @@ function groupCost(rows: UsageRow[], key: "feature" | "model") {
     .sort((a, b) => b.costYen - a.costYen);
 }
 
+function groupAudience(
+  values: Array<string | number | null>,
+  emptyLabel = "未設定",
+) {
+  const grouped = new Map<string, number>();
+  for (const value of values) {
+    const label = value === null || value === ""
+      ? emptyLabel
+      : String(value);
+    grouped.set(label, (grouped.get(label) ?? 0) + 1);
+  }
+  return [...grouped.entries()]
+    .map(([name, users]) => ({ name, users }))
+    .sort((a, b) => b.users - a.users);
+}
+
 export async function GET(request: Request) {
   const admin = await getAdminIdentity(request);
   if (!admin.allowed) {
@@ -85,7 +105,7 @@ export async function GET(request: Request) {
     todayStart.setUTCHours(0, 0, 0, 0);
     const trendStart = addMonths(monthStart, -5);
 
-    const [activeRows, usageRows, totalUsersRows, messageRows, trainingRows, analysisRows, databaseSizeResult, subscriptionRows] = await Promise.all([
+    const [activeRows, usageRows, totalUsersRows, messageRows, trainingRows, analysisRows, databaseSizeResult, subscriptionRows, audienceRows, activeUsersResult, featureUsageResult] = await Promise.all([
       db.select({ userId: userSubscriptions.userId })
         .from(userSubscriptions)
         .where(and(
@@ -113,6 +133,59 @@ export async function GET(request: Request) {
         createdAt: userSubscriptions.createdAt,
         expiresAt: userSubscriptions.expiresAt,
       }).from(userSubscriptions),
+      db.select({
+        id: users.id,
+        clerkUserId: users.clerkUserId,
+        goalBodyType: users.goalBodyType,
+        onboardingCompleted: users.onboardingCompleted,
+        trialUsed: users.trialUsed,
+        trialStartedAt: users.trialStartedAt,
+        trialEndsAt: users.trialEndsAt,
+        createdAt: users.createdAt,
+        trainingLocation: userProfiles.trainingLocation,
+        trainingStyle: userProfiles.trainingStyle,
+        weeklyTrainingDays: userProfiles.weeklyTrainingDays,
+      }).from(users).leftJoin(
+        userProfiles,
+        sql`${userProfiles.userId} = ${users.id}`,
+      ),
+      db.execute(sql`
+        select count(distinct user_id)::int as active_users
+        from (
+          select user_id from training_sessions where created_at >= ${monthStart}
+          union all select user_id from weight_records where created_at >= ${monthStart}
+          union all select user_id from food_records where created_at >= ${monthStart}
+          union all select user_id from body_analyses where created_at >= ${monthStart}
+          union all select user_id from ai_generated_menus where created_at >= ${monthStart}
+          union all select user_id from openai_usage_records where created_at >= ${monthStart}
+        ) as monthly_activity
+      `),
+      db.execute(sql`
+        select 'training_records' as name,
+          count(*)::int as total,
+          count(*) filter (where created_at >= ${monthStart})::int as month
+        from training_sessions
+        union all
+        select 'weight_records', count(*)::int,
+          count(*) filter (where created_at >= ${monthStart})::int
+        from weight_records
+        union all
+        select 'food_records', count(*)::int,
+          count(*) filter (where created_at >= ${monthStart})::int
+        from food_records
+        union all
+        select 'body_analyses', count(*)::int,
+          count(*) filter (where created_at >= ${monthStart})::int
+        from body_analyses where status = 'completed'
+        union all
+        select 'ai_menus', count(*)::int,
+          count(*) filter (where created_at >= ${monthStart})::int
+        from ai_generated_menus
+        union all
+        select 'chat_questions', count(*)::int,
+          count(*) filter (where created_at >= ${monthStart})::int
+        from chat_messages where role = 'user'
+      `),
     ]);
 
     // 移行前の行も、現在の単価設定があれば画面上では再計算して表示する
@@ -132,6 +205,44 @@ export async function GET(request: Request) {
     const profitYen = revenueYen - totalCostYen;
     const dbSizeRaw = (databaseSizeResult as unknown as Array<{ bytes: string | number }>)[0]?.bytes ?? 0;
     const databaseBytes = Number(dbSizeRaw);
+
+    const paidUserIds = new Set(activeRows.map((row) => row.userId));
+    const audienceAccess = {
+      operator: 0,
+      premium: 0,
+      trial: 0,
+      free: 0,
+    };
+    for (const user of audienceRows) {
+      if (isConfiguredAdminClerkUserId(user.clerkUserId)) {
+        audienceAccess.operator += 1;
+      } else if (paidUserIds.has(user.id)) {
+        audienceAccess.premium += 1;
+      } else if (
+        user.trialUsed &&
+        user.trialStartedAt &&
+        user.trialEndsAt &&
+        user.trialStartedAt <= now &&
+        user.trialEndsAt > now
+      ) {
+        audienceAccess.trial += 1;
+      } else {
+        audienceAccess.free += 1;
+      }
+    }
+    const activeUsersRows = activeUsersResult as unknown as Array<{
+      active_users: number | string;
+    }>;
+    const featureUsageRows = featureUsageResult as unknown as Array<{
+      name: string;
+      total: number | string;
+      month: number | string;
+    }>;
+    const featureUsage = featureUsageRows.map((row) => ({
+      name: row.name,
+      total: Number(row.total),
+      month: Number(row.month),
+    }));
 
     const userIds = [...new Set(monthUsage.map((row) => row.userId))];
     const userRows = userIds.length
@@ -207,6 +318,36 @@ export async function GET(request: Request) {
         apiCalls: monthUsage.length,
       },
       openAi: { byFeature: groupCost(monthUsage, "feature"), byModel: groupCost(monthUsage, "model"), byUser: userCosts.slice(0, 20) },
+      analytics: {
+        users: {
+          total: audienceRows.length,
+          activeThisMonth: Number(
+            activeUsersRows[0]?.active_users ?? 0,
+          ),
+          newThisMonth: audienceRows.filter(
+            (user) => user.createdAt >= monthStart,
+          ).length,
+          onboardingCompleted: audienceRows.filter(
+            (user) => user.onboardingCompleted,
+          ).length,
+          access: audienceAccess,
+        },
+        audience: {
+          byGoalBodyType: groupAudience(
+            audienceRows.map((user) => user.goalBodyType),
+          ),
+          byTrainingLocation: groupAudience(
+            audienceRows.map((user) => user.trainingLocation),
+          ),
+          byTrainingStyle: groupAudience(
+            audienceRows.map((user) => user.trainingStyle),
+          ),
+          byWeeklyTrainingDays: groupAudience(
+            audienceRows.map((user) => user.weeklyTrainingDays),
+          ),
+        },
+        featureUsage,
+      },
       neon: {
         plan: adminCostConfig.neonPlanName,
         databaseBytes,

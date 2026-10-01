@@ -3,7 +3,7 @@ import { and, eq, gt, inArray } from "drizzle-orm";
 
 import { getDb } from "@/db";
 import { users, userSubscriptions } from "@/db/schema";
-import { hasOwnerAccess } from "@/app/lib/admin/ownerAccess";
+import { isConfiguredAdminClerkUserId } from "@/app/lib/admin/ownerPolicy";
 import {
   premiumBodyAnalysisMonthlyLimit,
   premiumDailyChatLimit,
@@ -67,9 +67,9 @@ export async function getPremiumAccess(
     .from(users)
     .where(eq(users.id, userId))
     .limit(1);
-  if (account?.clerkUserId && await hasOwnerAccess(account.clerkUserId)) {
+  if (isConfiguredAdminClerkUserId(account?.clerkUserId)) {
     // Apple契約を偽造せず、運営用の無償権限として返す。
-    return { isPremium: true, status: "complimentary", productId: null, expiresAt: null };
+    return { isPremium: true, status: "operator", productId: null, expiresAt: null };
   }
   const subscriptions = await getDb()
     .select({
@@ -109,6 +109,7 @@ export async function getAppAccess(
     getPremiumAccess(userId, now),
     getDb()
       .select({
+        clerkUserId: users.clerkUserId,
         trialStartedAt: users.trialStartedAt,
         trialEndsAt: users.trialEndsAt,
         trialChoiceCompleted: users.trialChoiceCompleted,

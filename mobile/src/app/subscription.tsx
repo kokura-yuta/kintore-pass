@@ -63,9 +63,10 @@ export default function SubscriptionScreen() {
       <ScrollView contentContainerStyle={styles.content}>
         <Text style={styles.eyebrow}>PREMIUM PLAN</Text>
         <Text style={styles.title}>筋トレPAS プレミアム</Text>
-        <Text style={styles.price}>{subscription?.status === 'complimentary' ? '運営アカウント：無料' : '月額 1,000円'}</Text>
+        <Text style={styles.price}>{subscription?.status === 'operator' ? '運営アカウント：無料' : '月額 1,000円'}</Text>
         <Text style={styles.description}>記録機能はずっと無料。AIコーチを使いたい場合だけPremiumを選べます。</Text>
-        {subscription?.status !== 'complimentary' ? <Text style={styles.renewalNote}>1か月ごとに自動更新されます。解約はiPhoneのサブスクリプション管理からいつでも行えます。</Text> : null}
+        {subscription?.status !== 'operator' ? <Text style={styles.renewalNote}>1か月ごとに自動更新されます。解約はiPhoneのサブスクリプション管理からいつでも行えます。</Text> : null}
+        <Text style={styles.trialCapacity}>7日間無料体験は先着20人限定です。</Text>
 
         <View style={styles.card}>
           <Text style={styles.item}>・AIチャットを1日30回まで</Text>
@@ -80,6 +81,7 @@ export default function SubscriptionScreen() {
           <View style={styles.choiceCard}>
             <Text style={styles.activeTitle}>利用方法を選んでください</Text>
             <Text style={styles.preparationText}>無料体験は任意で、開始しても7日後に自動課金されません。</Text>
+            <Text style={styles.remainingText}>残り {subscription.trial.remainingSlots}枠</Text>
             <Pressable accessibilityRole="button" disabled={isUpdatingTrial} onPress={() => { void chooseTrial('start'); }} style={styles.trialButton}>
               {isUpdatingTrial ? <ActivityIndicator color="#050A0F" /> : <Text style={styles.trialButtonText}>7日間無料でPremiumを試す</Text>}
             </Pressable>
@@ -89,10 +91,20 @@ export default function SubscriptionScreen() {
               </Pressable>
             ) : null}
           </View>
+        ) : subscription?.accessLevel === 'free' && !subscription.trial.used && subscription.trial.remainingSlots === 0 ? (
+          <View style={styles.preparationCard}>
+            <Text style={styles.preparationTitle}>無料体験の受付は終了しました</Text>
+            <Text style={styles.preparationText}>先着20人に達したため、Freeプランまたは月額Premiumをご利用ください。</Text>
+            {onboarding === '1' ? (
+              <Pressable accessibilityRole="button" disabled={isUpdatingTrial} onPress={() => { void chooseTrial('skip'); }} style={styles.freeButton}>
+                <Text style={styles.backText}>無料プランで始める</Text>
+              </Pressable>
+            ) : null}
+          </View>
         ) : null}
 
         {subscription?.plan === 'premium' ? (
-          <View style={styles.activeCard}><Text style={styles.activeTitle}>{subscription.status === 'complimentary' ? '運営用Premiumを無料で利用中' : 'プレミアムプラン利用中'}</Text><Text style={styles.preparationText}>{subscription.status === 'complimentary' ? '購入は不要です。通常のPremiumと同じ利用回数で使えます。' : `有効期限：${subscription.expiresAt ? new Date(subscription.expiresAt).toLocaleDateString('ja-JP') : '確認中'}`}</Text></View>
+          <View style={styles.activeCard}><Text style={styles.activeTitle}>{subscription.status === 'operator' ? '運営用Premiumを無料で利用中' : 'プレミアムプラン利用中'}</Text><Text style={styles.preparationText}>{subscription.status === 'operator' ? '購入は不要です。通常のPremiumと同じ利用回数で使えます。' : `有効期限：${subscription.expiresAt ? new Date(subscription.expiresAt).toLocaleDateString('ja-JP') : '確認中'}`}</Text></View>
         ) : subscription?.accessLevel === 'trial' && subscription.trial.endsAt ? (
           <View style={styles.activeCard}><Text style={styles.activeTitle}>7日間の無料体験中</Text><Text style={styles.preparationText}>体験終了日：{new Date(subscription.trial.endsAt).toLocaleDateString('ja-JP')}</Text><Text style={styles.preparationText}>終了後はFreeへ戻り、自動課金はされません。記録データはそのまま残ります。</Text></View>
         ) : subscription?.trial.eligibleToStart ? null : token && subscription && appleProductId ? (
@@ -127,6 +139,7 @@ const styles = StyleSheet.create({
   price: { marginTop: 18, color: '#00D4FF', fontSize: 26, fontWeight: '800' },
   description: { marginTop: 12, color: '#A7B5BD', fontSize: 13, lineHeight: 22 },
   renewalNote: { marginTop: 8, color: '#80929C', fontSize: 10, lineHeight: 17 },
+  trialCapacity: { marginTop: 10, color: '#FFD46B', fontSize: 11, fontWeight: '800' },
   card: { marginTop: 24, padding: 19, gap: 13, borderWidth: 1, borderColor: '#1E6076', borderRadius: 18, backgroundColor: '#081821' },
   item: { color: '#E9F1F4', fontSize: 13, lineHeight: 21 },
   note: { marginTop: 4, color: '#80929C', fontSize: 10, lineHeight: 17 },
@@ -138,6 +151,7 @@ const styles = StyleSheet.create({
   choiceCard: { marginTop: 16, padding: 17, borderWidth: 1, borderColor: '#00D4FF', borderRadius: 15, backgroundColor: '#081821' },
   trialButton: { minHeight: 52, alignItems: 'center', justifyContent: 'center', marginTop: 16, borderRadius: 14, backgroundColor: '#00D4FF' },
   trialButtonText: { color: '#050A0F', fontSize: 13, fontWeight: '800' },
+  remainingText: { marginTop: 8, color: '#FFD46B', fontSize: 12, fontWeight: '800' },
   freeButton: { minHeight: 48, alignItems: 'center', justifyContent: 'center', marginTop: 10, borderWidth: 1, borderColor: '#00D4FF', borderRadius: 14 },
   retryButton: { minHeight: 44, alignItems: 'center', justifyContent: 'center', marginTop: 12, borderWidth: 1, borderColor: '#00D4FF', borderRadius: 12 },
   legalRow: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', marginTop: 20 },

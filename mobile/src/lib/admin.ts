@@ -36,6 +36,31 @@ export type AdminDashboardData = {
       label: string;
     })[];
   };
+  analytics: {
+    users: {
+      total: number;
+      activeThisMonth: number;
+      newThisMonth: number;
+      onboardingCompleted: number;
+      access: {
+        operator: number;
+        premium: number;
+        trial: number;
+        free: number;
+      };
+    };
+    audience: {
+      byGoalBodyType: { name: string; users: number }[];
+      byTrainingLocation: { name: string; users: number }[];
+      byTrainingStyle: { name: string; users: number }[];
+      byWeeklyTrainingDays: { name: string; users: number }[];
+    };
+    featureUsage: {
+      name: string;
+      month: number;
+      total: number;
+    }[];
+  };
   neon: {
     plan: string;
     databaseBytes: number;

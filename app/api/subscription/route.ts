@@ -9,6 +9,7 @@ import {
 } from "@/app/lib/subscriptions/entitlements";
 import { getDb } from "@/db";
 import { users } from "@/db/schema";
+import { getTrialAvailability } from "@/app/lib/subscriptions/trialSlots";
 
 export async function GET(request: Request) {
   const clerkUserId = await getClerkUserId(request);
@@ -35,7 +36,10 @@ export async function GET(request: Request) {
     );
   }
 
-  const access = await getAppAccess(user.id);
+  const [access, trialAvailability] = await Promise.all([
+    getAppAccess(user.id),
+    getTrialAvailability(),
+  ]);
 
   return Response.json({
     appAccountToken: user.id,
@@ -53,7 +57,12 @@ export async function GET(request: Request) {
       choiceCompleted:
         access.trialChoiceCompleted,
       eligibleToStart:
-        !access.trialUsed && !access.isPremium,
+        !access.trialUsed &&
+        !access.isPremium &&
+        trialAvailability.available,
+      maximumUsers: trialAvailability.maximumUsers,
+      claimedUsers: trialAvailability.claimedUsers,
+      remainingSlots: trialAvailability.remainingSlots,
     },
     price: {
       amount: premiumMonthlyPriceYen,

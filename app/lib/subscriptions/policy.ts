@@ -11,6 +11,7 @@ export const premiumDailyChatLimit = 30;
 export const trialDailyMenuLimit = 3;
 export const premiumDailyMenuLimit = 3;
 export const trialBodyAnalysisTotalLimit = 1;
+export const trialMaximumUsers = 20;
 
 export type AppAccessLevel =
   | "free"

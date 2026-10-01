@@ -36,6 +36,48 @@ export function createAdminPreviewDashboard() {
         { userId: "preview-2", label: "テストユーザーB", calls: 64, tokens: 171000, costYen: 94 },
       ],
     },
+    analytics: {
+      users: {
+        total: 248,
+        activeThisMonth: 182,
+        newThisMonth: 31,
+        onboardingCompleted: 226,
+        access: { operator: 1, premium: 200, trial: 12, free: 35 },
+      },
+      audience: {
+        byGoalBodyType: [
+          { name: "筋肉質", users: 112 },
+          { name: "細マッチョ", users: 86 },
+          { name: "未設定", users: 50 },
+        ],
+        byTrainingLocation: [
+          { name: "gym", users: 121 },
+          { name: "home", users: 73 },
+          { name: "both", users: 35 },
+          { name: "未設定", users: 19 },
+        ],
+        byTrainingStyle: [
+          { name: "split", users: 116 },
+          { name: "full-body", users: 72 },
+          { name: "ai", users: 41 },
+          { name: "未設定", users: 19 },
+        ],
+        byWeeklyTrainingDays: [
+          { name: "3", users: 78 },
+          { name: "4", users: 61 },
+          { name: "2", users: 52 },
+          { name: "未設定", users: 57 },
+        ],
+      },
+      featureUsage: [
+        { name: "training_records", month: 940, total: 4320 },
+        { name: "weight_records", month: 1520, total: 6900 },
+        { name: "food_records", month: 2810, total: 11200 },
+        { name: "body_analyses", month: 142, total: 680 },
+        { name: "ai_menus", month: 780, total: 2900 },
+        { name: "chat_questions", month: 2200, total: 12480 },
+      ],
+    },
     neon: {
       plan: "Scale（サンプル）",
       databaseBytes: 82 * 1024 * 1024,

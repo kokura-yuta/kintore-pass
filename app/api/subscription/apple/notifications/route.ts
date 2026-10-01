@@ -1,16 +1,24 @@
-import { and, eq } from "drizzle-orm";
+import { and, count, eq, gte } from "drizzle-orm";
 import { z } from "zod";
 
 import { logServerError } from "@/app/lib/observability/serverLog";
 import {
   appleEnvironmentName,
   expectedAppleProductId,
+  sendAppleConsumptionInformation,
   verifyAppleNotification,
   verifyAppleRenewalInfo,
   verifyAppleTransaction,
 } from "@/app/lib/subscriptions/appleVerification";
+import {
+  decideAppleRefundPreference,
+  resolveAppleSubscriptionState,
+} from "@/app/lib/subscriptions/refundPolicy";
 import { getDb } from "@/db";
-import { userSubscriptions } from "@/db/schema";
+import {
+  openAiUsageRecords,
+  userSubscriptions,
+} from "@/db/schema";
 
 const notificationSchema = z.object({
   signedPayload: z.string().min(100).max(500_000),
@@ -37,6 +45,82 @@ export async function POST(request: Request) {
       return Response.json({ received: true, ignored: true });
     }
 
+    if (notification.notificationType === "CONSUMPTION_REQUEST") {
+      if (!transaction.transactionId) {
+        return Response.json({ received: true, ignored: true });
+      }
+
+      const db = getDb();
+      const owners = await db
+        .select({ userId: userSubscriptions.userId })
+        .from(userSubscriptions)
+        .where(
+          and(
+            eq(
+              userSubscriptions.originalTransactionId,
+              transaction.originalTransactionId,
+            ),
+            eq(userSubscriptions.productId, productId),
+          ),
+        )
+        .limit(1);
+      const owner = owners[0] ?? null;
+
+      if (
+        !owner ||
+        (transaction.appAccountToken &&
+          transaction.appAccountToken !== owner.userId)
+      ) {
+        return Response.json({ received: true, ignored: true });
+      }
+
+      const purchasedAtMilliseconds =
+        transaction.purchaseDate ??
+        transaction.originalPurchaseDate;
+
+      if (!purchasedAtMilliseconds) {
+        return Response.json({ received: true, ignored: true });
+      }
+
+      const usageRows = await db
+        .select({ calls: count() })
+        .from(openAiUsageRecords)
+        .where(
+          and(
+            eq(openAiUsageRecords.userId, owner.userId),
+            gte(
+              openAiUsageRecords.createdAt,
+              new Date(purchasedAtMilliseconds),
+            ),
+          ),
+        );
+      const successfulAiCalls = Number(
+        usageRows[0]?.calls ?? 0,
+      );
+      const refundPreference =
+        decideAppleRefundPreference({
+          delivered: true,
+          successfulAiCalls,
+        });
+
+      // この通知は利用者がAppleへの利用情報送信へ同意した場合に届く。
+      // 自動更新プランでは利用割合を送らず、Apple側で算出してもらう。
+      await sendAppleConsumptionInformation(
+        transaction.transactionId,
+        {
+          customerConsented: true,
+          deliveryStatus: "DELIVERED",
+          sampleContentProvided: true,
+          refundPreference,
+        },
+      );
+
+      return Response.json({
+        received: true,
+        consumptionInformationSent: true,
+      });
+    }
+
     const renewal = notification.data?.signedRenewalInfo
       ? await verifyAppleRenewalInfo(notification.data.signedRenewalInfo)
       : null;
@@ -45,16 +129,13 @@ export async function POST(request: Request) {
     const graceExpiresAt = renewal?.gracePeriodExpiresDate
       ? new Date(renewal.gracePeriodExpiresDate)
       : null;
-    const expiresAt = graceExpiresAt && graceExpiresAt > normalExpiresAt
-      ? graceExpiresAt
-      : normalExpiresAt;
-    const status = transaction.revocationDate
-      ? "revoked"
-      : graceExpiresAt && graceExpiresAt > now
-        ? "grace_period"
-        : expiresAt > now
-          ? "active"
-          : "expired";
+    const { status, expiresAt } =
+      resolveAppleSubscriptionState({
+        normalExpiresAt,
+        graceExpiresAt,
+        revoked: Boolean(transaction.revocationDate),
+        now,
+      });
 
     await getDb()
       .update(userSubscriptions)
@@ -75,6 +156,9 @@ export async function POST(request: Request) {
     return Response.json({ received: true });
   } catch (error) {
     logServerError("apple_subscription_notification_failed", error);
-    return Response.json({ error: "Apple通知を確認できませんでした。" }, { status: 400 });
+    return Response.json(
+      { error: "Apple通知を確認できませんでした。" },
+      { status: 503 },
+    );
   }
 }

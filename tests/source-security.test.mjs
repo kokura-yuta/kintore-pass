@@ -184,8 +184,7 @@ test("運営ダッシュボードはDB集計前に管理者権限を確認する
       adminRoute.indexOf("const db = getDb()"),
     "管理者確認はDB集計より前に実行する必要があります",
   );
-  assert.match(adminGuard, /await hasOwnerAccess\(clerkUserId\)/);
-  assert.doesNotMatch(adminGuard, /ADMIN_CLERK_USER_IDS/);
+  assert.match(adminGuard, /isConfiguredAdminClerkUserId\(clerkUserId\)/);
   assert.ok(adminRoute.indexOf("if (!admin.allowed)") < adminRoute.indexOf("if (localPreview)"));
   assert.match(adminGuard, /status: 401/);
   assert.match(adminGuard, /status: 403/);
@@ -328,17 +327,27 @@ test("Freeの基本記録APIにはPremium判定を置かない", async () => {
 });
 
 test("無料体験は本人操作かつ未使用アカウントだけ開始できる", async () => {
-  const source = await readFile(
+  const routeSource = await readFile(
     path.join(
       projectRoot,
       "app/api/subscription/trial/route.ts",
     ),
     "utf8",
   );
-  assert.match(source, /getClerkUserId\(request\)/);
-  assert.match(source, /eq\(users\.trialUsed, false\)/);
-  assert.match(source, /trialUsed: true/);
-  assert.match(source, /trialChoiceCompleted: true/);
+  const slotsSource = await readFile(
+    path.join(
+      projectRoot,
+      "app/lib/subscriptions/trialSlots.ts",
+    ),
+    "utf8",
+  );
+  assert.match(routeSource, /getClerkUserId\(request\)/);
+  assert.match(routeSource, /claimTrialSlot\(/);
+  assert.match(slotsSource, /trial_used = false/);
+  assert.match(slotsSource, /for update skip locked/);
+  assert.match(slotsSource, /trial_choice_completed = true/);
+  assert.match(slotsSource, /trial_used = true/);
+  assert.match(slotsSource, /trialMaximumUsers/);
 });
 
 test("Python身体分析APIはTypeScriptバックエンドの内部秘密鍵を必須にする", async () => {
@@ -483,5 +492,27 @@ test("iOS提出設定に暗号化申告・Privacy Manifest・権限説明を含�
   assert.match(
     mobileEnvExample,
     new RegExp(`^EXPO_PUBLIC_APPLE_PREMIUM_PRODUCT_ID=${productId}$`, "m"),
+  );
+});
+
+test("Apple返金申請へ利用実績を返し、返金後は契約状態を更新する", async () => {
+  const notificationRoute = await readFile(
+    path.join(
+      projectRoot,
+      "app/api/subscription/apple/notifications/route.ts",
+    ),
+    "utf8",
+  );
+
+  assert.match(notificationRoute, /CONSUMPTION_REQUEST/);
+  assert.match(
+    notificationRoute,
+    /sendAppleConsumptionInformation/,
+  );
+  assert.match(notificationRoute, /openAiUsageRecords/);
+  assert.match(notificationRoute, /transaction\.revocationDate/);
+  assert.match(
+    notificationRoute,
+    /resolveAppleSubscriptionState/,
   );
 });

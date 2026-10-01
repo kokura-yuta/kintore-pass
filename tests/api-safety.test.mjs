@@ -43,8 +43,13 @@ import {
   trialDailyChatLimit,
   trialDailyMenuLimit,
   trialDurationDays,
+  trialMaximumUsers,
 } from "../app/lib/subscriptions/policy.ts";
 import { estimateOpenAiCostMicrosYen } from "../app/lib/admin/costConfig.ts";
+import {
+  decideAppleRefundPreference,
+  resolveAppleSubscriptionState,
+} from "../app/lib/subscriptions/refundPolicy.ts";
 
 const validTrainingRecord = {
   performedAt: "2026-08-30T03:00:00.000Z",
@@ -68,6 +73,79 @@ const validTrainingRecord = {
     },
   ],
 };
+
+test("Apple返金希望は提供失敗・未使用・利用済みを区別する", () => {
+  assert.equal(
+    decideAppleRefundPreference({
+      delivered: false,
+      successfulAiCalls: 10,
+    }),
+    "GRANT_FULL",
+  );
+  assert.equal(
+    decideAppleRefundPreference({
+      delivered: true,
+      successfulAiCalls: 0,
+    }),
+    "GRANT_FULL",
+  );
+  assert.equal(
+    decideAppleRefundPreference({
+      delivered: true,
+      successfulAiCalls: 1,
+    }),
+    "DECLINE",
+  );
+  assert.equal(
+    decideAppleRefundPreference({
+      delivered: true,
+      successfulAiCalls: 1,
+      declineUsageThreshold: 2,
+    }),
+    "GRANT_PRORATED",
+  );
+});
+
+test("Apple通知は更新・解約満了・猶予・返金の状態を区別する", () => {
+  const now = new Date("2026-09-28T00:00:00.000Z");
+  const future = new Date("2026-10-28T00:00:00.000Z");
+  const past = new Date("2026-09-27T00:00:00.000Z");
+  const grace = new Date("2026-10-05T00:00:00.000Z");
+
+  assert.equal(
+    resolveAppleSubscriptionState({
+      normalExpiresAt: future,
+      revoked: false,
+      now,
+    }).status,
+    "active",
+  );
+  assert.equal(
+    resolveAppleSubscriptionState({
+      normalExpiresAt: past,
+      revoked: false,
+      now,
+    }).status,
+    "expired",
+  );
+  assert.deepEqual(
+    resolveAppleSubscriptionState({
+      normalExpiresAt: past,
+      graceExpiresAt: grace,
+      revoked: false,
+      now,
+    }),
+    { status: "grace_period", expiresAt: grace },
+  );
+  assert.equal(
+    resolveAppleSubscriptionState({
+      normalExpiresAt: future,
+      revoked: true,
+      now,
+    }).status,
+    "revoked",
+  );
+});
 
 test("OpenAI料金をinputとoutputの別単価から100万分の1円単位で計算する", () => {
   assert.equal(
@@ -532,6 +610,7 @@ test("AIチャットのTool回数と回答文字数に上限がある", () => {
 test("7日間無料体験と月額1000円の有料上限を判定する", async () => {
   assert.equal(premiumMonthlyPriceYen, 1000);
   assert.equal(trialDurationDays, 7);
+  assert.equal(trialMaximumUsers, 20);
   assert.equal(trialDailyChatLimit, 30);
   assert.equal(premiumDailyChatLimit, 30);
   assert.equal(trialDailyMenuLimit, 3);

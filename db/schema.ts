@@ -81,6 +81,34 @@ export const users = pgTable("users", {
     .defaultNow(),
 });
 
+// 先着順の無料体験枠を重複なく確保するための固定20枠
+// userIdがnullなら未使用、値が入っていればその利用者が枠を取得済み
+export const premiumTrialSlots = pgTable(
+  "premium_trial_slots",
+  {
+    slotNumber: integer("slot_number").primaryKey(),
+
+    userId: uuid("user_id")
+      .unique()
+      .references(() => users.id, {
+        onDelete: "set null",
+      }),
+
+    claimedAt: timestamp("claimed_at", {
+      withTimezone: true,
+    }),
+  },
+  (table) => [
+    index("premium_trial_slots_user_idx").on(
+      table.userId,
+    ),
+    check(
+      "premium_trial_slots_number_check",
+      sql`${table.slotNumber} >= 1 and ${table.slotNumber} <= 20`,
+    ),
+  ],
+);
+
 // App Storeで購入した月額プランの現在状態をユーザーごとに保存するテーブル
 // 購入情報はフロントの自己申告を信用せず、Appleの署名検証後だけ更新する
 export const userSubscriptions = pgTable(

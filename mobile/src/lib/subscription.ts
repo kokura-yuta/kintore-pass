@@ -15,6 +15,9 @@ export type SubscriptionStatus = {
     used: boolean;
     choiceCompleted: boolean;
     eligibleToStart: boolean;
+    maximumUsers: number;
+    claimedUsers: number;
+    remainingSlots: number;
   };
   price: {
     amount: number;

@@ -1,12 +1,16 @@
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { z } from "zod";
 
 import { getClerkUserId } from "@/app/lib/auth/clerk-auth";
 import { logServerError } from "@/app/lib/observability/serverLog";
 import {
-  getPremiumAccess,
+  getAppAccess,
   trialDurationDays,
 } from "@/app/lib/subscriptions/entitlements";
+import {
+  claimTrialSlot,
+  getTrialAvailability,
+} from "@/app/lib/subscriptions/trialSlots";
 import { getDb } from "@/db";
 import { users } from "@/db/schema";
 
@@ -70,9 +74,9 @@ export async function POST(request: Request) {
       });
     }
 
-    const premium = await getPremiumAccess(user.id);
+    const access = await getAppAccess(user.id);
 
-    if (premium.isPremium) {
+    if (access.isPremium) {
       return Response.json(
         { error: "Premium契約中は無料体験を開始する必要がありません。" },
         { status: 409 },
@@ -95,29 +99,22 @@ export async function POST(request: Request) {
         trialDurationDays * 24 * 60 * 60 * 1000,
     );
 
-    // trial_used=falseを更新条件に含め、同時に2回押されても1回しか開始できない。
-    const updatedUsers = await db
-      .update(users)
-      .set({
-        trialChoiceCompleted: true,
-        trialUsed: true,
-        trialStartedAt: startedAt,
-        trialEndsAt: endsAt,
-        updatedAt: startedAt,
-      })
-      .where(
-        and(
-          eq(users.id, user.id),
-          eq(users.trialUsed, false),
-        ),
-      )
-      .returning({ id: users.id });
+    const claimedSlot = await claimTrialSlot({
+      userId: user.id,
+      startedAt,
+      endsAt,
+    });
 
-    if (updatedUsers.length === 0) {
+    if (claimedSlot === null) {
+      const availability = await getTrialAvailability();
       return Response.json(
         {
-          error: "7日間無料体験はすでに利用されています。",
-          code: "TRIAL_ALREADY_USED",
+          error: availability.available
+            ? "7日間無料体験はすでに利用されています。"
+            : "先着20人の無料体験受付は終了しました。",
+          code: availability.available
+            ? "TRIAL_ALREADY_USED"
+            : "TRIAL_CAPACITY_REACHED",
         },
         { status: 409 },
       );
@@ -128,6 +125,7 @@ export async function POST(request: Request) {
       trialStarted: true,
       startedAt,
       endsAt,
+      slotNumber: claimedSlot,
     });
   } catch (error) {
     logServerError("trial_choice_failed", error);

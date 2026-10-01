@@ -8,6 +8,7 @@ import {
   expectedAppleProductId,
   verifyAppleTransaction,
 } from "@/app/lib/subscriptions/appleVerification";
+import { resolveAppleSubscriptionState } from "@/app/lib/subscriptions/refundPolicy";
 import { getDb } from "@/db";
 import { users, userSubscriptions } from "@/db/schema";
 
@@ -95,12 +96,14 @@ export async function POST(request: Request) {
     }
 
     const now = new Date();
-    const expiresAt = new Date(transaction.expiresDate);
-    const status = transaction.revocationDate
-      ? "revoked"
-      : expiresAt > now
-        ? "active"
-        : "expired";
+    const { status, expiresAt } =
+      resolveAppleSubscriptionState({
+        normalExpiresAt: new Date(
+          transaction.expiresDate,
+        ),
+        revoked: Boolean(transaction.revocationDate),
+        now,
+      });
     const values = {
       userId: user.id,
       provider: "apple",
