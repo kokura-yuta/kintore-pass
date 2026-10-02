@@ -89,6 +89,13 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "6ede25f5-d99e-49b1-9968-271cc4ae9e21"
+      }
+    },
+    "owner": "yoshida-create"
   }
 }

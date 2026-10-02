@@ -12,10 +12,20 @@
       "distribution": "internal"
     },
     "production": {
-      "autoIncrement": true
+      "autoIncrement": true,
+      "environment": "production",
+      "env": {
+        "EXPO_PUBLIC_ENABLE_API_BYPASS": "false",
+        "EXPO_PUBLIC_SCREENSHOT_MODE": "false",
+        "EXPO_PUBLIC_APPLE_PREMIUM_PRODUCT_ID": "com.kintorepas.premium.monthly"
+      }
     }
   },
   "submit": {
-    "production": {}
+    "production": {
+      "ios": {
+        "ascAppId": "6817630881"
+      }
+    }
   }
 }

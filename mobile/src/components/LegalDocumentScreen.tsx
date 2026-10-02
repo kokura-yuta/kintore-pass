@@ -17,7 +17,7 @@ export function LegalDocumentScreen({ title, sections }: { title: string; sectio
         <Text style={styles.title}>{title}</Text>
         <Text style={styles.updated}>制定日・最終更新日：2026年9月17日</Text>
         <View style={styles.notice}>
-          <Text style={styles.noticeText}>運営者の公開名と問い合わせ先は、App Store提出前に正式情報へ更新します。</Text>
+          <Text style={styles.noticeText}>お問い合わせ：kintore505@gmail.com。運営者の公開名はApp Store提出前に更新します。</Text>
         </View>
         {sections.map((section) => (
           <View key={section.title} style={styles.section}>
