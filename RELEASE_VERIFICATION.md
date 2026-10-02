@@ -1,4 +1,4 @@
-# 公開前の確認状況（2026-10-02）
+# 公開前の確認状況（2026-10-02 更新）
 
 コード・疑似通信の検査と、実購入・実機検査を区別する。Sandbox購入・TestFlightテストは今回未実施。
 
@@ -9,6 +9,9 @@
 - 提出先App IDを6817630881に設定（Apple側の現状照合はログイン後）。
 - 問い合わせメールをkintore505@gmail.comへ反映。公開デプロイは未実施。
 - 課金API疑似通信4件、既存バックエンド安全性等40件成功。実購入を証明するテストではない。
+- 友達の最新6コミットを取り込み、AI日次制限の独立台帳を最新Neon DBへ適用済み。
+- AI日次制限の実DB同時送信テスト、全自動テスト、公開API検査に成功。
+- 最新コードをSites公開版へ反映し、DB接続・未認証保護・Apple通知の不正署名拒否を確認済み。
 
 ## 購入・復元：未完了
 
@@ -32,9 +35,10 @@ Apple公式：https://developer.apple.com/help/app-store-connect/test-in-app-pur
 
 確認範囲はローカルのみ。公開先の設定がないと断定しない。
 
-- mobileのClerk公開キーは開発用。API接続先は設定あり、開発バイパスはtrue。
-- ローカルのDB接続・Clerk秘密キー・運営者ID・Apple証明書とServer API設定は未設定。
-- app.jsonのEAS projectIdは未登録。ビルド・アップロードはしていない。
+- 公開APIのClerkはまだ開発用で、ヘルスチェックは`authenticationMode: development`。
+- 公開APIのDB接続、Clerk開発用キー、運営者IDは設定済み。Apple証明書とServer API設定は未完了。
+- app.jsonのEAS projectIdは登録済み。ただし、このMacのEAS CLIは現在ログアウト状態で、production環境変数の実確認とビルド・アップロードは未実施。
+- `musclepas-development`のmainが最新17テーブルを持つ。別プロジェクト`musclepas`のproductionは3テーブル不足のため、接続先整理が必要。
 - 公開ドメインと運営者の公開名は未確定。
 
 進める順序：
