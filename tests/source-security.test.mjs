@@ -516,3 +516,19 @@ test("Apple返金申請へ利用実績を返し、返金後は契約状態を更
     /resolveAppleSubscriptionState/,
   );
 });
+
+test("Appleの請求猶予期間もPremiumとして購入結果を返す", async () => {
+  const source = await readFile(
+    "app/api/subscription/apple/verify/route.ts",
+    "utf8",
+  );
+
+  assert.match(
+    source,
+    /status === "active" \|\| status === "grace_period"/,
+  );
+  assert.match(
+    source,
+    /plan: hasPremiumAccess \? "premium" : "free"/,
+  );
+});
