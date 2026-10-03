@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import {
   SignInButton,
+  SignOutButton,
   UserButton,
   useAuth,
 } from "@clerk/nextjs";
@@ -128,7 +129,11 @@ export default function AdminDashboardPage() {
       </SignInButton>
     </main>;
   }
-  if (error || !data) return <main className={styles.center}><p className={styles.error}>{error || "表示できません。"}</p><button onClick={() => void load()}>もう一度試す</button></main>;
+  if (error || !data) return <main className={styles.center}>
+    <p className={styles.error}>{error || "表示できません。"}</p>
+    <button onClick={() => void load()}>もう一度試す</button>
+    {isSignedIn ? <SignOutButton redirectUrl="/admin"><button>ログアウトして認証をやり直す</button></SignOutButton> : <SignInButton mode="modal"><button>管理者としてログイン</button></SignInButton>}
+  </main>;
 
   const s = data.summary;
   return <main className={styles.page}>
