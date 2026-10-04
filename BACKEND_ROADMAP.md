@@ -1,5 +1,17 @@
 # 筋トレPAS バックエンドロードマップ
 
+## 2026-10-04：EAS共同Organization移管と公開準備
+
+- [x] EASプロジェクトを`kintorepas-team`へ移管し、既存Project IDの維持を確認。
+- [x] `mobile/app.json`のownerを共同Organizationへ変更。
+- [x] EAS development・previewへClerk開発公開キー、公開API URL、商品ID、安全設定を登録。
+- [x] EAS productionへ公開API URL、商品ID、開発バイパスOFF、撮影モードOFFを登録。
+- [x] iOS Simulator用Previewビルド設定を追加し、クラウドビルドを開始。
+- [ ] 本番Clerk公開キーは、独自ドメインとProduction instance準備後に登録。
+- [ ] 実機内部配布は、Apple Developer認証と移管先用Provisioning Profileを作成後に実行。
+- [ ] Apple Server API秘密情報とServer Notificationsは、App Store Connectでキー発行後に設定。
+- [ ] 銀行・税務情報は共同口座準備後に登録。
+
 ## 2026-10-01：AI日次上限の削除・並行要求対策
 
 - [x] チャット・メニューの日次回数を履歴と独立した`ai_daily_quotas`へ移動するコードを実装。
