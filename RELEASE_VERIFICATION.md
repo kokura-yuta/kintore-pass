@@ -9,6 +9,9 @@
 - EASのproductionへ公開API URL、Apple商品ID、開発バイパスOFF、撮影モードOFFを登録済み。本番Clerk公開キーは本番インスタンス作成後に登録する。
 - iOS Simulator用`preview-simulator`プロファイルを追加し、EAS Build `6ae7b63e-baa0-4d97-a1e6-5ddfbd3ccc35`が`FINISHED`で完了。
 - 公開APIをSites v21へ更新し、ヘルスチェック・公開ページ・未認証API保護・Apple通知の不正署名拒否の4テストに合格。
+- 公開APIのClerk公開キー・秘密鍵をProductionへ統一し、`authenticationMode: production`とDB接続正常を確認。
+- Production Build 3（EAS Build `eff83ac9-20c5-4327-b4eb-4d22c672349e`）が完了。
+- Build 3をApp Store ConnectへSubmitし、Apple側でのTestFlight処理開始を確認。
 - 実機向けinternal buildは、移管先Organization用のApple配布証明書・Provisioning Profile作成が必要なため未完了。
 - Expo Doctor 21項目、mobile Lint、TypeScript型検査に合格。破壊的な`npm audit fix --force`は行っていない。
 
