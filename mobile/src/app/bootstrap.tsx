@@ -1,4 +1,4 @@
-import { useAuth, useClerk } from '@clerk/expo';
+import { useAuth } from '@clerk/expo';
 import { Redirect, useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -19,7 +19,6 @@ type Status = 'loading' | 'error' | 'onboarding-required';
 export default function BootstrapScreen() {
   const router = useRouter();
   const { isLoaded, isSignedIn, getToken } = useAuth({ treatPendingAsSignedOut: false });
-  const { signOut } = useClerk();
   const { setGoalBody, setProfile } =
     useOnboarding();
   const [status, setStatus] = useState<Status>('loading');
@@ -30,11 +29,21 @@ export default function BootstrapScreen() {
     if (!isLoaded || !isSignedIn) return;
 
     try {
-      const token = await getToken();
+      // OAuth直後はClerkのセッション作成とトークン取得にわずかな時間差が
+      // 生じることがあるため、セッションを破棄せず短時間だけ再取得する。
+      let token: string | null = null;
+      for (const waitMs of [0, 300, 900]) {
+        if (waitMs > 0) {
+          await new Promise((resolve) => setTimeout(resolve, waitMs));
+        }
+        token = await getToken();
+        if (token) break;
+      }
+
       if (!token) {
-        await signOut();
-        router.replace('/sign-in');
-        return;
+        throw new Error(
+          'ログイン情報の反映に時間がかかっています。少し待ってから、もう一度お試しください。',
+        );
       }
 
             // Neonに保存された進行状態に応じて、次に必要な画面へ移動する
@@ -95,8 +104,14 @@ export default function BootstrapScreen() {
       router.replace('/initial-analysis');
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) {
-        await signOut();
-        router.replace('/sign-in');
+        // 一時的なトークン反映遅延や公開API側の設定不一致で、正常なClerk
+        // セッションまで終了させない。Clerkが未ログインへ更新した場合だけ、
+        // 下のRedirectがログイン画面へ戻す。
+        setErrorMessage(
+          'ログイン情報をサーバーで確認できませんでした。少し待ってから、もう一度お試しください。',
+        );
+        setCanUseDevelopmentBypass(false);
+        setStatus('error');
         return;
       }
 
@@ -115,7 +130,6 @@ export default function BootstrapScreen() {
     router,
     setGoalBody,
     setProfile,
-    signOut,
   ]);
 
   useEffect(() => {
