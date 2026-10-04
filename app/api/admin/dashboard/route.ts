@@ -203,7 +203,12 @@ export async function GET(request: Request) {
     const estimatedAppleProceedsYen = revenueYen - appleFeeYen;
     const totalCostYen = appleFeeYen + openAiMonthYen + adminCostConfig.neonMonthlyCostYen + adminCostConfig.otherMonthlyCostYen;
     const profitYen = revenueYen - totalCostYen;
-    const dbSizeRaw = (databaseSizeResult as unknown as Array<{ bytes: string | number }>)[0]?.bytes ?? 0;
+    // neon-http の db.execute() は配列ではなく { rows: [...] } を返す。
+    // 集計SQLの行だけを取り出してから画面用の数値へ変換する。
+    const databaseSizeRows = databaseSizeResult.rows as Array<{
+      bytes: string | number;
+    }>;
+    const dbSizeRaw = databaseSizeRows[0]?.bytes ?? 0;
     const databaseBytes = Number(dbSizeRaw);
 
     const paidUserIds = new Set(activeRows.map((row) => row.userId));
@@ -230,10 +235,10 @@ export async function GET(request: Request) {
         audienceAccess.free += 1;
       }
     }
-    const activeUsersRows = activeUsersResult as unknown as Array<{
+    const activeUsersRows = activeUsersResult.rows as Array<{
       active_users: number | string;
     }>;
-    const featureUsageRows = featureUsageResult as unknown as Array<{
+    const featureUsageRows = featureUsageResult.rows as Array<{
       name: string;
       total: number | string;
       month: number | string;
