@@ -186,7 +186,7 @@ AI機能はトレーニングメニュー提案と一般的なフィットネス
 - [ ] Apple Developerとの実機配布用署名連携（移管先Organization用の証明書・Provisioning Profile）
 - [x] development・preview用EAS環境変数を登録
 - [ ] production用Clerk公開キーを、本番Clerkインスタンス作成後にEASへ登録
-- [x] 署名不要のiOS Simulator用EASビルド設定を追加
+- [x] 署名不要のiOS Simulator用EASビルドが完了（Build ID: `6ae7b63e-baa0-4d97-a1e6-5ddfbd3ccc35`）
 - [ ] iPhone実機用productionビルドとTestFlight提出
 - [ ] 共同口座の準備後にAppleの銀行・税務情報を確定
 

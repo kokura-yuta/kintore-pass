@@ -6,7 +6,7 @@
 - [x] `mobile/app.json`のownerを共同Organizationへ変更。
 - [x] EAS development・previewへClerk開発公開キー、公開API URL、商品ID、安全設定を登録。
 - [x] EAS productionへ公開API URL、商品ID、開発バイパスOFF、撮影モードOFFを登録。
-- [x] iOS Simulator用Previewビルド設定を追加し、クラウドビルドを開始。
+- [x] iOS Simulator用Previewクラウドビルドが完了し、移管後のEASビルド成功を確認。
 - [ ] 本番Clerk公開キーは、独自ドメインとProduction instance準備後に登録。
 - [ ] 実機内部配布は、Apple Developer認証と移管先用Provisioning Profileを作成後に実行。
 - [ ] Apple Server API秘密情報とServer Notificationsは、App Store Connectでキー発行後に設定。
