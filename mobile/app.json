@@ -11,7 +11,7 @@
     "ios": {
       "icon": "./assets/images/kintore-pas-icon-v3-1024.png",
       "bundleIdentifier": "com.kintorepas.app",
-      "buildNumber": "1",
+      "buildNumber": "5",
       "supportsTablet": false,
       "config": {
         "usesNonExemptEncryption": false
@@ -96,6 +96,6 @@
         "projectId": "6ede25f5-d99e-49b1-9968-271cc4ae9e21"
       }
     },
-    "owner": "yoshida-create"
+    "owner": "kintorepas-team"
   }
 }

@@ -236,6 +236,21 @@ test("Clerkの開発用キーと本番用キーを値を見せず判定する", 
   );
 });
 
+test("Clerk認証は設定された接続元の許可リストを検証へ渡す", async () => {
+  const source = await readFile(
+    path.join(projectRoot, "app/lib/auth/clerk-auth.ts"),
+    "utf8",
+  );
+  const envExample = await readFile(
+    path.join(projectRoot, ".env.example"),
+    "utf8",
+  );
+
+  assert.match(source, /CLERK_AUTHORIZED_PARTIES/);
+  assert.match(source, /authorizedParties\.length > 0/);
+  assert.match(envExample, /^CLERK_AUTHORIZED_PARTIES=$/m);
+});
+
 test("アカウント削除は本人再確認と確認文字を必須にする", async () => {
   const accountRoute = await readFile(
     path.join(
@@ -514,5 +529,21 @@ test("Apple返金申請へ利用実績を返し、返金後は契約状態を更
   assert.match(
     notificationRoute,
     /resolveAppleSubscriptionState/,
+  );
+});
+
+test("Appleの請求猶予期間もPremiumとして購入結果を返す", async () => {
+  const source = await readFile(
+    "app/api/subscription/apple/verify/route.ts",
+    "utf8",
+  );
+
+  assert.match(
+    source,
+    /status === "active" \|\| status === "grace_period"/,
+  );
+  assert.match(
+    source,
+    /plan: hasPremiumAccess \? "premium" : "free"/,
   );
 });

@@ -125,8 +125,11 @@ export async function POST(request: Request) {
         set: values,
       });
 
+    const hasPremiumAccess =
+      status === "active" || status === "grace_period";
+
     return Response.json({
-      plan: status === "active" ? "premium" : "free",
+      plan: hasPremiumAccess ? "premium" : "free",
       status,
       productId,
       expiresAt,

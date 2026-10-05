@@ -10,6 +10,15 @@ const publishableKey =
 const secretKey =
   process.env.CLERK_SECRET_KEY;
 
+// 本番Webから認証する場合に、Clerkトークンの発行元として許可するURLだけを列挙する。
+// Expoネイティブ通信も扱うため、未設定時は従来どおりClerkの署名検証だけを行う。
+const authorizedParties = (
+  process.env.CLERK_AUTHORIZED_PARTIES ?? ""
+)
+  .split(",")
+  .map((value) => value.trim())
+  .filter(Boolean);
+
 // 設定済みのキーを使ってトークン検証を行うClerkクライアントを作る
 const clerkClient = publishableKey && secretKey
   ? createClerkClient({ publishableKey, secretKey })
@@ -25,6 +34,9 @@ export async function getClerkSessionAuth(
       request,
       {
         acceptsToken: "session_token",
+        ...(authorizedParties.length > 0
+          ? { authorizedParties }
+          : {}),
       },
     );
 

@@ -1,6 +1,6 @@
 # 筋トレPAS App Store提出準備
 
-更新日：2026-10-02
+更新日：2026-10-04
 
 この文書はApp Store Connectへ入力する内容の下書きです。`未確定`の項目は、提出前に運営メンバーで決定してください。
 
@@ -181,9 +181,13 @@ AI機能はトレーニングメニュー提案と一般的なフィットネス
 - [x] 写真ライブラリ・カメラの利用目的に身体分析を明記
 - [x] EAS Buildのdevelopment・preview・productionプロファイルを追加
 - [x] Expo Doctor 21項目すべてに合格
-- [ ] EASプロジェクトの作成・Apple Developerとの署名連携
-- [ ] EAS CLIへExpoアカウントでログイン（2026年9月27日時点では未ログイン）
-- [ ] iPhone実機用productionビルドとTestFlight提出
+- [x] 既存EASプロジェクトを`kintorepas-team`へ移管し、Project IDが維持されていることを確認
+- [x] EAS CLIへ`yuuta.syukatu218`でログインし、共同OrganizationのOwner権限を確認
+- [ ] Apple Developerとの実機配布用署名連携（移管先Organization用の証明書・Provisioning Profile）
+- [x] development・preview用EAS環境変数を登録
+- [x] production用Clerk公開キーをEASへ登録
+- [x] 署名不要のiOS Simulator用EASビルドが完了（Build ID: `6ae7b63e-baa0-4d97-a1e6-5ddfbd3ccc35`）
+- [x] Clerk Production対応済みBuild 3を作成し、TestFlightへ提出
 - [ ] 共同口座の準備後にAppleの銀行・税務情報を確定
 
 ## 13. 購入・更新・解約・返金の準備状況

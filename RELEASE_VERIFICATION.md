@@ -1,4 +1,19 @@
-# 公開前の確認状況（2026-10-02）
+# 公開前の確認状況（2026-10-04 更新）
+
+## 2026-10-04 Expo / EAS移管後の確認
+
+- 既存EASプロジェクトを`yoshida-create`から`kintorepas-team`へ移管済み。
+- EAS Project ID `6ede25f5-d99e-49b1-9968-271cc4ae9e21`が維持されていることを確認済み。
+- `mobile/app.json`の`owner`を`kintorepas-team`へ変更し、EAS CLIからプロジェクト情報を取得できることを確認済み。
+- EASのdevelopment・previewへ開発用Clerk公開キー、公開API URL、Apple商品ID、開発バイパスOFF、撮影モードOFFを登録済み。
+- EASのproductionへ公開API URL、Apple商品ID、開発バイパスOFF、撮影モードOFFを登録済み。本番Clerk公開キーは本番インスタンス作成後に登録する。
+- iOS Simulator用`preview-simulator`プロファイルを追加し、EAS Build `6ae7b63e-baa0-4d97-a1e6-5ddfbd3ccc35`が`FINISHED`で完了。
+- 公開APIをSites v21へ更新し、ヘルスチェック・公開ページ・未認証API保護・Apple通知の不正署名拒否の4テストに合格。
+- 公開APIのClerk公開キー・秘密鍵をProductionへ統一し、`authenticationMode: production`とDB接続正常を確認。
+- Production Build 3（EAS Build `eff83ac9-20c5-4327-b4eb-4d22c672349e`）が完了。
+- Build 3をApp Store ConnectへSubmitし、Apple側でのTestFlight処理開始を確認。
+- 実機向けinternal buildは、移管先Organization用のApple配布証明書・Provisioning Profile作成が必要なため未完了。
+- Expo Doctor 21項目、mobile Lint、TypeScript型検査に合格。破壊的な`npm audit fix --force`は行っていない。
 
 コード・疑似通信の検査と、実購入・実機検査を区別する。Sandbox購入・TestFlightテストは今回未実施。
 
@@ -9,6 +24,9 @@
 - 提出先App IDを6817630881に設定（Apple側の現状照合はログイン後）。
 - 問い合わせメールをkintore505@gmail.comへ反映。公開デプロイは未実施。
 - 課金API疑似通信4件、既存バックエンド安全性等40件成功。実購入を証明するテストではない。
+- 友達の最新6コミットを取り込み、AI日次制限の独立台帳を最新Neon DBへ適用済み。
+- AI日次制限の実DB同時送信テスト、全自動テスト、公開API検査に成功。
+- 最新コードをSites公開版へ反映し、DB接続・未認証保護・Apple通知の不正署名拒否を確認済み。
 
 ## 購入・復元：未完了
 
@@ -32,9 +50,10 @@ Apple公式：https://developer.apple.com/help/app-store-connect/test-in-app-pur
 
 確認範囲はローカルのみ。公開先の設定がないと断定しない。
 
-- mobileのClerk公開キーは開発用。API接続先は設定あり、開発バイパスはtrue。
-- ローカルのDB接続・Clerk秘密キー・運営者ID・Apple証明書とServer API設定は未設定。
-- app.jsonのEAS projectIdは未登録。ビルド・アップロードはしていない。
+- 公開APIのClerkはまだ開発用で、ヘルスチェックは`authenticationMode: development`。
+- 公開APIのDB接続、Clerk開発用キー、運営者IDは設定済み。Apple証明書とServer API設定は未完了。
+- app.jsonのEAS projectIdと共同Organizationへの移管は完了し、このMacのEAS CLIからアクセスできる。productionの公開値は登録済みだが、本番Clerk公開キーは未登録。
+- `musclepas-development`のmainが最新17テーブルを持つ。別プロジェクト`musclepas`のproductionは3テーブル不足のため、接続先整理が必要。
 - 公開ドメインと運営者の公開名は未確定。
 
 進める順序：
