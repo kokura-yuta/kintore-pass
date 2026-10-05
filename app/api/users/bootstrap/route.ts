@@ -14,6 +14,29 @@ import { getDb } from "@/db";
 import { users } from "@/db/schema";
 import { logServerError } from "@/app/lib/observability/serverLog";
 import { getAppAccess } from "@/app/lib/subscriptions/entitlements";
+import { isConfiguredAdminClerkUserId } from "@/app/lib/admin/ownerPolicy";
+
+// 課金用マイグレーションが反映途中でも、ログイン直後の基本画面を止めない。
+// AI機能は別API側で再度権限を確認するため、一般ユーザーを誤ってPremiumにはしない。
+function fallbackAccess(clerkUserId: string) {
+  const isAdmin = isConfiguredAdminClerkUserId(clerkUserId);
+  return {
+    accessLevel: isAdmin ? "premium" as const : "free" as const,
+    canUseAiFeatures: isAdmin,
+    trialChoiceCompleted: isAdmin,
+    trialUsed: false,
+    trialEndsAt: null,
+  };
+}
+
+async function getBootstrapAccess(userId: string, clerkUserId: string) {
+  try {
+    return await getAppAccess(userId);
+  } catch (error) {
+    logServerError("user_bootstrap_access_fallback", error);
+    return fallbackAccess(clerkUserId);
+  }
+}
 
 // POST通信を受け取り、ユーザー初期化処理を開始する場所
 export async function POST(
@@ -57,7 +80,7 @@ export async function POST(
     // 登録済みならClerkユーザーIDと初回設定の完了状態を返して処理を終了する
     if (existingUser) {
       failureStage = "existing_user_access";
-      const access = await getAppAccess(existingUser.id);
+      const access = await getBootstrapAccess(existingUser.id, clerkUserId);
 
       // 初回設定全体と各段階の進行状態をフロントエンドへ返す
       return Response.json({
@@ -127,7 +150,7 @@ export async function POST(
     // PostgreSQLから配列で返された新規ユーザーを取り出す
     const createdUser = createdUsers[0];
     failureStage = "created_user_access";
-    const access = await getAppAccess(createdUser.id);
+    const access = await getBootstrapAccess(createdUser.id, clerkUserId);
 
     // ClerkユーザーIDと初回設定の完了状態をHTTP 201で返す
     // 新規ユーザーの初回設定状態をフロントエンドへ返す
