@@ -121,10 +121,26 @@ export async function verifyAppleTransaction(
 export async function verifyAppleNotification(
   signedPayload: string,
 ): Promise<ResponseBodyV2DecodedPayload> {
-  const verifier = await createVerifier();
-  return verifier.verifyAndDecodeNotification(
-    signedPayload,
-  );
+  let verifier: Awaited<ReturnType<typeof createVerifier>>;
+  try {
+    verifier = await createVerifier();
+  } catch (cause) {
+    throw Object.assign(new Error("Apple verifier setup failed", { cause }), {
+      code: "APPLE_VERIFIER_SETUP_FAILED",
+    });
+  }
+  try {
+    return await verifier.verifyAndDecodeNotification(signedPayload);
+  } catch (cause) {
+    // 本文・署名・秘密鍵はログへ渡さず、公式検証ステータスだけを残す。
+    const status = cause && typeof cause === "object" && "status" in cause
+      ? cause.status
+      : undefined;
+    const code = typeof status === "number" && Number.isInteger(status) && status >= 0 && status <= 7
+      ? `APPLE_VERIFICATION_STATUS_${status}`
+      : "APPLE_NOTIFICATION_VERIFICATION_FAILED";
+    throw Object.assign(new Error("Apple notification verification failed", { cause }), { code });
+  }
 }
 
 export async function verifyAppleRenewalInfo(
