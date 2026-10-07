@@ -21,7 +21,9 @@ function readRootCertificates() {
   );
 
   if (encodedCertificates.length === 0) {
-    throw new Error("APPLE_ROOT_CERTIFICATES_MISSING");
+    throw Object.assign(new Error("APPLE_ROOT_CERTIFICATES_MISSING"), {
+      code: "APPLE_ROOT_CERTIFICATES_MISSING",
+    });
   }
 
   return encodedCertificates.map((value) =>
@@ -38,8 +40,15 @@ function configuredEnvironmentName() {
 async function createVerifier() {
   // Apple公式ライブラリは読込時に乱数を作るため、
   // Cloudflare Workerのグローバル領域ではなく、リクエスト中に遅延読込する。
-  const { Environment, SignedDataVerifier } =
-    await import("@apple/app-store-server-library");
+  let library: typeof import("@apple/app-store-server-library");
+  try {
+    library = await import("@apple/app-store-server-library");
+  } catch (cause) {
+    throw Object.assign(new Error("Apple verifier import failed", { cause }), {
+      code: "APPLE_VERIFIER_IMPORT_FAILED",
+    });
+  }
+  const { Environment, SignedDataVerifier } = library;
   const environment =
     configuredEnvironmentName() === "production"
       ? Environment.PRODUCTION
@@ -56,13 +65,14 @@ async function createVerifier() {
     throw new Error("APPLE_APP_ID_MISSING");
   }
 
-  return new SignedDataVerifier(
-    readRootCertificates(),
-    true,
-    environment,
-    bundleId,
-    appAppleId,
-  );
+  const certificates = readRootCertificates();
+  try {
+    return new SignedDataVerifier(certificates, true, environment, bundleId, appAppleId);
+  } catch (cause) {
+    throw Object.assign(new Error("Apple verifier construction failed", { cause }), {
+      code: "APPLE_VERIFIER_CONSTRUCTION_FAILED",
+    });
+  }
 }
 
 function requiredServerApiSetting(
@@ -125,8 +135,12 @@ export async function verifyAppleNotification(
   try {
     verifier = await createVerifier();
   } catch (cause) {
+    const setupCode = cause && typeof cause === "object" && "code" in cause
+      ? cause.code : undefined;
+    const code = ["APPLE_ROOT_CERTIFICATES_MISSING", "APPLE_VERIFIER_IMPORT_FAILED", "APPLE_VERIFIER_CONSTRUCTION_FAILED"].includes(String(setupCode))
+      ? String(setupCode) : "APPLE_VERIFIER_SETUP_FAILED";
     throw Object.assign(new Error("Apple verifier setup failed", { cause }), {
-      code: "APPLE_VERIFIER_SETUP_FAILED",
+      code,
     });
   }
   try {
