@@ -42,7 +42,7 @@ async function createVerifier() {
   // Cloudflare Workerのグローバル領域ではなく、リクエスト中に遅延読込する。
   let library: typeof import("@apple/app-store-server-library");
   try {
-    library = await import("@apple/app-store-server-library");
+    library = await loadAppleLibrary();
   } catch (cause) {
     throw Object.assign(new Error("Apple verifier import failed", { cause }), {
       code: "APPLE_VERIFIER_IMPORT_FAILED",
@@ -75,6 +75,18 @@ async function createVerifier() {
   }
 }
 
+async function loadAppleLibrary() {
+  const imported = await import("@apple/app-store-server-library");
+  // The Worker build exports the official SDK's unchanged factory, not its
+  // eagerly initialized result. Node/dev builds keep the ordinary SDK export.
+  const wrapper = imported.default as unknown as {
+    __loadAppleServerLibrary?: () => typeof imported;
+  } | undefined;
+  return wrapper?.__loadAppleServerLibrary
+    ? wrapper.__loadAppleServerLibrary()
+    : imported;
+}
+
 function requiredServerApiSetting(
   name:
     | "APPLE_IAP_ISSUER_ID"
@@ -94,7 +106,7 @@ async function createServerApiClient() {
   const {
     AppStoreServerAPIClient,
     Environment,
-  } = await import("@apple/app-store-server-library");
+  } = await loadAppleLibrary();
   const environment =
     configuredEnvironmentName() === "production"
       ? Environment.PRODUCTION
