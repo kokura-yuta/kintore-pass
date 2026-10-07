@@ -1,4 +1,5 @@
 import type { Plugin } from "vite";
+import { fileURLToPath } from "node:url";
 
 // Workerd evaluates dynamic-import modules outside request context as well.
 // Defer the SDK's CommonJS factory (including jsrsasign entropy initialization)
@@ -6,8 +7,14 @@ import type { Plugin } from "vite";
 export function appleLibraryWorker(): Plugin {
   return {
     name: "apple-library-request-initialization",
-    enforce: "post",
+    enforce: "pre",
     apply: "build",
+    resolveId(source, importer) {
+      if (source === "node-fetch" &&
+          importer?.includes("@apple/app-store-server-library/")) {
+        return fileURLToPath(new URL("./apple-worker-fetch.ts", import.meta.url));
+      }
+    },
     generateBundle(_options, bundle) {
       for (const output of Object.values(bundle)) {
         if (output.type !== "chunk" ||
