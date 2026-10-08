@@ -82,9 +82,9 @@ export default function BootstrapScreen() {
         }
       }
 
-      // 初回設定全体が完了済みならホームへ移動する
+      // 初回設定全体が完了済みなら無料で使える記録画面へ移動する
       if (data.onboardingCompleted) {
-        router.replace('/home');
+        router.replace('/training');
         return;
       }
 

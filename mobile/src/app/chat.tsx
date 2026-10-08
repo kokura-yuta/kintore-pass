@@ -1,4 +1,5 @@
 import { useAuth } from '@clerk/expo';
+import { PremiumScreen } from '@/components/PremiumScreen';
 import * as Crypto from 'expo-crypto';
 import { Redirect, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
@@ -23,6 +24,10 @@ function toTimestamp(value: string) {
 }
 
 export default function ChatScreen() {
+  return <PremiumScreen title="AIチャット"><ChatContent /></PremiumScreen>;
+}
+
+function ChatContent() {
   const router = useRouter();
   const { getToken, isLoaded, isSignedIn } = useAuth({ treatPendingAsSignedOut: false });
   const {

@@ -1,4 +1,5 @@
 import { useAuth } from '@clerk/expo';
+import { PremiumScreen } from '@/components/PremiumScreen';
 import * as Crypto from 'expo-crypto';
 import { Redirect, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
@@ -22,6 +23,10 @@ function getFirstNumber(value: string) {
 }
 
 export default function AiCoachScreen() {
+  return <PremiumScreen title="AIメニュー"><AiCoachContent /></PremiumScreen>;
+}
+
+function AiCoachContent() {
   const router = useRouter();
   const { getToken, isLoaded, isSignedIn } = useAuth({ treatPendingAsSignedOut: false });
   const { profile } = useOnboarding();
