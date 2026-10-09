@@ -15,9 +15,10 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { loginWithPassword } from '../lib/passwordSignIn';
 
 type Step = 'email' | 'code';
-type AuthMode = 'sign-in' | 'sign-up';
+type AuthMode = 'sign-in' | 'sign-up' | 'verify-device';
 type SocialProvider = 'google' | 'apple';
 
 WebBrowser.maybeCompleteAuthSession();
@@ -52,6 +53,8 @@ export default function SignInScreen() {
   const [authMode, setAuthMode] = useState<AuthMode>('sign-in');
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
+  const [loginMethod, setLoginMethod] = useState<'code' | 'password'>('code');
+  const [password, setPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [resendWaitSeconds, setResendWaitSeconds] = useState(0);
   const [socialProvider, setSocialProvider] = useState<SocialProvider | null>(null);
@@ -124,6 +127,38 @@ export default function SignInScreen() {
     }
   }
 
+  async function submitPassword() {
+    if (!isReady || !signIn || !signUp || submissionLock.current) return;
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!/^\S+@\S+\.\S+$/.test(normalizedEmail) || !password) {
+      setErrorMessage('メールアドレスとパスワードを入力してください。');
+      return;
+    }
+    submissionLock.current = true;
+    setIsSubmitting(true);
+    setErrorMessage('');
+    try {
+      await signIn.reset();
+      await signUp.reset();
+      const next = await loginWithPassword(signIn, normalizedEmail, password);
+      if (next === 'verify-device') {
+        setEmail(normalizedEmail);
+        setAuthMode('verify-device');
+        setCode('');
+        setStep('code');
+        setResendWaitSeconds(30);
+      } else {
+        router.replace('/bootstrap');
+      }
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error as ClerkErrorLike));
+    } finally {
+      setPassword('');
+      submissionLock.current = false;
+      setIsSubmitting(false);
+    }
+  }
+
   async function signInWithSocial(provider: SocialProvider) {
     if (!isReady || submissionLock.current) return;
 
@@ -167,6 +202,9 @@ export default function SignInScreen() {
     try {
       if (authMode === 'sign-up') {
         const result = await signUp.verifications.sendEmailCode();
+        if (result.error) throw result.error;
+      } else if (authMode === 'verify-device') {
+        const result = await signIn.mfa.sendEmailCode();
         if (result.error) throw result.error;
       } else {
         const result = await signIn.emailCode.sendCode();
@@ -213,7 +251,9 @@ export default function SignInScreen() {
         if (finalizeResult.error) throw finalizeResult.error;
       } else {
         // 登録済みユーザーではsignIn側でコードを確認してセッションを作成する
-        const verifyResult = await signIn.emailCode.verifyCode({ code: normalizedCode });
+        const verifyResult = authMode === 'verify-device'
+          ? await signIn.mfa.verifyEmailCode({ code: normalizedCode })
+          : await signIn.emailCode.verifyCode({ code: normalizedCode });
         if (verifyResult.error) throw verifyResult.error;
 
         if (signIn.status !== 'complete') {
@@ -271,7 +311,9 @@ export default function SignInScreen() {
           <Text style={styles.title}>{step === 'email' ? 'ログイン' : '認証コード'}</Text>
           <Text style={styles.description}>
             {step === 'email'
-              ? 'メールアドレスを入力すると、ログイン用の認証コードを送ります。'
+              ? loginMethod === 'password'
+                ? 'パスワード設定済みのアカウントでログインします。'
+                : 'メールアドレスを入力すると、ログイン用の認証コードを送ります。'
               : `${email} に届いた6桁のコードを入力してください。`}
           </Text>
 
@@ -315,7 +357,7 @@ export default function SignInScreen() {
                 inputMode="email"
                 keyboardType="email-address"
                 onChangeText={setEmail}
-                onSubmitEditing={sendCode}
+                onSubmitEditing={loginMethod === 'password' ? submitPassword : sendCode}
                 placeholder="example@email.com"
                 placeholderTextColor="#657681"
                 returnKeyType="send"
@@ -340,6 +382,24 @@ export default function SignInScreen() {
               />
             )}
 
+            {step === 'email' && loginMethod === 'password' ? (
+              <TextInput
+                accessibilityLabel="パスワード"
+                autoCapitalize="none"
+                autoCorrect={false}
+                autoComplete="current-password"
+                textContentType="password"
+                secureTextEntry
+                editable={!isSubmitting}
+                onChangeText={setPassword}
+                onSubmitEditing={submitPassword}
+                placeholder="パスワード"
+                placeholderTextColor="#657681"
+                style={[styles.input, { marginTop: 12 }]}
+                value={password}
+              />
+            ) : null}
+
             {errorMessage ? <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.error}>{errorMessage}</Text> : null}
 
             {Platform.OS === 'web' ? (
@@ -352,10 +412,10 @@ export default function SignInScreen() {
 
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel={step === 'email' ? '認証コードを送る' : 'ログインする'}
+              accessibilityLabel={step === 'email' && loginMethod === 'code' ? '認証コードを送る' : 'ログインする'}
               accessibilityState={{ disabled: !isReady || isSubmitting, busy: isSubmitting }}
               disabled={!isReady || isSubmitting}
-              onPress={step === 'email' ? sendCode : verifyCode}
+              onPress={step === 'email' ? loginMethod === 'password' ? submitPassword : sendCode : verifyCode}
               style={({ pressed }) => [
                 styles.primaryButton,
                 (!isReady || isSubmitting) && styles.disabledButton,
@@ -366,10 +426,23 @@ export default function SignInScreen() {
                 <ActivityIndicator color="#050A0F" />
               ) : (
                 <Text style={styles.primaryButtonText}>
-                  {step === 'email' ? '認証コードを送る' : 'ログインする'}
+                  {step === 'email' && loginMethod === 'code' ? '認証コードを送る' : 'ログインする'}
                 </Text>
               )}
             </Pressable>
+
+            {step === 'email' ? (
+              <Pressable accessibilityRole="button" disabled={isSubmitting} style={styles.textButton}
+                onPress={() => {
+                  setLoginMethod(loginMethod === 'code' ? 'password' : 'code');
+                  setPassword('');
+                  setErrorMessage('');
+                }}>
+                <Text style={styles.textButtonLabel}>
+                  {loginMethod === 'code' ? 'パスワードでログイン' : 'メールコードでログイン・新規登録'}
+                </Text>
+              </Pressable>
+            ) : null}
 
             {step === 'code' ? (
               <View style={styles.codeActions}>
@@ -391,7 +464,9 @@ export default function SignInScreen() {
             ) : null}
           </View>
 
-            <Text style={styles.note}>初めての方は認証後にアカウントが作成されます。</Text>
+            <Text style={styles.note}>{loginMethod === 'password'
+              ? 'パスワード未設定・お忘れの方はメールコードでログインしてください。新しい端末では追加の本人確認を行う場合があります。'
+              : '初めての方は認証後にアカウントが作成されます。'}</Text>
           </ScrollView>
         </KeyboardAvoidingView>
       </SafeAreaView>

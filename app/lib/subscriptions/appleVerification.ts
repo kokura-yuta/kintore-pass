@@ -21,7 +21,9 @@ function readRootCertificates() {
   );
 
   if (encodedCertificates.length === 0) {
-    throw new Error("APPLE_ROOT_CERTIFICATES_MISSING");
+    throw Object.assign(new Error("APPLE_ROOT_CERTIFICATES_MISSING"), {
+      code: "APPLE_ROOT_CERTIFICATES_MISSING",
+    });
   }
 
   return encodedCertificates.map((value) =>
@@ -38,8 +40,15 @@ function configuredEnvironmentName() {
 async function createVerifier() {
   // Apple公式ライブラリは読込時に乱数を作るため、
   // Cloudflare Workerのグローバル領域ではなく、リクエスト中に遅延読込する。
-  const { Environment, SignedDataVerifier } =
-    await import("@apple/app-store-server-library");
+  let library: typeof import("@apple/app-store-server-library");
+  try {
+    library = await loadAppleLibrary();
+  } catch (cause) {
+    throw Object.assign(new Error("Apple verifier import failed", { cause }), {
+      code: "APPLE_VERIFIER_IMPORT_FAILED",
+    });
+  }
+  const { Environment, SignedDataVerifier } = library;
   const environment =
     configuredEnvironmentName() === "production"
       ? Environment.PRODUCTION
@@ -56,13 +65,26 @@ async function createVerifier() {
     throw new Error("APPLE_APP_ID_MISSING");
   }
 
-  return new SignedDataVerifier(
-    readRootCertificates(),
-    true,
-    environment,
-    bundleId,
-    appAppleId,
-  );
+  const certificates = readRootCertificates();
+  try {
+    return new SignedDataVerifier(certificates, true, environment, bundleId, appAppleId);
+  } catch (cause) {
+    throw Object.assign(new Error("Apple verifier construction failed", { cause }), {
+      code: "APPLE_VERIFIER_CONSTRUCTION_FAILED",
+    });
+  }
+}
+
+async function loadAppleLibrary() {
+  const imported = await import("@apple/app-store-server-library");
+  // The Worker build exports the official SDK's unchanged factory, not its
+  // eagerly initialized result. Node/dev builds keep the ordinary SDK export.
+  const wrapper = imported.default as unknown as {
+    __loadAppleServerLibrary?: () => typeof imported;
+  } | undefined;
+  return wrapper?.__loadAppleServerLibrary
+    ? wrapper.__loadAppleServerLibrary()
+    : imported;
 }
 
 function requiredServerApiSetting(
@@ -84,7 +106,7 @@ async function createServerApiClient() {
   const {
     AppStoreServerAPIClient,
     Environment,
-  } = await import("@apple/app-store-server-library");
+  } = await loadAppleLibrary();
   const environment =
     configuredEnvironmentName() === "production"
       ? Environment.PRODUCTION
@@ -121,10 +143,30 @@ export async function verifyAppleTransaction(
 export async function verifyAppleNotification(
   signedPayload: string,
 ): Promise<ResponseBodyV2DecodedPayload> {
-  const verifier = await createVerifier();
-  return verifier.verifyAndDecodeNotification(
-    signedPayload,
-  );
+  let verifier: Awaited<ReturnType<typeof createVerifier>>;
+  try {
+    verifier = await createVerifier();
+  } catch (cause) {
+    const setupCode = cause && typeof cause === "object" && "code" in cause
+      ? cause.code : undefined;
+    const code = ["APPLE_ROOT_CERTIFICATES_MISSING", "APPLE_VERIFIER_IMPORT_FAILED", "APPLE_VERIFIER_CONSTRUCTION_FAILED"].includes(String(setupCode))
+      ? String(setupCode) : "APPLE_VERIFIER_SETUP_FAILED";
+    throw Object.assign(new Error("Apple verifier setup failed", { cause }), {
+      code,
+    });
+  }
+  try {
+    return await verifier.verifyAndDecodeNotification(signedPayload);
+  } catch (cause) {
+    // 本文・署名・秘密鍵はログへ渡さず、公式検証ステータスだけを残す。
+    const status = cause && typeof cause === "object" && "status" in cause
+      ? cause.status
+      : undefined;
+    const code = typeof status === "number" && Number.isInteger(status) && status >= 0 && status <= 7
+      ? `APPLE_VERIFICATION_STATUS_${status}`
+      : "APPLE_NOTIFICATION_VERIFICATION_FAILED";
+    throw Object.assign(new Error("Apple notification verification failed", { cause }), { code });
+  }
 }
 
 export async function verifyAppleRenewalInfo(
