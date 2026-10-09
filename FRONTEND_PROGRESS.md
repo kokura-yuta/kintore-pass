@@ -6,6 +6,7 @@
 - EASの本番環境変数を使用し、開発バイパス・スクショモードはfalse。個人情報を含む未追跡スクショ・動画はビルド元に含めない。
 - 検証：mobile API25件、プラン7件成功。mobile型チェック成功。既存バックエンド集計・認可・DB実通信検証結果は前項とRETENTION_ANALYTICS.md参照。
 - ビルドID：e2c4ccc8-22f7-4529-89b8-9b32d8bc9b5d。TestFlight自動送信予約：a7710d30-a8a7-4d38-8f44-830559c397ef。
+- 完了：EASのBuild 9はFINISHED、Appleへの送信はSucceeded（10月10日1:30 JST）を確認。App Store Connectは再ログインが必要なため、Apple処理後の配布可能表示・iPhone更新と実機動作は未確認。
 - バックエンド依存：利用日API・管理集計API・0018は反映済み。旧Build 8には今回の画面・アプリ利用計測はない。
 - 次：ビルド・Apple処理完了を確認後、TestFlightで9へ更新してログイン、管理データ、目標保存、利用計測を実機確認。審査提出・一般公開は行わない。
 
