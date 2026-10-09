@@ -1,0 +1,6 @@
+.table { overflow-x: auto; margin: 18px 0; }
+.table table { border-collapse: collapse; min-width: 1000px; width: 100%; }
+.table th,.table td { padding: 12px; border-bottom: 1px solid #203441; text-align: left; font-size: 13px; }
+.table button { background: transparent; color: #73e7ff; border: 1px solid #203441; border-radius: 8px; padding: 8px; cursor: pointer; overflow-wrap: anywhere; }
+.pair { display: flex; align-items: end; gap: 4px; height: 140px; }
+.pair div { width: 16px; border-radius: 4px 4px 0 0; }

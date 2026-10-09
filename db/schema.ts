@@ -82,6 +82,13 @@ export const users = pgTable("users", {
     .defaultNow(),
 });
 
+// アプリ利用日のみを保存。写真・会話・メール・端末識別子は保存しない。
+export const appUsageDays = pgTable('app_usage_days', {
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  activityDate: date('activity_date').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [primaryKey({ columns: [table.userId, table.activityDate] }), index('app_usage_days_activity_date_idx').on(table.activityDate)]);
+
 // 先着順の無料体験枠を重複なく確保するための固定20枠
 // userIdがnullなら未使用、値が入っていればその利用者が枠を取得済み
 export const premiumTrialSlots = pgTable(

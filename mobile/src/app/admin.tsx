@@ -11,6 +11,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { AdminRetention } from '@/components/AdminRetention';
 
 import {
   type AdminDashboardData,
@@ -130,6 +131,7 @@ export default function AdminScreen() {
               {new Date(data.generatedAt).toLocaleString('ja-JP')} 時点
             </Text>
 
+            <AdminRetention key={data.generatedAt} compact />
             {data.warnings.length > 0 ? (
               <View style={styles.warningCard}>
                 <Text style={styles.warningTitle}>コスト警告</Text>

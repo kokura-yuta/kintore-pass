@@ -31,7 +31,7 @@ const trainingStyleOptions: { value: TrainingStyle; label: string }[] = [
   { value: 'ai', label: 'AIにおまかせ' },
 ];
 
-type Errors = Partial<Record<'heightCm' | 'weightKg' | 'bodyFatPercentage' | 'trainingStyle', string>>;
+type Errors = Partial<Record<'heightCm' | 'weightKg' | 'bodyFatPercentage' | 'trainingStyle' | 'weeklyTrainingDays', string>>;
 
 export default function MyPageScreen() {
   const router = useRouter();
@@ -166,6 +166,7 @@ export default function MyPageScreen() {
     else if (weight < 30 || weight > 300) nextErrors.weightKg = '30〜300kgで入力してください。';
     if (form.bodyFatPercentage && (bodyFat < 2 || bodyFat > 70)) nextErrors.bodyFatPercentage = '2〜70%で入力してください。';
     if (!form.trainingStyle) nextErrors.trainingStyle = 'トレーニング形式を選択してください。';
+    if (!form.weeklyTrainingDays) nextErrors.weeklyTrainingDays = '週の筋トレ目標回数を選択してください。';
 
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return;
@@ -342,7 +343,8 @@ export default function MyPageScreen() {
               </View>
               {errors.trainingStyle ? <Text style={styles.fieldError}>{errors.trainingStyle}</Text> : null}
 
-              <OptionTitle label="週にできる回数" optional />
+              <OptionTitle label="週にできる回数（目標・必須）" />
+              {errors.weeklyTrainingDays ? <Text style={styles.fieldError}>{errors.weeklyTrainingDays}</Text> : null}
               <View style={styles.chipRow}>
                 {weeklyOptions.map((days) => <OptionChip key={days} label={`${days}回`} onPress={() => updateField('weeklyTrainingDays', days)} selected={form.weeklyTrainingDays === days} />)}
               </View>

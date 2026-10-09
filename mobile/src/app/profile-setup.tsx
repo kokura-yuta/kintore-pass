@@ -38,7 +38,7 @@ const trainingStyleOptions: { value: TrainingStyle; label: string }[] = [
   { value: 'ai', label: 'AIにおまかせ' },
 ];
 
-type Errors = Partial<Record<'heightCm' | 'weightKg' | 'bodyFatPercentage' | 'trainingStyle', string>>;
+type Errors = Partial<Record<'heightCm' | 'weightKg' | 'bodyFatPercentage' | 'trainingStyle' | 'weeklyTrainingDays', string>>;
 
 export default function ProfileSetupScreen() {
   const router = useRouter();
@@ -88,6 +88,7 @@ export default function ProfileSetupScreen() {
       nextErrors.bodyFatPercentage = '2〜70%で入力してください。';
     }
     if (!form.trainingStyle) nextErrors.trainingStyle = 'トレーニング形式を選択してください。';
+    if (!form.weeklyTrainingDays) nextErrors.weeklyTrainingDays = '週の筋トレ目標回数を選択してください。';
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return;
 
@@ -231,7 +232,8 @@ export default function ProfileSetupScreen() {
               </View>
               {errors.trainingStyle ? <Text style={styles.fieldError}>{errors.trainingStyle}</Text> : null}
 
-              <Text style={styles.optionLabel}>週にできる回数</Text>
+              <Text style={styles.optionLabel}>週にできる回数（目標・必須）</Text>
+              {errors.weeklyTrainingDays ? <Text style={styles.fieldError}>{errors.weeklyTrainingDays}</Text> : null}
               <View style={styles.chipRow}>
                 {weeklyOptions.map((days) => (
                   <Pressable

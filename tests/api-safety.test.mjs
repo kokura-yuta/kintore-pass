@@ -383,11 +383,12 @@ test("理想体型は用意した4種類だけを受け付ける", () => {
   );
 });
 
-test("プロフィールは身長・体重だけ必須で任意項目は省略できる", () => {
+test("プロフィールは身長・体重・週目標が必須でその他は省略できる", () => {
   assert.equal(
     profileSchema.safeParse({
       heightCm: 170,
       weightKg: 65,
+      weeklyTrainingDays: 4,
     }).success,
     true,
   );
@@ -404,6 +405,7 @@ test("プロフィールは身長・体重だけ必須で任意項目は省略�
       heightCm: 170,
       weightKg: 65,
       trainingStyle: "split",
+      weeklyTrainingDays: 4,
     }).success,
     true,
   );

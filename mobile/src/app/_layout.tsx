@@ -5,6 +5,7 @@ import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { ConfigurationRequiredScreen } from '@/components/ConfigurationRequiredScreen';
+import { AppActivityTracker } from '@/components/AppActivityTracker';
 import { OnboardingProvider } from '@/contexts/OnboardingContext';
 import { TrainingDraftProvider } from '@/contexts/TrainingDraftContext';
 import { TrainingHistoryProvider } from '@/contexts/TrainingHistoryContext';
@@ -50,7 +51,7 @@ export default function RootLayout() {
 
 function UserScopedApp() {
   const { userId } = useAuth({ treatPendingAsSignedOut: false });
-  return <UserDataProviders key={userId ?? 'signed-out'} />;
+  return <><AppActivityTracker /><UserDataProviders key={userId ?? 'signed-out'} /></>;
 }
 
 function UserDataProviders() {

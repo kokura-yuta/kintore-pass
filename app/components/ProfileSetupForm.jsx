@@ -69,6 +69,9 @@ export default function ProfileSetupForm() {
     if (form.bodyFat && (Number(form.bodyFat) < 2 || Number(form.bodyFat) > 70)) {
       nextErrors.bodyFat = "2〜70%で入力してください。";
     }
+    if (!form.weeklyFrequency || !Number.isInteger(Number(form.weeklyFrequency)) || Number(form.weeklyFrequency) < 1 || Number(form.weeklyFrequency) > 7) {
+      nextErrors.weeklyFrequency = "週の筋トレ目標回数を選択してください。";
+    }
 
     setErrors(nextErrors);
     return Object.keys(nextErrors).length === 0;
@@ -203,17 +206,18 @@ export default function ProfileSetupForm() {
         <div className="setupCardHeading">
           <div>
             <h2>トレーニング習慣</h2>
-            <p>決まっていなければ空欄でOK</p>
+            <p>週の目標回数を選択してください。時間は空欄でOK</p>
           </div>
           <span className="optionalBadge">任意</span>
         </div>
         <div className="selectGrid">
           <label className="setupField">
-            <span>週にできる回数</span>
+            <span>週にできる回数（目標） <b>必須</b></span>
             <select value={form.weeklyFrequency} onChange={(event) => updateField("weeklyFrequency", event.target.value)}>
-              <option value="">選択しない</option>
+              <option value="">目標回数を選択</option>
               {[1, 2, 3, 4, 5, 6, 7].map((day) => <option key={day} value={day}>週{day}回</option>)}
             </select>
+            {errors.weeklyFrequency && <small role="alert">{errors.weeklyFrequency}</small>}
           </label>
           <label className="setupField">
             <span>1回に使える時間</span>

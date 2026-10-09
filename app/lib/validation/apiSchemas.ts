@@ -128,7 +128,7 @@ export const profileSchema = z.object({
   heightCm: z.number().finite().min(50).max(250),
   weightKg: z.number().finite().min(20).max(500),
   bodyFatPercentage: optionalNumber(0, 80),
-  weeklyTrainingDays: optionalInteger(0, 7),
+  weeklyTrainingDays: z.number().int().min(1).max(7),
   availableMinutes: optionalInteger(20, 180),
   trainingLocation: z
     .enum(["home", "gym", "both"])

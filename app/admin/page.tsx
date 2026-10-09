@@ -8,6 +8,7 @@ import {
   useAuth,
 } from "@clerk/nextjs";
 import styles from "./page.module.css";
+import RetentionPanel from './retention/RetentionPanel';
 
 type Breakdown = { name: string; calls: number; tokens: number; costYen: number };
 type DashboardData = {
@@ -139,7 +140,7 @@ export default function AdminDashboardPage() {
   return <main className={styles.page}>
     <header className={styles.header}><div><p>OPERATIONS</p><h1>運営ダッシュボード</h1><span>{new Date(data.generatedAt).toLocaleString("ja-JP")} 時点</span></div><div className={styles.headerActions}><button onClick={() => void load()}>更新</button>{isSignedIn ? <UserButton /> : null}</div></header>
 
-    {data.preview ? <div className={styles.preview}>開発用サンプルデータを表示しています</div> : null}
+    {data.preview ? <div className={styles.preview}>開発用サンプルデータを表示しています</div> : <RetentionPanel key={data.generatedAt} compact />}
 
     {data.warnings.length ? <section className={styles.warning}><h2>コスト警告</h2>{data.warnings.map((warning) => <p key={warning}>⚠ {warning}</p>)}</section> : null}
 
