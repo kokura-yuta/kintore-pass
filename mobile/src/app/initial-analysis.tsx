@@ -45,7 +45,7 @@ export default function InitialAnalysisScreen() {
 
     try {
       if (isApiBypassEnabled) {
-        router.replace('/home');
+        router.replace('/training');
         return;
       }
 
@@ -59,7 +59,7 @@ export default function InitialAnalysisScreen() {
       }
 
       await completeOnboarding(token);
-      router.replace('/home');
+      router.replace('/training');
     } catch (error) {
       setSkipError(
         error instanceof Error
@@ -139,7 +139,7 @@ export default function InitialAnalysisScreen() {
               分析に必要な写真
             </Text>
             <Text style={styles.noticeText}>
-              身体分析は任意のPremium機能です。Freeのままホームへ進み、後から無料体験を開始することもできます。
+              身体分析は任意のPremium機能です。Freeのまま記録へ進み、後から無料体験を開始することもできます。
             </Text>
           </View>
 
@@ -187,7 +187,7 @@ export default function InitialAnalysisScreen() {
             <Text style={styles.textButtonLabel}>
               {isSkipping
                 ? '初回設定を完了しています…'
-                : '今は分析せずホームへ進む'}
+                : '今は分析せず記録へ進む'}
             </Text>
             {isSkipping ? (
               <ActivityIndicator

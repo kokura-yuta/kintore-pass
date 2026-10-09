@@ -1,4 +1,5 @@
 import { useAuth } from '@clerk/expo';
+import { PremiumScreen } from '@/components/PremiumScreen';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import {
@@ -122,6 +123,10 @@ async function appendPhotoToFormData(
 }
 
 export default function BodyAnalysisScreen() {
+  return <PremiumScreen title="身体分析"><BodyAnalysisContent /></PremiumScreen>;
+}
+
+function BodyAnalysisContent() {
   const router = useRouter();
   const { initial } = useLocalSearchParams<{
     initial?: string;
@@ -393,7 +398,7 @@ async function finishAnalysis() {
     }
 
     await completeOnboarding(token);
-    router.replace('/home');
+    router.replace('/training');
   } catch (caughtError) {
     setError(
       caughtError instanceof Error
@@ -567,7 +572,7 @@ if (
             ) : (
               <Text style={styles.primaryText}>
                 {isInitialAnalysis
-                  ? '初回設定を完了してホームへ'
+                  ? '初回設定を完了して記録へ'
                   : '分析履歴へ'}
               </Text>
             )}

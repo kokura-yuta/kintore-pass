@@ -1,4 +1,5 @@
 import { useAuth } from '@clerk/expo';
+import { PremiumScreen } from '@/components/PremiumScreen';
 import * as Crypto from 'expo-crypto';
 import { type Href, Redirect, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -88,6 +89,10 @@ function createDevelopmentHomeResponse(): HomeResponse {
 }
 
 export default function HomeScreen() {
+  return <PremiumScreen title="AIホーム"><HomeContent /></PremiumScreen>;
+}
+
+function HomeContent() {
   const router = useRouter();
   const { getToken, isLoaded, isSignedIn } = useAuth({ treatPendingAsSignedOut: false });
   const { goalBody, profile } = useOnboarding();
