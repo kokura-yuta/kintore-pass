@@ -22,7 +22,7 @@ export function PremiumScreen({ title, children }: { title: string; children: Re
           <BlurView intensity={35} tint="dark" style={StyleSheet.absoluteFill} />
           <View style={styles.overlay}>
             <View style={styles.card}>
-              {plan.error ? <><Text style={styles.title}>プランを確認できませんでした</Text><Text style={styles.description}>{plan.error}</Text><Pressable onPress={plan.refresh} style={styles.button}><Text style={styles.buttonText}>もう一度確認する</Text></Pressable></> : !plan.data ? <><ActivityIndicator color="#73E7FF" /><Text style={styles.description}>プランを確認しています…</Text></> : <>
+              {plan.error ? <><Text style={styles.title}>プランを確認できませんでした</Text><Text style={styles.description}>{plan.error}</Text><Pressable onPress={plan.refresh} style={styles.button}><Text style={styles.buttonText}>もう一度確認する</Text></Pressable></> : !plan.data && !plan.isFreePreview ? <><ActivityIndicator color="#73E7FF" /><Text style={styles.description}>プランを確認しています…</Text></> : <>
                 <Text style={styles.eyebrow}>PREMIUM</Text>
                 <Text style={styles.title}>{title}を利用する</Text>
                 <Text style={styles.description}>現在はFreeプランです。AI機能はPremiumまたは無料体験中に利用できます。</Text>

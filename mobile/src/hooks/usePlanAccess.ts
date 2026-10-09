@@ -1,5 +1,5 @@
 import { useAuth } from '@clerk/expo';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 import { fetchSubscriptionStatus, type SubscriptionStatus } from '@/lib/subscription';
@@ -8,6 +8,9 @@ import { canAccessPaidScreen } from '@/lib/planPresentation';
 
 // A failed check never grants access. Recheck after purchase/restore, app resume and expiry.
 export function usePlanAccess() {
+  const { previewPlan } = useLocalSearchParams<{ previewPlan?: string }>();
+  // Only a restrictive visual preview: never grants access, never changes a subscription.
+  const isFreePreview = __DEV__ && previewPlan === 'free';
   const { getToken, userId, isLoaded } = useAuth({ treatPendingAsSignedOut: false });
   const tokenRef = useRef(getToken);
   useEffect(() => { tokenRef.current = getToken; }, [getToken]);
@@ -25,7 +28,7 @@ export function usePlanAccess() {
       // Keep an unexpired verified screen mounted during revalidation, so returning
       // from the photo picker does not discard selected photos or unsent text.
       setState((current) => ({ owner: userId, data: current.owner === userId && canAccessPaidScreen(current.data) ? current.data : null, error: '' }));
-      if (isApiBypassEnabled || !isLoaded) return;
+      if (isFreePreview || isApiBypassEnabled || !isLoaded) return;
       try {
         const token = await tokenRef.current();
         if (!token) throw new Error('ログイン状態を確認してください。');
@@ -42,7 +45,7 @@ export function usePlanAccess() {
     void check();
     const listener = AppState.addEventListener('change', (value) => { if (value === 'active') void check(); });
     return () => { active = false; clearTimeout(expiryTimer); listener.remove(); };
-  }, [userId, isLoaded, retry]));
+  }, [userId, isLoaded, retry, isFreePreview]));
   const data = state.owner === userId ? state.data : null;
-  return { data, error: state.owner === userId ? state.error : '', allowed: isApiBypassEnabled || canAccessPaidScreen(data), refresh: () => setRetry((value) => value + 1) };
+  return { data, isFreePreview, error: isFreePreview ? '' : state.owner === userId ? state.error : '', allowed: !isFreePreview && (isApiBypassEnabled || canAccessPaidScreen(data)), refresh: () => setRetry((value) => value + 1) };
 }

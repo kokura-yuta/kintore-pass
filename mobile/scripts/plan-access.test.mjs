@@ -4,6 +4,12 @@ import { readFileSync } from 'node:fs';
 import { canAccessPaidScreen, canNavigateTab, planLabel } from '../src/lib/planPresentation.ts';
 
 const now = Date.parse('2026-10-08T00:00:00Z');
+test('Free確認用URLは開発時のみで、APIバイパスより優先して閉じる', () => {
+  const source = readFileSync(new URL('../src/hooks/usePlanAccess.ts', import.meta.url), 'utf8');
+  assert.match(source, /isFreePreview = __DEV__ && previewPlan === 'free'/);
+  assert.match(source, /if \(isFreePreview \|\| isApiBypassEnabled \|\| !isLoaded\) return/);
+  assert.match(source, /allowed: !isFreePreview &&/);
+});
 const future = '2026-10-09T00:00:00Z';
 const plan = (overrides = {}) => ({ accessLevel: 'free', canUseAiFeatures: false, status: 'inactive', expiresAt: null, trial: { endsAt: null }, ...overrides });
 test('Free・未確認・体験スキップは有料画面を開かない', () => {

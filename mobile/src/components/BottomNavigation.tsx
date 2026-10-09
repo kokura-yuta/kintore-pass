@@ -20,7 +20,7 @@ export function BottomNavigation() {
   const router = useRouter();
   const lastPress = useRef(0);
   const plan = usePlanAccess();
-  const label = isApiBypassEnabled ? '開発プレビュー' : plan.error ? 'プラン確認エラー' : planLabel(plan.data);
+  const label = plan.isFreePreview ? 'Free表示の確認用（契約変更なし）' : isApiBypassEnabled ? '開発プレビュー' : plan.error ? 'プラン確認エラー' : planLabel(plan.data);
 
   return (
     <SafeAreaView edges={['bottom']} style={styles.safeArea}>
@@ -40,7 +40,7 @@ export function BottomNavigation() {
               onPress={() => {
                 if (!canNavigateTab(active, lastPress.current, Date.now())) return;
                 lastPress.current = Date.now();
-                router.replace(item.href as Href);
+                router.replace((plan.isFreePreview ? `${item.href}?previewPlan=free` : item.href) as Href);
               }}
               style={styles.item}
             >
