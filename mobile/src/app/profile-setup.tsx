@@ -60,6 +60,7 @@ export default function ProfileSetupScreen() {
       setErrors((current) => ({ ...current, [field]: undefined }));
     }
     if (field === 'trainingStyle') setErrors((current) => ({ ...current, trainingStyle: undefined }));
+    if (field === 'weeklyTrainingDays') setErrors((current) => ({ ...current, weeklyTrainingDays: undefined }));
   }
 
   function toggleWeakPart(bodyPart: string) {
