@@ -11,6 +11,8 @@
 - GitHubへcee9b92でpush済み。クリーンコピーからproduction Build 11を開始（77666c90-4835-47d3-a933-362f7a78a93e）、TestFlight自動送信予約済み（eb7fc724-c7cc-4122-a994-0a0906ca4073）。既存共同Owner・Project ID・署名を維持。完成・Apple処理・実機操作は未確認。審査提出や一般公開はしない。
 - Build 11は共用グラフ処理がMetroの読込範囲外で失敗。mobile/metro.config.jsでsharedフォルダを明示し、iOSの本番JSバンドルを検証してから再ビルドする。本番APIのhealthは200、未認証の分析・友達APIは401を確認済み。
 - Metro設定修正後、iOS production JS/Hermesバンドル（1584モジュール）の生成成功。型チェック・lint後にBuild 12へ再送する。
+- 完了：修正版adad5b0からBuild 12（4b9f79b6-131e-4204-b4c7-b13820ebd281）はFINISHED。Apple送信727755f7-7b32-4a2e-833e-ed8a24b5ed23もFINISHED（10月10日16:08 JST）。公開APIの更新も成功。Apple処理後の配布可能表示と実機2アカウント操作は未確認。TestFlightで1.0.0 (12)へ更新する。
+- 別途公開前の依存監査：mobile npm auditは39警告（critical 1/high 24/moderate 14）。shell-quote 1.10.0のコマンド注入警告はReact Native開発ツールの間接依存、markdown-it/linkify-it等も警告あり。今回追加したSVGのみの安全性確認で全体を安全と断定しない。互換性を崩すforce更新はせず、別途修正・到達可能性評価が必要。
 
 ## 2026-10-10：AIメニュー「おまかせ」の復旧
 
