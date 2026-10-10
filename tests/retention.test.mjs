@@ -22,7 +22,7 @@ test('登録直後を按分し判定保留・登録前週はnull', () => {
 test('目標未設定を0%や平均の分母に含めない', () => {
   const r = analyze([user(), user({ id: 'b', weeklyGoal: null }), user({ id: 'c', weeklyGoal: 0 })]);
   assert.equal(r.summary.meanSeven.users, 1); assert.equal(r.rows[1].seven.percent, null);
-  assert.equal(r.rows[1].status, '判定保留');
+  assert.equal(r.rows[1].status, '活動なし');
 });
 test('100%以上と算術平均', () => {
   const r = analyze([user({ trainingDays: ['2026-10-04', '2026-10-05', '2026-10-06', '2026-10-07', '2026-10-08'] }), user({ id: 'b', weeklyGoal: 1 })]);

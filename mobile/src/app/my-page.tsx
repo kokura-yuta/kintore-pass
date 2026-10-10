@@ -293,6 +293,8 @@ export default function MyPageScreen() {
               <ShortcutCard label="分析履歴" onPress={() => router.push('/analysis-history' as Href)} value="結果を見る" />
             </View>
 
+            <ShortcutCard label="友達" onPress={() => router.push('/friends' as Href)} value="申請・公開設定・友達の記録" />
+
             {isAdmin ? (
               <Pressable
                 accessibilityRole="button"

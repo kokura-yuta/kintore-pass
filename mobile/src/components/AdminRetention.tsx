@@ -3,14 +3,16 @@ import { type Href, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { apiRequest } from '@/lib/api';
-import type { RetentionData } from '../../../shared/retention';
+import type { RetentionData, LongRetentionData, LongOptions } from '../../../shared/retention';
+import { LongRetention } from './LongRetention';
 
 const pct = (v: number | null) => v === null ? '未設定・未計測' : `${v.toFixed(1)}%`;
 export function AdminRetention({ compact = false }: { compact?: boolean }) {
   const router = useRouter();
   const { getToken } = useAuth({ treatPendingAsSignedOut: false });
   const tokenRef = useRef(getToken);
-  const [data, setData] = useState<RetentionData | null>(null);
+  const [data, setData] = useState<(RetentionData & { longTerm: LongRetentionData }) | null>(null);
+  const [options,setOptions] = useState<LongOptions>({range:'1y',unit:'month',cohortUnit:'month'});
   const [error, setError] = useState('');
   const [revision, setRevision] = useState(0);
   const [selected, setSelected] = useState<string | null>(null);
@@ -22,11 +24,12 @@ export function AdminRetention({ compact = false }: { compact?: boolean }) {
     (async () => {
       const token = await tokenRef.current();
       if (!token) throw new Error('ログインが必要です。');
-      const result = await apiRequest<RetentionData>('/api/admin/retention', { method: 'GET', token, timeoutMs: 60_000 });
+      const query = new URLSearchParams({range:options.range,unit:options.unit,cohortUnit:options.cohortUnit,...(selected?{userId:selected}:{})});
+      const result = await apiRequest<RetentionData & {longTerm:LongRetentionData}>(`/api/admin/retention?${query}`, { method: 'GET', token, timeoutMs: 60_000 });
       if (active) { setData(result); setError(''); }
     })().catch((e: unknown) => { if (active) setError(e instanceof Error ? e.message : '取得できませんでした。'); });
     return () => { active = false; };
-  }, [revision]);
+  }, [revision,options,selected]);
   if (error) return <View style={styles.card}><Text style={styles.error}>{error}</Text><Pressable onPress={() => setRevision((v) => v + 1)}><Text style={styles.link}>継続状況を再取得</Text></Pressable></View>;
   if (!data) return <Text style={styles.text}>継続状況を取得中…</Text>;
   const s = data.summary;
@@ -42,6 +45,7 @@ export function AdminRetention({ compact = false }: { compact?: boolean }) {
     ].map(([label, value, note]) => <View key={label} style={styles.card}><Text style={styles.muted}>{label}</Text><Text style={styles.value}>{value}</Text><Text style={styles.muted}>{note}</Text></View>)}</View>
     <Text style={styles.muted}>{data.goalBasis}</Text><Text style={styles.muted}>{data.activityBasis}</Text>
     {compact ? <Pressable onPress={() => router.push('/admin-retention' as Href)}><Text style={styles.link}>ユーザー別・8週間の分析を見る →</Text></Pressable> : <>
+      <LongRetention data={data.longTerm} options={options} onChange={v=>{setOptions(v);setData(null);}} />
       <Pressable onPress={() => setRevision((v) => v + 1)}><Text style={styles.link}>最新データに更新</Text></Pressable>
       <Text style={styles.title}>8週間・平均筋トレ達成率</Text><Chart values={data.weeklyMeans.map((w) => ({ label: w.start, percent: w.percent, note: `対象${w.users}人` }))} />
       <Text style={styles.title}>登録週別・7日後アプリ継続率</Text><Chart values={data.cohorts.map((w) => ({ label: w.start, percent: w.percent, note: `${w.retained}/${w.eligible}人・未計測${w.unmeasured}` }))} />

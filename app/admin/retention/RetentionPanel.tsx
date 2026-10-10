@@ -2,14 +2,16 @@
 import Link from 'next/link';
 import { useAuth } from '@clerk/nextjs';
 import { useEffect, useState } from 'react';
-import type { RetentionData } from '@/shared/retention';
+import type { RetentionData, LongRetentionData, LongOptions } from '@/shared/retention';
+import { LongAnalysis } from './LongAnalysis';
 import styles from '../page.module.css';
 import local from './retention.module.css';
 
 const percent = (value: number | null) => value === null ? '未設定・未計測' : `${value.toFixed(1)}%`;
 export default function RetentionPanel({ compact = false, userId }: { compact?: boolean; userId?: string }) {
   const { getToken, isLoaded, isSignedIn } = useAuth();
-  const [data, setData] = useState<RetentionData | null>(null);
+  const [data, setData] = useState<(RetentionData & { longTerm: LongRetentionData }) | null>(null);
+  const [options, setOptions] = useState<LongOptions>({ range: '1y', unit: 'month', cohortUnit: 'month' });
   const [error, setError] = useState('');
   const [sort, setSort] = useState('seven');
   const selected = userId ?? null;
@@ -20,13 +22,14 @@ export default function RetentionPanel({ compact = false, userId }: { compact?: 
     let active = true;
     (async () => {
       const token = await getToken();
-      const response = await fetch('/api/admin/retention', { cache: 'no-store', headers: { Authorization: `Bearer ${token}` } });
+      const query = new URLSearchParams({ range: options.range, unit: options.unit, cohortUnit: options.cohortUnit, ...(userId ? { userId } : {}) });
+      const response = await fetch(`/api/admin/retention?${query}`, { cache: 'no-store', headers: { Authorization: `Bearer ${token}` } });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || '取得できませんでした。');
       if (active) { setData(result); setError(''); }
     })().catch((e: unknown) => { if (active) setError(e instanceof Error ? e.message : '取得できませんでした。'); });
     return () => { active = false; };
-  }, [getToken, isLoaded, isSignedIn, revision]);
+  }, [getToken, isLoaded, isSignedIn, revision, options, userId]);
   if (!isLoaded) return <p>認証確認中…</p>;
   if (!isSignedIn) return <p>管理者でログインしてください。<Link href="/admin">管理画面へ</Link></p>;
   if (error) return <p className={styles.error}>{error} <button onClick={() => setRevision((v) => v + 1)}>再試行</button></p>;
@@ -51,6 +54,7 @@ export default function RetentionPanel({ compact = false, userId }: { compact?: 
     <p className={styles.kind}>{data.goalBasis}</p><p className={styles.kind}>{data.activityBasis}</p>
     <p className={styles.kind}>筋トレ記録による分類はアプリ離脱の確定ではありません。達成率は個人ごとの算術平均です。</p>
     {!compact && <>
+      <LongAnalysis data={data.longTerm} options={options} onChange={v => { setOptions(v); setData(null); }} />
       {!userId && <><article className={styles.panel}><h2>過去8週間・平均筋トレ達成率</h2><Trend values={data.weeklyMeans.map((w) => ({ label: w.start, value: w.percent, note: `対象${w.users}人` }))} /></article>
       <article className={styles.panel}><h2>登録週別・アプリ7日後継続率</h2><Trend values={data.cohorts.map((w) => ({ label: w.start, value: w.percent, note: `${w.retained}/${w.eligible}人・未計測${w.unmeasured}` }))} /></article>
       <article className={styles.panel}><h2>ユーザー一覧</h2><label>並び替え <select value={sort} onChange={(e) => { setSort(e.target.value); setPage(0); }}><option value="seven">7日達成率が低い順</option><option value="twentyEight">28日達成率が低い順</option><option value="last">最終筋トレ日が古い順（未実施が先頭）</option></select></label>

@@ -10,6 +10,7 @@ export async function retentionEndpoint(request: Request, dependencies: {
     if (!identity.allowed) return Response.json({ error: '管理者のみ利用できます。' }, { status: identity.status ?? 403, headers });
     return Response.json(await dependencies.load(), { headers });
   } catch (error) {
+    if (error instanceof RangeError) return Response.json({ error: error.message }, { status: 400, headers });
     dependencies.report(error);
     return Response.json({ error: '継続率を取得できません。DB変更の適用状況を確認してください。' }, { status: 503, headers });
   }

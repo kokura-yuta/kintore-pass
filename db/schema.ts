@@ -89,6 +89,33 @@ export const appUsageDays = pgTable('app_usage_days', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [primaryKey({ columns: [table.userId, table.activityDate] }), index('app_usage_days_activity_date_idx').on(table.activityDate)]);
 
+export const trainingGoalHistory = pgTable('training_goal_history', {
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  effectiveOn: date('effective_on').notNull(),
+  weeklyGoal: integer('weekly_goal'),
+  estimated: boolean('estimated').notNull().default(false),
+}, t => [primaryKey({ columns: [t.userId, t.effectiveOn] }), check('training_goal_history_range', sql`${t.weeklyGoal} between 1 and 7`)]);
+
+export const friendSettings = pgTable('friend_settings', {
+  userId: uuid('user_id').primaryKey().references(() => users.id, { onDelete: 'cascade' }),
+  alias: text('alias'),
+  emailSearchEnabled: boolean('email_search_enabled').notNull().default(false),
+  shareTraining: boolean('share_training').notNull().default(false),
+});
+export const friendships = pgTable('friendships', {
+  lowId: uuid('low_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  highId: uuid('high_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  requesterId: uuid('requester_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  status: text('status').notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, t => [primaryKey({ columns: [t.lowId, t.highId] }), index('friendships_high_idx').on(t.highId),
+  check('friendships_pair', sql`${t.lowId} < ${t.highId} and ${t.requesterId} in (${t.lowId}, ${t.highId})`),
+  check('friendships_status', sql`${t.status} in ('pending','accepted','rejected','cancelled')`)]);
+export const friendActionQuotas = pgTable('friend_action_quotas', {
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  day: date('day').notNull(), kind: text('kind').notNull(), used: integer('used').notNull(),
+}, t => [primaryKey({ columns: [t.userId, t.day, t.kind] }), check('friend_action_quotas_used', sql`${t.used} >= 0`)]);
+
 // 先着順の無料体験枠を重複なく確保するための固定20枠
 // userIdがnullなら未使用、値が入っていればその利用者が枠を取得済み
 export const premiumTrialSlots = pgTable(
