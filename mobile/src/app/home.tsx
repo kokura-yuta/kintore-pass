@@ -211,10 +211,7 @@ function HomeContent() {
       setBuilderError('今日の調子を1〜10で選択してください。');
       return;
     }
-    if (profile.trainingStyle === 'split' && !builderBodyPart) {
-      setBuilderError('今日鍛える部位を選択してください。');
-      return;
-    }
+    // nullは未入力エラーではなく、画面で選択した「おまかせ」を表す。
 
     const requestId = Crypto.randomUUID();
     menuRequestRef.current = requestId;
@@ -297,7 +294,7 @@ function HomeContent() {
               </View>
               <Text style={styles.builderLabel}>今日の調子</Text>
               <View style={styles.ratingRow}>{Array.from({ length: 10 }, (_, index) => index + 1).map((score) => <Pressable accessibilityRole="radio" accessibilityState={{ checked: builderCondition === score }} key={score} onPress={() => { setBuilderCondition(score); setBuilderError(''); }} style={[styles.ratingButton, builderCondition === score && styles.selectedRatingButton]}><Text style={[styles.ratingText, builderCondition === score && styles.selectedRatingText]}>{score}</Text></Pressable>)}</View>
-              <Text style={styles.builderLabel}>鍛える部位 <Text style={styles.builderOptional}>{profile.trainingStyle === 'split' ? '必須' : '任意'}</Text></Text>
+              <Text style={styles.builderLabel}>鍛える部位 <Text style={styles.builderOptional}>おまかせ可</Text></Text>
               <View style={styles.bodyPartRow}>
                 <Pressable accessibilityRole="radio" accessibilityState={{ checked: builderBodyPart === null }} onPress={() => { setBuilderBodyPart(null); setBuilderError(''); }} style={[styles.bodyPartChip, builderBodyPart === null && styles.selectedBodyPartChip]}><Text style={[styles.bodyPartText, builderBodyPart === null && styles.selectedBodyPartText]}>おまかせ</Text></Pressable>
                 {selectableBodyParts.map((bodyPart) => <Pressable accessibilityRole="radio" accessibilityState={{ checked: builderBodyPart === bodyPart }} key={bodyPart} onPress={() => { setBuilderBodyPart(bodyPart); setBuilderError(''); }} style={[styles.bodyPartChip, builderBodyPart === bodyPart && styles.selectedBodyPartChip]}><Text style={[styles.bodyPartText, builderBodyPart === bodyPart && styles.selectedBodyPartText]}>{bodyPart}</Text></Pressable>)}
