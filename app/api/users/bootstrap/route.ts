@@ -1,196 +1,77 @@
-// 認証済みユーザーをNeonへ登録または取得し、初回設定の状態を返すAPI
-//この route.ts は、POST で呼ばれたときに「今ログインしているユーザーを Neon の users テーブルに登録するか、すでにあるならその状態を返す」処理をしています。
+import { and, eq, sql } from 'drizzle-orm';
+import { getClerkUserDetails, getClerkUserId } from '@/app/lib/auth/clerk-auth';
+import { BootstrapIdentityConflict, resolveBootstrapIdentity } from '@/app/lib/auth/bootstrapIdentity';
+import { getDb } from '@/db';
+import { users } from '@/db/schema';
+import { logServerError } from '@/app/lib/observability/serverLog';
+import { getAppAccess } from '@/app/lib/subscriptions/entitlements';
+import { isConfiguredAdminClerkUserId } from '@/app/lib/admin/ownerPolicy';
 
-
-// usersテーブルから同じClerkユーザーIDを検索する比較機能
-import { eq } from "drizzle-orm";
-
-// 認証情報・DB接続・usersテーブルを初期化処理で使えるようにする場所
-import {
-  getClerkUserDetails,
-  getClerkUserId,
-} from "@/app/lib/auth/clerk-auth";
-import { getDb } from "@/db";
-import { users } from "@/db/schema";
-import { logServerError } from "@/app/lib/observability/serverLog";
-import { getAppAccess } from "@/app/lib/subscriptions/entitlements";
-import { isConfiguredAdminClerkUserId } from "@/app/lib/admin/ownerPolicy";
-
-// 課金用マイグレーションが反映途中でも、ログイン直後の基本画面を止めない。
-// AI機能は別API側で再度権限を確認するため、一般ユーザーを誤ってPremiumにはしない。
 function fallbackAccess(clerkUserId: string) {
   const isAdmin = isConfiguredAdminClerkUserId(clerkUserId);
   return {
-    accessLevel: isAdmin ? "premium" as const : "free" as const,
+    accessLevel: isAdmin ? 'premium' as const : 'free' as const,
     canUseAiFeatures: isAdmin,
     trialChoiceCompleted: isAdmin,
     trialUsed: false,
     trialEndsAt: null,
   };
 }
-
 async function getBootstrapAccess(userId: string, clerkUserId: string) {
-  try {
-    return await getAppAccess(userId);
-  } catch (error) {
-    logServerError("user_bootstrap_access_fallback", error);
+  try { return await getAppAccess(userId); }
+  catch (error) {
+    logServerError('user_bootstrap_access_fallback', error);
     return fallbackAccess(clerkUserId);
   }
 }
-
-// POST通信を受け取り、ユーザー初期化処理を開始する場所
-export async function POST(
-  request: Request,
-) {
-  let failureStage = "authentication";
-
-  // 認証・DB検索・新規登録で発生したエラーをまとめて捕まえる
+export async function POST(request: Request) {
+  let failureStage = 'authentication';
   try {
-    // リクエストのClerkトークンを検証してログイン中のユーザーIDを取得する
-    const clerkUserId =
-      await getClerkUserId(request);
-
-    // ClerkユーザーIDを取得できなければDBを操作せずHTTP 401を返す
-    if (!clerkUserId) {
-      return Response.json(
-        { error: "ログインが必要です。" },
-        { status: 401 },
-      );
-    }
-
-    // Neon PostgreSQLを操作する共通のDB接続を取得する
+    const clerkUserId = await getClerkUserId(request);
+    if (!clerkUserId) return Response.json({ error: 'ログインが必要です。' }, { status: 401 });
     const db = getDb();
-
-    // 検証済みのClerkユーザーIDと一致するNeonユーザーを最大1件検索する
-    failureStage = "user_lookup";
-    const existingUsers = await db
-      .select()
-      .from(users)
-      .where(
-        eq(
-          users.clerkUserId,
-          clerkUserId,
-        ),
-      )
-      .limit(1);
-
-    // 検索結果の先頭を取り出し、未登録ならnullに統一する
-    const existingUser = existingUsers[0] ?? null;
-
-    // 登録済みならClerkユーザーIDと初回設定の完了状態を返して処理を終了する
-    if (existingUser) {
-      failureStage = "existing_user_access";
-      const access = await getBootstrapAccess(existingUser.id, clerkUserId);
-
-      // 初回設定全体と各段階の進行状態をフロントエンドへ返す
-      return Response.json({
-        userId: clerkUserId,
-        onboardingCompleted:
-          existingUser.onboardingCompleted,
-        goalBodyType:
-          existingUser.goalBodyType,
-        profileCompleted:
-          existingUser.profileCompleted,
-        initialAnalysisCompleted:
-          existingUser.initialAnalysisCompleted,
-        accessLevel: access.accessLevel,
-        canUseAiFeatures:
-          access.canUseAiFeatures,
-        trialChoiceCompleted:
-          access.trialChoiceCompleted,
-        trialUsed: access.trialUsed,
-        trialEndsAt: access.trialEndsAt,
-      });
-    }
-
-    // Neonに未登録の場合だけClerkからメールアドレスや名前を取得する
-    failureStage = "clerk_user_details";
-    const clerkUserDetails =
-      await getClerkUserDetails(
-        clerkUserId,
-      );
-
-    // Clerkの主要メールアドレスを取り出し、存在しなければnullに統一する
-    const email =
-      clerkUserDetails.primaryEmailAddress
-        ?.emailAddress ?? null;
-
-    // 必須のメールアドレスを取得できなければNeonへ登録せずHTTP 400を返す
-    if (!email) {
-      return Response.json(
-        {
-          error:
-            "メールアドレスを取得できません。",
-        },
-        { status: 400 },
-      );
-    }
-
-    // Clerkの姓名を表示名にまとめ、名前がなければメールアドレスを使う
-    const displayName =
-      [
-        clerkUserDetails.firstName,
-        clerkUserDetails.lastName,
-      ]
-        .filter(Boolean)
-        .join(" ") || email;
-
-    // 未登録なら認証情報を使ってusersテーブルへ新規登録する
-    // この段階名だけを安全なサーバーログへ残し、個人情報やSQL本文は記録しない。
-    failureStage = "user_insert";
-    const createdUsers = await db
-      .insert(users)
-      .values({
-        clerkUserId,
-        email,
-        displayName,
-      })
-      .returning();
-
-    // PostgreSQLから配列で返された新規ユーザーを取り出す
-    const createdUser = createdUsers[0];
-    failureStage = "created_user_access";
-    const access = await getBootstrapAccess(createdUser.id, clerkUserId);
-
-    // ClerkユーザーIDと初回設定の完了状態をHTTP 201で返す
-    // 新規ユーザーの初回設定状態をフロントエンドへ返す
-    return Response.json(
-      {
-        userId: clerkUserId,
-        onboardingCompleted:
-          createdUser.onboardingCompleted,
-        goalBodyType:
-          createdUser.goalBodyType,
-        profileCompleted:
-          createdUser.profileCompleted,
-        initialAnalysisCompleted:
-          createdUser.initialAnalysisCompleted,
-        accessLevel: access.accessLevel,
-        canUseAiFeatures:
-          access.canUseAiFeatures,
-        trialChoiceCompleted:
-          access.trialChoiceCompleted,
-        trialUsed: access.trialUsed,
-        trialEndsAt: access.trialEndsAt,
+    const { user, created } = await resolveBootstrapIdentity(clerkUserId, {
+      findByClerkId: async id => (await db.select().from(users)
+        .where(eq(users.clerkUserId, id)).limit(1))[0] ?? null,
+      findByEmail: async email => {
+        const rows = await db.select().from(users)
+          .where(sql`lower(${users.email}) = lower(${email})`).limit(2);
+        // 大小文字だけ異なる複数登録が存在する場合も勝手に統合しない。
+        if (rows.length > 1) throw new BootstrapIdentityConflict();
+        return rows[0] ?? null;
       },
-      {
-        status: 201,
-      },
-    );
+      getDetails: getClerkUserDetails,
+      insert: async values => (await db.insert(users).values(values)
+        .onConflictDoNothing().returning())[0] ?? null,
+      migrate: async (old, newId) => (await db.update(users)
+        .set({ clerkUserId: newId, updatedAt: new Date() })
+        .where(and(eq(users.id, old.id), eq(users.clerkUserId, old.clerkUserId!), eq(users.email, old.email)))
+        .returning())[0] ?? null,
+      production: process.env.APP_ENV === 'production' &&
+        Boolean(process.env.CLERK_SECRET_KEY?.startsWith('sk_live_')),
+      approvedLegacyIds: (process.env.LEGACY_CLERK_MIGRATION_USER_IDS ?? '')
+        .split(',').map(id => id.trim()).filter(Boolean),
+      stage: stage => { failureStage = stage; },
+    });
+    failureStage = 'user_access';
+    const access = await getBootstrapAccess(user.id, clerkUserId);
+    return Response.json({
+      userId: clerkUserId,
+      onboardingCompleted: user.onboardingCompleted,
+      goalBodyType: user.goalBodyType,
+      profileCompleted: user.profileCompleted,
+      initialAnalysisCompleted: user.initialAnalysisCompleted,
+      accessLevel: access.accessLevel,
+      canUseAiFeatures: access.canUseAiFeatures,
+      trialChoiceCompleted: access.trialChoiceCompleted,
+      trialUsed: access.trialUsed,
+      trialEndsAt: access.trialEndsAt,
+    }, { status: created ? 201 : 200, headers: { 'Cache-Control': 'private, no-store' } });
   } catch (error) {
-    // 詳しい原因は利用者へ返さず、開発者が確認するサーバーログへ残す
-    logServerError(
-      `user_bootstrap_failed_${failureStage}`,
-      error,
-    );
-
-    // フロントエンドへ安全なメッセージとHTTP 500を返す
-    return Response.json(
-      {
-        error:
-          "ユーザー情報の初期化に失敗しました。",
-      },
-      { status: 500 },
-    );
+    logServerError(`user_bootstrap_failed_${failureStage}`, error);
+    return Response.json({ error: error instanceof BootstrapIdentityConflict
+      ? error.message : 'ユーザー情報の初期化に失敗しました。' },
+    { status: error instanceof BootstrapIdentityConflict ? 409 : 500,
+      headers: { 'Cache-Control': 'private, no-store' } });
   }
 }

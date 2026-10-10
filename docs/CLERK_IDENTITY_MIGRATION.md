@@ -1,0 +1,11 @@
+# Clerk開発→本番アカウントの記録引き継ぎ
+
+bootstrapはClerk IDで本人のDB行を取得する。開発環境と本番環境でIDが変わり、同じメールの旧行が残ると従来のINSERTはUNIQUE制約で500になっていた。
+
+修正後は本番APP_ENV・sk_live設定、Clerkで取得した本人ID、確認済み主要メール、運営が事前確認した旧開発IDのLEGACY_CLERK_MIGRATION_USER_IDS完全一致が全部成立したときだけ、旧UUIDを維持してclerk_user_idを変更する。UUID・記録・契約・目標・初回設定はそのまま。ID/メール/UUIDの条件付きUPDATEで競合を検出する。
+
+メールだけの自動統合、未確認メール、未許可ID、旧ID不明、他の本番ユーザー、開発キーでは引き継がない。本人の同時新規登録はonConflictDoNothing後にClerk IDで再取得する。解決できない衝突は409の安全な問い合わせ案内にする。
+
+管理者権限は既存ADMIN_CLERK_USER_IDSの現在の本人IDだけで決まる。旧アカウントの管理者権限を引き継がない。許可設定は旧IDなので、成功後の行へ再適用されない。確認完了後に許可から除去する。
+
+検証：tests/bootstrap-identity.test.mjsの本人・未確認・未許可・異なる環境・競合ケース。DB変更は不要。サーバー更新後は既存TestFlight Build 12の「もう一度試す」で本番本人確認・引き継ぎが実行される。本人端末の成功までは完了扱いにしない。
