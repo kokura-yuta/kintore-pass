@@ -8,6 +8,7 @@
 - バックエンド依存：既存APIがrequestedBodyPart=nullを受理するため、DB変更・バックエンド変更なし。
 - 次：型チェックと回帰テスト後、新しいTestFlightビルドで実機生成を確認。Build 9にはこの修正は未反映。
 - 修正版Build 10をproduction設定・既存署名で開始（d80819d8-909f-4ef6-a364-ac21129de6f0）。完成後のTestFlight自動送信を予約済み。作成完了・Apple処理・実機生成はまだ未確認。
+- 追記：Build 10のApple送信はSucceeded（10月10日10:05 JST）を確認。送信ID：af33922d-570d-4c52-b01d-83e0d0545a21。端末への配布可能表示と実機での生成成功は未確認。TestFlightで1.0.0 (10)へ更新して検査する。
 
 ## 2026-10-10：継続率分析を含むTestFlight Build 9
 
