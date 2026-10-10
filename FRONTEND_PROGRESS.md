@@ -9,6 +9,8 @@
 - プライバシー説明をWeb・アプリに追加。見た目確認でグラフのゼロ基準線・単一点表示・ツールチップを調整。実機の2アカウント操作は配布後に確認する。
 - バックエンド依存：0019_retention_friends_v2.sql（目標履歴・公開設定・友達関係・利用上限）と新API。react-native-svg追加のためアプリ画面反映には新しいネイティブビルドが必要。
 - GitHubへcee9b92でpush済み。クリーンコピーからproduction Build 11を開始（77666c90-4835-47d3-a933-362f7a78a93e）、TestFlight自動送信予約済み（eb7fc724-c7cc-4122-a994-0a0906ca4073）。既存共同Owner・Project ID・署名を維持。完成・Apple処理・実機操作は未確認。審査提出や一般公開はしない。
+- Build 11は共用グラフ処理がMetroの読込範囲外で失敗。mobile/metro.config.jsでsharedフォルダを明示し、iOSの本番JSバンドルを検証してから再ビルドする。本番APIのhealthは200、未認証の分析・友達APIは401を確認済み。
+- Metro設定修正後、iOS production JS/Hermesバンドル（1584モジュール）の生成成功。型チェック・lint後にBuild 12へ再送する。
 
 ## 2026-10-10：AIメニュー「おまかせ」の復旧
 
