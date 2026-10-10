@@ -10,7 +10,7 @@
     "build": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext build",
     "start": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext start",
     "test": "npm run build && npm run test:unit",
-    "test:unit": "node --experimental-strip-types --test tests/api-safety.test.mjs tests/apple-worker-bundle.test.mjs tests/retention.test.mjs",
+    "test:unit": "node --experimental-strip-types --test tests/api-safety.test.mjs tests/apple-worker-bundle.test.mjs tests/retention.test.mjs tests/chat-context.test.mjs",
     "test:source-security": "node --experimental-strip-types --test tests/source-security.test.mjs",
     "test:python": "node scripts/run-python-tests.mjs",
     "test:mobile-api": "node --test mobile/scripts/api-request.test.mjs mobile/scripts/weight-records.test.mjs mobile/scripts/training-records.test.mjs mobile/scripts/food-records.test.mjs mobile/scripts/account.test.mjs",

@@ -18,6 +18,8 @@ import {
 } from "drizzle-orm";
 import { getClerkUserId } from "@/app/lib/auth/clerk-auth";
 import { systemPrompt } from "@/app/lib/ai/systemPrompt";
+import { getChatContext } from "@/app/lib/ai/getChatContext";
+import { buildChatInput } from "@/app/lib/ai/chatContextFormat";
 import { openai } from "@/app/lib/ai/openAiClient";
 import { checkModeration } from "@/app/lib/ai/checkModeration";
 import {
@@ -784,16 +786,11 @@ export async function POST(request: Request) {
         content: storedMessage.content,
       }));
 
-    // 短い要約・直近5往復・今回の質問だけをOpenAI入力にする
-    const aiInput: ResponseInput = [
-      {
-        role: "developer",
-        content: `# 利用者の要約\n${conversationSummary || "保存済み情報なし"}`,
-      },
-      ...conversationInput,
-    ];
+    // 本人の最新DB記録・過去相談・直近5往復を1回の回答生成へ渡す。
+    const userContext = await getChatContext(clerkUserId);
+    const aiInput: ResponseInput = buildChatInput(userContext, conversationSummary, conversationInput);
 
-    // 1回の有料生成で回答を作る。本人情報は要約済みなので追加Tool通信は行わない
+    // 回答生成は1回。DB取得にAIのTool通信は使わない（安全性チェックは別処理）。
     const aiResponse =
       await openai.responses.create({
         model: openAiChatModel,

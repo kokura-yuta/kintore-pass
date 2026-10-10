@@ -89,11 +89,20 @@ export type UserAiContext = {
     recommendedBodyPart: string;
     reason: string;
     createdAt: Date;
+    estimatedMinutes?: number;
+    advice?: string[];
+    conditionScore?: number | null;
+    performedAt?: Date | null;
 
     exercises: {
       exerciseName: string;
       bodyPart: string;
       bodyArea: string | null;
+      targetWeightKg?: number | null;
+      targetReps?: string;
+      sets?: number;
+      restSeconds?: number;
+      note?: string;
     }[];
   }[];
 };
@@ -125,6 +134,7 @@ async function getSetsForExercise(
 // 認証済みのClerkユーザーIDからAI用の本人データを取得する
 export async function getUserAiContext(
   clerkUserId: string,
+  options: { includeMenuDetails?: boolean; skipFoodRecords?: boolean } = {},
 ): Promise<UserAiContext | null> {
   const db = getDb();
 
@@ -320,7 +330,7 @@ export async function getUserAiContext(
     );
 
   // 本人の最近7日間の食事を新しい順で最大100件取得する
-  const recentFoodRecords = await db
+  const recentFoodRecords = options.skipFoodRecords ? [] : await db
     .select({
       recordedDate:
         foodRecords.recordedDate,
@@ -356,6 +366,10 @@ export async function getUserAiContext(
         aiGeneratedMenus.recommendedBodyPart,
       reason: aiGeneratedMenus.reason,
       createdAt: aiGeneratedMenus.createdAt,
+      estimatedMinutes: aiGeneratedMenus.estimatedMinutes,
+      advice: aiGeneratedMenus.advice,
+      conditionScore: aiGeneratedMenus.conditionScore,
+      performedAt: aiGeneratedMenus.performedAt,
     })
     .from(aiGeneratedMenus)
     .where(
@@ -383,6 +397,11 @@ export async function getUserAiContext(
                 aiGeneratedMenuExercises.bodyPart,
               bodyArea:
                 aiGeneratedMenuExercises.bodyArea,
+              targetWeightKg: aiGeneratedMenuExercises.targetWeightKg,
+              targetReps: aiGeneratedMenuExercises.targetReps,
+              sets: aiGeneratedMenuExercises.sets,
+              restSeconds: aiGeneratedMenuExercises.restSeconds,
+              note: aiGeneratedMenuExercises.note,
             })
             .from(
               aiGeneratedMenuExercises,
@@ -397,9 +416,15 @@ export async function getUserAiContext(
               aiGeneratedMenuExercises.displayOrder,
             );
 
-          return {
-            ...menu,
-            exercises,
+          // メニュー生成側の入力サイズは変えず、チャットだけ詳細を取得する。
+          return options.includeMenuDetails ? { ...menu, exercises } : {
+            id: menu.id,
+            recommendedBodyPart: menu.recommendedBodyPart,
+            reason: menu.reason,
+            createdAt: menu.createdAt,
+            exercises: exercises.map(({ exerciseName, bodyPart, bodyArea }) => ({
+              exerciseName, bodyPart, bodyArea,
+            })),
           };
         },
       ),

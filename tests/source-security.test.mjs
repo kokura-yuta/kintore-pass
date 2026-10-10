@@ -280,18 +280,19 @@ test("アカウント削除は本人再確認と確認文字を必須にする",
   assert.match(accountScreen, /deleteConfirmation\s*!==\s*["']DELETE["']/);
 });
 
-test("AIチャットの短い要約へ食事情報を含める", async () => {
-  const summarySource = await readFile(
+test("AIチャットの本人資料へ食事の日別合計を本人限定で含める", async () => {
+  const contextSource = await readFile(
     path.join(
       projectRoot,
-      "app/lib/ai/chatSummary.ts",
+      "app/lib/ai/getChatContext.ts",
     ),
     "utf8",
   );
 
-  assert.match(summarySource, /recentFoodRecords/);
-  assert.match(summarySource, /calories/);
-  assert.match(summarySource, /たんぱく質/);
+  assert.match(contextSource, /eq\(foodRecords\.userId, context\.userId\)/);
+  assert.match(contextSource, /sum\(\$\{foodRecords\.calories\}\)/);
+  assert.match(contextSource, /sum\(\$\{foodRecords\.proteinGrams\}\)/);
+  assert.match(contextSource, /groupBy\(foodRecords\.recordedDate\)/);
 });
 
 test("AI APIはサーバー側の利用権確認後だけAI処理へ進む", async () => {
