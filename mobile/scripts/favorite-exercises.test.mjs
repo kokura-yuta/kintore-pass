@@ -10,21 +10,19 @@ test('new records start empty and successful creation clears only the draft, not
   assert.doesNotMatch(source, /defaultExercises/);
   assert.match(source, /addRecord\(savedRecord\);\s+setExercises\(\[\]\)/);
   assert.match(source, /setDraft\(null\)/);
-  assert.match(source, /FavoriteExercises key=\{formVersion\}/);
+  assert.match(source, /<FavoritesProvider><TrainingContent \/><\/FavoritesProvider>/);
   const failure = source.slice(source.indexOf('} catch (error)'), source.indexOf('} finally'));
   assert.doesNotMatch(failure, /setExercises|setDraft|setMemo/);
   assert.match(source, /if \(editingRecord\) \{\s+router.setParams\(\{ editId: undefined \}\);\s+router.back\(\)/);
   assert.match(source, /exercises.length > 0 \? <View style=\{styles.detailsCard\}/);
 });
 
-test('all six favorite categories are available before training records without a paywall', () => {
-  const source = read('../src/components/FavoriteExercises.tsx');
-  assert.match(source, /\['胸', '背中', '腕', '肩', '脚', '腹筋'\]/);
-  assert.doesNotMatch(source, /PremiumGate|usePlanAccess/);
-  assert.match(source, /種目を検索して、お気に入りを登録してください/);
-  assert.doesNotMatch(source, /setEditing|selecting && list.map/);
+test('training has no category favorites card but search favorites remain without a paywall', () => {
   const screen = read('../src/screens/TrainingScreen.tsx');
-  assert.ok(screen.indexOf('<FavoriteExercises') < screen.indexOf('>実施した種目</Text>'));
+  assert.doesNotMatch(screen, /<FavoriteExercises\b|部位別お気に入り種目|formVersion/);
+  assert.match(screen, /<ExercisePickerModal/);
+  assert.match(screen, /<FavoritesProvider><TrainingContent \/><\/FavoritesProvider>/);
+  assert.doesNotMatch(read('../src/components/ExercisePickerModal.tsx'), /PremiumGate|usePlanAccess/);
   assert.match(screen, /current.some\(item => item.id === exercise.id\) \? current/);
 });
 
@@ -43,17 +41,12 @@ test('all stack routes disable transitions and interactive swipe animations', ()
   assert.match(read('../src/app/_layout.tsx'), /screenOptions=\{\{ headerShown: false, animation: 'none', gestureEnabled: false/);
 });
 
-test('category tap adds favorites directly and registration is only in search', () => {
-  const source = read('../src/components/FavoriteExercises.tsx');
-  assert.match(source, /onPress=\{\(\) => selectPart\(item\)\}/);
-  assert.match(source, /item.category === category && ids.includes\(item.id\)/);
-  assert.match(source, /selectedFavorites.forEach\(item => onAdd\(item\)\)/);
+test('search registration and record addition remain separate actions', () => {
   const picker = read('../src/components/ExercisePickerModal.tsx');
   assert.match(picker, /toggle\(exercise.id\)/);
   assert.match(picker, /disabled=\{!ready \|\| busy\}/);
   assert.match(picker, /disabled=\{added\} onPress=\{\(\) => onAdd\(exercise\)\}/);
   assert.match(read('../src/screens/TrainingScreen.tsx'), /<FavoritesProvider><TrainingContent \/><\/FavoritesProvider>/);
-  assert.match(source, /if \(!ready \|\| busy\) return/);
   assert.match(read('../src/screens/TrainingScreen.tsx'), /setExercises\(\(current\) => current.some\(item => item.id === exercise.id\) \? current : \[...current, createRecord\(exercise\)\]\)/);
 });
 

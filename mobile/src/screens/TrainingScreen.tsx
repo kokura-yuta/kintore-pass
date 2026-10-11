@@ -6,7 +6,7 @@ import { Pressable } from '@/components/FeedbackPressable';
 import { feedback } from '@/lib/haptics';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { FavoriteExercises, FavoritesProvider } from '@/components/FavoriteExercises';
+import { FavoritesProvider } from '@/components/FavoriteExercises';
 import { ExercisePickerModal } from '@/components/ExercisePickerModal';
 import { ExerciseRecordCard, type ExerciseRecord } from '@/components/ExerciseRecordCard';
 import { useTrainingDraft } from '@/contexts/TrainingDraftContext';
@@ -93,7 +93,6 @@ function TrainingContent() {
   const [isSaving, setIsSaving] = useState(false);
   const savingLock = useRef(false);
   const scrollRef = useRef<ScrollView>(null);
-  const [formVersion, setFormVersion] = useState(0);
   const trainingDate = editingRecord?.performedOn ?? formatLocalDate(new Date());
 
   function addExercise(exercise: ExerciseOption) {
@@ -236,7 +235,6 @@ function TrainingContent() {
         setMemo('');
         setDraft(null);
         setPickerVisible(false);
-        setFormVersion(version => version + 1);
         scrollRef.current?.scrollTo({ y: 0, animated: false });
       }
       setSuccessMessage(`${response.message} カレンダーへ反映しました。`);
@@ -270,7 +268,6 @@ function TrainingContent() {
           </View>
           <Text style={styles.lead}>今日取り組んだ種目を記録します。種目以外の項目は空欄でも保存できます。</Text>
 
-          <FavoriteExercises key={formVersion} addedIds={exercises.map(exercise => exercise.id)} onAdd={addExercise} />
 
           <View style={styles.sectionHeading}>
             <Text style={styles.sectionTitle}>実施した種目</Text>
