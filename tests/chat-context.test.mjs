@@ -24,6 +24,15 @@ const food = [{ date: '2026-10-10', entries: 3, calories: 1170, proteinGrams: 93
   { date: '2026-10-09', entries: 0, calories: 0, proteinGrams: 0 }];
 const weights = [{ recordedDate: '2026-10-10', weightKg: 67.8 }];
 
+test('食事の未入力と実入力0をAI資料でも区別し、部分合計を明示する', () => {
+  const rows = [{ date: '2026-10-10', entries: 2, calories: null, proteinGrams: 0, calorieEntries: 0, proteinEntries: 1 }];
+  const data = JSON.parse(formatChatContext(fixture(), rows, [], now));
+  assert.equal(data.food.records[0].calories, null);
+  assert.equal(data.food.records[0].proteinGrams, 0);
+  assert.equal(data.food.records[0].proteinEntries, 1);
+  assert.match(data.food.note, /部分合計/);
+});
+
 test('全カテゴリの具体的な記録が固定JSONに残り、IDは送らない', () => {
   const raw = formatChatContext(fixture(), food, weights, now);
   const data = JSON.parse(raw);

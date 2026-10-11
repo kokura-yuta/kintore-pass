@@ -1,7 +1,7 @@
 import type { UserAiContext } from './getUserAiContext';
 
 export const chatContextLimits = { trainingSessions: 10, exercises: 12, sets: 20, menus: 3, maximumCharacters: 15000 };
-export type DailyFood = { date: string; entries: number; calories: number; proteinGrams: number };
+export type DailyFood = { date: string; entries: number; calories: number | null; proteinGrams: number | null; calorieEntries?: number; proteinEntries?: number };
 export type ChatWeight = { recordedDate: string; weightKg: number };
 
 const text = (value: string | null | undefined, maximum: number) =>
@@ -70,8 +70,8 @@ export function formatChatContext(context: UserAiContext | null, food: DailyFood
       areas, omittedAreas: body.areas.length - areas.length } : null,
     training: { records: sessions, fetchedLimit: 10, omittedFromFetched: context.recentTrainingSessions.length - sessions.length },
     generatedMenus: { records: menus, fetchedLimit: 3, omittedFromFetched: context.recentAiMenus.length - menus.length },
-    food: { windowDays: 7, note: '日本時間の日別記録合計。entries=0は未記録であり摂取ゼロではない。',
-      records: food.slice(0, 7).map(row => ({ ...row, calories: round(row.calories), proteinGrams: round(row.proteinGrams) })) },
+    food: { windowDays: 7, note: '日本時間の日別入力済み分の合計。entries=0・nullは未記録であり摂取ゼロではない。calorieEntries/proteinEntriesがentries未満なら部分合計で、一日の摂取量と断定しない。',
+      records: food.slice(0, 7).map(row => ({ ...row, calories: row.calories === null ? null : round(row.calories), proteinGrams: row.proteinGrams === null ? null : round(row.proteinGrams) })) },
     weights: weights.slice(0, 7),
   };
   const result = JSON.stringify(payload);

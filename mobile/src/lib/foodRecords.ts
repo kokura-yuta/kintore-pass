@@ -38,6 +38,7 @@ export function fetchFoodRecords(
     {
       method: 'GET',
       token,
+      headers: { 'x-kintorepas-food-contract': 'nullable-v1' },
     },
   );
 }
@@ -52,6 +53,7 @@ export async function createFoodRecord(
     {
       method: 'POST',
       token,
+      headers: { 'x-kintorepas-food-contract': 'nullable-v1' },
       body: JSON.stringify(input),
     },
   );
@@ -70,6 +72,7 @@ export async function updateFoodRecord(
     {
       method: 'PATCH',
       token,
+      headers: { 'x-kintorepas-food-contract': 'nullable-v1' },
       body: JSON.stringify({ recordId, ...input }),
     },
   );
