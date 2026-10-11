@@ -1,5 +1,6 @@
 // ログイン中の本人が食事記録を保存・取得・変更・削除するAPI
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
+import { acceptsNullableFood, foodResponseRecord } from "@/app/lib/validation/foodContract";
 
 import {
   getClerkUserId,
@@ -64,6 +65,11 @@ export async function POST(request: Request) {
       );
     }
 
+    const nullable = acceptsNullableFood(request);
+    if (!nullable && parsedBody.data.calories === null) {
+      return Response.json({ error: "カロリーを入力してください。" }, { status: 400 });
+    }
+
     const userId = await findCurrentUserId(clerkUserId);
 
     if (!userId) {
@@ -78,11 +84,12 @@ export async function POST(request: Request) {
       .values({
         userId,
         ...parsedBody.data,
+        proteinGrams: nullable ? parsedBody.data.proteinGrams : (parsedBody.data.proteinGrams ?? 0),
       })
       .returning();
 
     return Response.json(
-      { record: createdRecords[0] },
+      { record: foodResponseRecord(createdRecords[0], nullable) },
       { status: 201 },
     );
   } catch (error) {
@@ -161,7 +168,7 @@ export async function GET(request: Request) {
 
     return Response.json({
       date: parsedDate.data,
-      records,
+      records: records.map(record => foodResponseRecord(record, acceptsNullableFood(request))),
       summary: {
         totalCalories: Number(totalCalories.toFixed(1)),
         totalProteinGrams: Number(
@@ -212,10 +219,22 @@ export async function PATCH(request: Request) {
     }
 
     const { recordId, ...recordValues } = parsedBody.data;
+    const nullable = acceptsNullableFood(request);
+    if (!nullable && recordValues.calories === null) {
+      return Response.json({ error: "カロリーを入力してください。" }, { status: 400 });
+    }
+    const legacyProtein = recordValues.proteinGrams ?? 0;
     const updatedRecords = await getDb()
       .update(foodRecords)
       .set({
         ...recordValues,
+        // Legacy edit round-trips must not replace unknown values with display zeros.
+        calories: !nullable && recordValues.calories === 0
+          ? sql`case when ${foodRecords.calories} is null then null else 0 end`
+          : recordValues.calories,
+        proteinGrams: !nullable && legacyProtein === 0
+          ? sql`case when ${foodRecords.proteinGrams} is null then null else 0 end`
+          : nullable ? recordValues.proteinGrams : legacyProtein,
         updatedAt: new Date(),
       })
       .where(
@@ -235,7 +254,7 @@ export async function PATCH(request: Request) {
       );
     }
 
-    return Response.json({ record: updatedRecord });
+    return Response.json({ record: foodResponseRecord(updatedRecord, nullable) });
   } catch (error) {
     logServerError("food_record_update_failed", error);
     return Response.json(

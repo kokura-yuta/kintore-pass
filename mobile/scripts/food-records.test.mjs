@@ -39,6 +39,7 @@ const input = {
 
 test('未入力の栄養値は0にせずnullのまま保存・更新する', async () => {
   const api = loadFoodRecords(async (_path, options) => {
+    assert.equal(options.headers['x-kintorepas-food-contract'], 'nullable-v1');
     const body = JSON.parse(options.body);
     assert.equal(body.calories, null);
     assert.equal(body.proteinGrams, null);
@@ -54,6 +55,7 @@ test('指定日の食事記録をGETする', async () => {
     assert.equal(path, '/api/food-records?date=2026-09-11');
     assert.equal(options.method, 'GET');
     assert.equal(options.token, 'test-token');
+    assert.equal(options.headers['x-kintorepas-food-contract'], 'nullable-v1');
     return {
       date: '2026-09-11',
       records: [],

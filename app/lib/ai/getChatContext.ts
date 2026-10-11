@@ -14,8 +14,10 @@ export async function getChatContext(clerkUserId: string) {
   const db = getDb();
   const [dailyFood, weights] = await Promise.all([
     db.select({ date: foodRecords.recordedDate, entries: sql<number>`count(*)::int`,
-      calories: sql<number>`coalesce(sum(${foodRecords.calories}), 0)::float8`,
-      proteinGrams: sql<number>`coalesce(sum(${foodRecords.proteinGrams}), 0)::float8` })
+      calories: sql<number | null>`sum(${foodRecords.calories})::float8`,
+      proteinGrams: sql<number | null>`sum(${foodRecords.proteinGrams})::float8`,
+      calorieEntries: sql<number>`count(${foodRecords.calories})::int`,
+      proteinEntries: sql<number>`count(${foodRecords.proteinGrams})::int` })
       .from(foodRecords).where(and(eq(foodRecords.userId, context.userId), gte(foodRecords.recordedDate, dates[6]), lte(foodRecords.recordedDate, dates[0])))
       .groupBy(foodRecords.recordedDate),
     db.select({ recordedDate: weightRecords.recordedDate, weightKg: weightRecords.weightKg })
@@ -23,5 +25,5 @@ export async function getChatContext(clerkUserId: string) {
       .orderBy(desc(weightRecords.recordedDate)).limit(7),
   ]);
   const byDate = new Map(dailyFood.map(row => [row.date, row]));
-  return formatChatContext(context, dates.map(date => byDate.get(date) ?? { date, entries: 0, calories: 0, proteinGrams: 0 }), weights, now);
+  return formatChatContext(context, dates.map(date => byDate.get(date) ?? { date, entries: 0, calories: null, proteinGrams: null, calorieEntries: 0, proteinEntries: 0 }), weights, now);
 }
