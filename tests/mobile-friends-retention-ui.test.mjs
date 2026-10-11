@@ -17,17 +17,18 @@ test('公開スイッチの未保存変更は再取得に上書きされず保�
   assert.match(friends,/Switch disabled=\{busy\}/);
   assert.match(friends,/TextInput editable=\{!busy\}/);
 });
-test('友達画面は検索・一覧・選択した実記録の順で設定は折りたたむ',()=>{
+test('友達カードから本人のカレンダーへ直接移動し、一覧には記録を重複表示しない',()=>{
   assert.ok(friends.indexOf('placeholder="ユーザーIDで検索"')<friends.indexOf('>友達一覧</Text>'));
-  assert.ok(friends.indexOf('>友達一覧</Text>')<friends.indexOf('>友達の最近のトレーニング</Text>'));
   assert.match(friends,/showSettings&&settings&&/);
   assert.match(friends,/showRequests&&/);
-  assert.match(friends,/profile.shared&&profile.records.map/);
-  assert.match(friends,/setProfile\(null\);setExpandedRecord\(null\)/);
+  assert.match(friends,/onPress=\{\(\)=>router.push\(`\/friend-calendar\?userId=\$\{r.id\}` as Href\)\}/);
+  assert.doesNotMatch(friends,/友達の最近のトレーニング|最新20記録|詳しい記録を見る|setProfile|async function visit/);
+  assert.match(friends,/managedFriend===r.id&&/);
   assert.match(friends,/automaticallyAdjustKeyboardInsets/);
   for(const action of ['request','accept','reject','cancel','remove','block','unblock','report']) assert.ok(friends.includes(`action:'${action}'`));
-  assert.match(friends,/setNumber/);
-  assert.match(friends,/詳しい記録を見る/);
+  const calendar=readFileSync(new URL('../mobile/src/app/friend-calendar.tsx',import.meta.url),'utf8');
+  assert.match(calendar,/setNumber/);
+  assert.match(calendar,/profile\?\.shared/);
 });
 test('スマホ幅のグラフは欠測で分断し100%を超えても上限を切らない',()=>{
   const points=[{start:'1',percent:50,individual:null},{start:'2',percent:null,individual:null},{start:'3',percent:125,individual:150}];
