@@ -20,8 +20,8 @@ async function handle(request:Request) {
       const [settings,relations,blocked]=await Promise.all([db.execute(friendSettingsRead(id)),db.execute(friendList(id)),db.execute(friendBlockList(id))]);
       return {settings:settings.rows[0],relations:filterFriendOutput(relations.rows),blocked:blocked.rows};
     },
-    profile:async(id,target)=>{
-      const result=await getDb().execute(friendProfile(id,target));
+    profile:async(id,target,month)=>{
+      const result=await getDb().execute(friendProfile(id,target,month));
       if(!result.rows.length) throw new FriendError('承認済みの友達のみ閲覧できます。',403);
       return {profile:filterFriendOutput(result.rows[0])};
     },

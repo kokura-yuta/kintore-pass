@@ -51,7 +51,7 @@ export const friendChange = (id: string, target: string, action: 'accept' | 'rej
     OR (b.blocker_id=${target}::uuid AND b.blocked_id=${id}::uuid)) RETURNING status`;
 };
 // 友達関係と公開設定を記録取得と同じSQLで検査。メモ・体重・写真・会話は一切SELECTしない。
-export const friendProfile = (id: string, target: string) => sql`
+export const friendProfile = (id: string, target: string, month?: string) => sql`
  SELECT u.id,coalesce(fs.alias,'筋トレPASユーザー') AS name,coalesce(fs.share_training,false) AS shared,
  CASE WHEN fs.share_training THEN coalesce((
    SELECT json_agg(records ORDER BY records."performedAt" DESC) FROM (
@@ -60,8 +60,10 @@ export const friendProfile = (id: string, target: string) => sql`
        'setNumber',t.set_number,'weightKg',t.weight_kg,'reps',t.reps) ORDER BY t.set_number) FROM training_sets t WHERE t.training_exercise_id=e.id),'[]'::json))
        ORDER BY e.display_order) FROM training_exercises e WHERE e.session_id=s.id),'[]'::json) AS exercises
      FROM training_sessions s WHERE s.user_id=u.id AND s.performed_at<=now()
+       ${month ? sql`AND s.performed_at >= (${month + '-01'}::date::timestamp AT TIME ZONE 'Asia/Tokyo')
+         AND s.performed_at < ((${month + '-01'}::date + interval '1 month')::timestamp AT TIME ZONE 'Asia/Tokyo')` : sql``}
        AND EXISTS(SELECT 1 FROM training_exercises e WHERE e.session_id=s.id)
-     ORDER BY s.performed_at DESC LIMIT 20
+     ORDER BY s.performed_at DESC ${month ? sql`` : sql`LIMIT 20`}
    ) records
  ),'[]'::json) ELSE '[]'::json END AS records
  FROM users u LEFT JOIN friend_settings fs ON fs.user_id=u.id
