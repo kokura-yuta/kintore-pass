@@ -2,6 +2,16 @@
 
 更新日：2026-10-11。これは配布手順であり、配布完了報告ではありません。
 
+### Build 22の更新（配布完了）
+
+- 作成元は共有main a6e384bdc6d5dce3643964e63c7fb4835ba20a88。プラン確認のユーザー別集約・同時要求の合流、異なるタブ即時受付、チャット本文維持と古い応答の破棄を追加。ホーム構成とFree認可は変更しない。
+- 型・mobile lint、プラン／遷移15件・mobile API28件・単体98件・ソース安全性19件、最終iOS/Hermes exportが成功。実iPhoneの遷移フレーム／通信時間は未測定で、ラグゼロを保証するものではない。
+- 配布コピーのmobile 145ファイルが共有mainと一致。作業コピーのeas.jsonだけautoIncrement=false。Macで新番号22を作成中。本番設定はEASからメモリ経由で注入、開発envをコピーしない。Appleログイン復旧後、最新配布21／22未使用を画面で確認。
+- サーバー／DB変更なし、Sites Version 36を継続使用。次は署名済みIPAの設定・番号検証→同一IPA送信→Apple処理／既存内部グループ割当の確認。App Store審査提出・新テスター追加は行わない。
+- Macで署名済みBuild 22作成成功。本番API・Clerk公開値がバイナリと完全一致し、共有プラン確認と既存体重同期／食事nullable-v1を含む。IPA outputs/releases/kintorepas-build22.ipa（Git対象外）、SHA256 56c01f85d1270208bca25e8e1a80568dd9b371bd5df9a13fb6b577054b81d94f。検証した同一ファイルをEAS submitでAppleへ送信開始。処理完了・内部グループ割当はまだ未確認。
+- EAS送信6acb2f26-a288-4aad-9ccf-31403ae43108成功、Appleへのアップロード完了。Apple処理・内部グループ割当・iPhone更新は確認待ち。依存関係はBuild 21から変更せず、既知の監査警告の対応は別途残す。
+- 2026-10-11 18:39 JST：Apple Build 22（7a1704f8-95ab-42ad-9369-71ddb55f3cc4）の「提出準備完了・期限90日」と既存「筋トレPAS 開発テスト」割当を確認。証拠app-store-screenshots/build22-ready-2026-10-11.png。Mac作成・Apple送信・TestFlight配布完了。残るのはiPhoneで22に更新し、高速タブ操作／AI往復の本文維持／写真選択から復帰／期限・アカウント切替を実機で確認すること。全画面のラグゼロは未実測。
+
 ### Build 21の更新（配布完了）
 
 - ホームの再構成は行わず、体重記録→プロフィール同期と友達入口の余白だけを追加。共有main 3577a34のmobile 141ファイルと配布コピーが一致（eas.jsonのautoIncrementだけコピーでfalse）。
