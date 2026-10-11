@@ -2,6 +2,15 @@
 
 更新日：2026-10-11。これは配布手順であり、配布完了報告ではありません。
 
+### Build 21の更新（配布完了）
+
+- ホームの再構成は行わず、体重記録→プロフィール同期と友達入口の余白だけを追加。共有main 3577a34のmobile 141ファイルと配布コピーが一致（eas.jsonのautoIncrementだけコピーでfalse）。
+- Sites Version 36公開成功、ソース37c0467e9feaa0f753dc293433acd770a408f6aa、既存URLと環境revision 19を保持。追加DB変更なし。公開API回帰4件、単体98件、mobile API20件、型・lintを確認。
+- MacローカルBuild 21作成成功。IPAの本番API・Clerk公開値の完全一致、番号21とprofileWeightKg／fullWidthShortcut／nullable-v1を確認。outputs/releases/kintorepas-build21.ipaへ保存、SHA256 ec6a68631b916a015dda44cc1e02fdc59253660062de8bfec0fdea0cec568385。
+- EAS送信e883ce99-e49c-4f25-b9ee-9c15fa5752caが成功しAppleへのアップロード完了。Apple処理／グループ割当・実機検査は未完了。App Store審査提出なし。
+- 15:50 JSTにApple処理完了と既存「筋トレPAS 開発テスト」割当を確認。Apple Build ID 32b9e4d3-be91-4830-b998-d4e22677f48a、提出準備完了・期限90日。証拠app-store-screenshots/build21-ready-2026-10-11.png。実機で体重変更後のプロフィール反映と余白を確認する作業は残す。
+- 依存関係はBuild 20から変更していない。Expo doctorは20/21成功、SDK57の6パッケージにパッチ更新推奨。npm auditは39件（moderate14/high24/critical1）、criticalはreact-native→react-devtools-core→shell-quote@1.10.0のquote()条件付きコマンド注入。警告を無効化せず記録、今回の機能修正と依存更新を混同しない。依存監査の対応は別作業として残す。
+
 ### Mac担当の更新（2026-10-11）
 
 - 互換修正16f464dと最新main 59d1d05を統合。0021は隔離DBで検証後、本番Neon mainへDrizzleバッチ適用済み。既存食事行の件数・全行ハッシュは変更前後で一致。
