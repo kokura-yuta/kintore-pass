@@ -1,7 +1,9 @@
 import { z } from 'zod';
+const reportReasons = ['harassment','inappropriate','spam','other'] as const;
 export const friendActionSchema = z.discriminatedUnion('action', [
   z.object({ action:z.literal('search'), query:z.string().trim().max(254).refine(v=>z.string().uuid().safeParse(v).success || z.string().email().safeParse(v).success) }),
-  ...(['request','accept','reject','cancel','remove'] as const).map(action=>z.object({ action:z.literal(action), targetId:z.string().uuid() })),
+  ...(['request','accept','reject','cancel','remove','block','unblock'] as const).map(action=>z.object({ action:z.literal(action), targetId:z.string().uuid() })),
+  z.object({action:z.literal('report'),targetId:z.string().uuid(),reason:z.enum(reportReasons)}),
   z.object({action:z.literal('settings'),alias:z.string().trim().min(1).max(40).nullable(),emailSearchEnabled:z.boolean(),shareTraining:z.boolean()}),
 ]);
 export class FriendError extends Error {

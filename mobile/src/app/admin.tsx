@@ -1,5 +1,5 @@
 import { useAuth } from '@clerk/expo';
-import { useRouter } from 'expo-router';
+import { type Href, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -132,6 +132,9 @@ export default function AdminScreen() {
             </Text>
 
             <AdminRetention key={data.generatedAt} compact />
+            <Pressable onPress={()=>router.push('/admin-friend-reports' as Href)} style={styles.retryButton}>
+              <Text style={styles.retryText}>友達機能の通報対応</Text>
+            </Pressable>
             {data.warnings.length > 0 ? (
               <View style={styles.warningCard}>
                 <Text style={styles.warningTitle}>コスト警告</Text>

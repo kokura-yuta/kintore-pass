@@ -7,6 +7,7 @@ import {
   date,
   index,
   integer,
+  jsonb,
   bigint,
   pgTable,
   primaryKey,
@@ -101,6 +102,7 @@ export const friendSettings = pgTable('friend_settings', {
   alias: text('alias'),
   emailSearchEnabled: boolean('email_search_enabled').notNull().default(false),
   shareTraining: boolean('share_training').notNull().default(false),
+  socialSuspended: boolean('social_suspended').notNull().default(false),
 });
 export const friendships = pgTable('friendships', {
   lowId: uuid('low_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
@@ -115,6 +117,26 @@ export const friendActionQuotas = pgTable('friend_action_quotas', {
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   day: date('day').notNull(), kind: text('kind').notNull(), used: integer('used').notNull(),
 }, t => [primaryKey({ columns: [t.userId, t.day, t.kind] }), check('friend_action_quotas_used', sql`${t.used} >= 0`)]);
+
+export const friendBlocks = pgTable('friend_blocks', {
+  blockerId: uuid('blocker_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  blockedId: uuid('blocked_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, t => [primaryKey({columns:[t.blockerId,t.blockedId]}), index('friend_blocks_blocked_idx').on(t.blockedId), check('friend_blocks_self',sql`${t.blockerId} <> ${t.blockedId}`)]);
+export const friendReports = pgTable('friend_reports', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  reporterId: uuid('reporter_id').notNull().references(() => users.id, {onDelete:'cascade'}),
+  targetId: uuid('target_id').notNull().references(() => users.id, {onDelete:'cascade'}),
+  reason: text('reason').notNull(), status: text('status').notNull().default('pending'),
+  reportedAlias: text('reported_alias'),
+  exerciseNames: jsonb('exercise_names').notNull().default(sql`'[]'::jsonb`),
+  createdAt: timestamp('created_at', {withTimezone:true}).notNull().defaultNow(),
+  resolvedAt: timestamp('resolved_at', {withTimezone:true}),
+}, t => [index('friend_reports_pending_idx').on(t.status,t.createdAt),
+  uniqueIndex('friend_reports_open_idx').on(t.reporterId,t.targetId).where(sql`${t.status} = 'pending'`),
+  check('friend_reports_reason',sql`${t.reason} in ('harassment','inappropriate','spam','other')`),
+  check('friend_reports_status',sql`${t.status} in ('pending','resolved')`),
+  check('friend_reports_self',sql`${t.reporterId} <> ${t.targetId}`)]);
 
 // 先着順の無料体験枠を重複なく確保するための固定20枠
 // userIdがnullなら未使用、値が入っていればその利用者が枠を取得済み

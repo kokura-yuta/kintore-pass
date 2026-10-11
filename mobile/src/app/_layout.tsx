@@ -38,7 +38,8 @@ export default function RootLayout() {
   }
 
   return (
-    <ClerkProvider publishableKey={publishableKey} tokenCache={tokenCache}>
+    <ClerkProvider publishableKey={publishableKey} tokenCache={tokenCache}
+      __experimental_disableNativeClientSync={__DEV__ && process.env.EXPO_PUBLIC_SCREENSHOT_MODE === 'true'}>
       <SafeAreaProvider>
         <ThemeProvider value={musclePasTheme}>
           <StatusBar style="light" />
