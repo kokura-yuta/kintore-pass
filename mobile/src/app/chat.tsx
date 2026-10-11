@@ -24,7 +24,7 @@ function toTimestamp(value: string) {
 }
 
 export default function ChatScreen() {
-  return <PremiumScreen title="AIチャット"><ChatContent /></PremiumScreen>;
+  return <PremiumScreen title="AI"><ChatContent /></PremiumScreen>;
 }
 
 function ChatContent() {
@@ -46,6 +46,7 @@ function ChatContent() {
   const [failedMessage, setFailedMessage] = useState('');
   const [historyReloadKey, setHistoryReloadKey] = useState(0);
   const scrollRef = useRef<ScrollView>(null);
+  const lastMenuPress = useRef(0);
   const getTokenRef = useRef(getToken);
   const loadedMessageConversationIds = useRef(new Set<string>());
   const messageRequestId = useRef(0);
@@ -267,10 +268,19 @@ function ChatContent() {
         >
           <View style={styles.header}>
             <Pressable accessibilityLabel="チャット履歴を開く" onPress={() => setDrawerVisible(true)} style={styles.menuButton}><Text style={styles.menuIcon}>☰</Text></Pressable>
-            <View style={styles.headerCopy}><Text style={styles.eyebrow}>AI TRAINING CHAT</Text><Text numberOfLines={1} style={styles.title}>{activeConversation?.title ?? 'AIコーチに相談'}</Text></View>
+            <View style={styles.headerCopy}><Text style={styles.eyebrow}>AI COACH</Text><Text numberOfLines={1} style={styles.title}>{activeConversation?.title ?? 'AI'}</Text></View>
             <Pressable accessibilityLabel="新しいチャット" disabled={isSending} onPress={startNewChat} style={styles.newButton}><Text style={styles.newButtonText}>＋</Text></Pressable>
           </View>
 
+          <Pressable accessibilityRole="button" disabled={isSending} onPress={() => {
+            const now = Date.now();
+            if (now - lastMenuPress.current < 800) return;
+            lastMenuPress.current = now;
+            router.push('/home?create=1');
+          }} style={styles.menuEntry}>
+            <View style={styles.menuEntryCopy}><Text style={styles.menuEntryTitle}>AIにメニューを作成してもらう</Text><Text style={styles.menuEntryNote}>今日の調子と部位に合わせて提案</Text></View>
+            <Text style={styles.menuEntryArrow}>›</Text>
+          </Pressable>
           <ScrollView automaticallyAdjustKeyboardInsets contentContainerStyle={styles.messages} keyboardDismissMode="interactive" keyboardShouldPersistTaps="handled" onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })} ref={scrollRef} showsVerticalScrollIndicator={false}>
             {isLoadingHistory || isLoadingMessages ? <StatusPanel label="保存済みのチャットを読み込んでいます…" />
               : !activeConversation?.messages.length ? <Welcome onSelectSuggestion={setInput} />
@@ -329,6 +339,11 @@ const markdownStyles = StyleSheet.create({
 });
 
 const styles = StyleSheet.create({
+  menuEntry: { marginHorizontal: 16, marginBottom: 8, padding: 14, borderRadius: 16, borderWidth: 1, borderColor: '#24677B', backgroundColor: '#0C2531', flexDirection: 'row', alignItems: 'center', gap: 10 },
+  menuEntryCopy: { flex: 1 },
+  menuEntryTitle: { color: '#73E7FF', fontSize: 14, fontWeight: '700' },
+  menuEntryNote: { color: '#A7B5BD', fontSize: 11, marginTop: 5 },
+  menuEntryArrow: { color: '#73E7FF', fontSize: 28 },
   screen: { flex: 1, backgroundColor: '#050A0F' }, safeArea: { flex: 1 }, header: { minHeight: 66, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, borderBottomWidth: 1, borderBottomColor: '#142833' }, menuButton: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }, menuIcon: { color: '#F4F6F3', fontSize: 20 }, headerCopy: { flex: 1, minWidth: 0, marginHorizontal: 5 }, eyebrow: { color: '#73E7FF', fontSize: 8, fontWeight: '700', letterSpacing: 1.2 }, title: { marginTop: 3, color: '#F4F6F3', fontSize: 16, fontWeight: '700' }, newButton: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#294653', borderRadius: 12 }, newButtonText: { color: '#73E7FF', fontSize: 20 },
   messages: { flexGrow: 1, paddingHorizontal: 14, paddingVertical: 17 }, welcome: { alignItems: 'center', paddingTop: 42 }, aiMark: { width: 54, height: 54, alignItems: 'center', justifyContent: 'center', borderRadius: 27, backgroundColor: '#00D4FF' }, aiMarkText: { color: '#050A0F', fontSize: 14, fontWeight: '700' }, welcomeTitle: { marginTop: 17, color: '#F4F6F3', fontSize: 18, fontWeight: '700', textAlign: 'center' }, welcomeText: { marginTop: 8, maxWidth: 290, color: '#8496A1', fontSize: 11, lineHeight: 18, textAlign: 'center' }, suggestions: { width: '100%', gap: 8, marginTop: 22 }, suggestion: { padding: 13, borderWidth: 1, borderColor: '#203441', borderRadius: 13, backgroundColor: '#0C151D' }, suggestionText: { color: '#CDD7DD', fontSize: 12, fontWeight: '700' }, statusPanel: { minHeight: 150, alignItems: 'center', justifyContent: 'center', gap: 12 }, statusText: { color: '#8798A3', fontSize: 12 },
   bubbleRow: { flexDirection: 'row', alignItems: 'flex-end', marginBottom: 14, maxWidth: '100%' }, userRow: { justifyContent: 'flex-end', paddingLeft: 45 }, assistantRow: { justifyContent: 'flex-start', paddingRight: 18 }, smallAiMark: { width: 25, height: 25, alignItems: 'center', justifyContent: 'center', marginRight: 7, borderRadius: 13, backgroundColor: '#00D4FF' }, smallAiText: { color: '#050A0F', fontSize: 7, fontWeight: '700' }, userBubble: { maxWidth: '88%', paddingHorizontal: 14, paddingVertical: 11, borderRadius: 17, borderBottomRightRadius: 5, backgroundColor: '#00D4FF' }, assistantBubble: { flex: 1, minWidth: 0, maxWidth: '100%', paddingHorizontal: 14, paddingVertical: 12, borderRadius: 17, borderBottomLeftRadius: 5, backgroundColor: '#0E1A23', overflow: 'hidden' }, assistantBubbleLoading: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 14, paddingVertical: 11, borderRadius: 17, backgroundColor: '#0E1A23' }, userMessageText: { color: '#050A0F', fontSize: 13, fontWeight: '700', lineHeight: 20 }, thinkingText: { color: '#8798A3', fontSize: 11 },

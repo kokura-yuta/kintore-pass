@@ -1,7 +1,7 @@
 import { useAuth } from '@clerk/expo';
 import { PremiumScreen } from '@/components/PremiumScreen';
 import * as Crypto from 'expo-crypto';
-import { type Href, Redirect, useRouter } from 'expo-router';
+import { type Href, Redirect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -89,11 +89,12 @@ function createDevelopmentHomeResponse(): HomeResponse {
 }
 
 export default function HomeScreen() {
-  return <PremiumScreen title="AIホーム"><HomeContent /></PremiumScreen>;
+  return <PremiumScreen title="AI"><HomeContent /></PremiumScreen>;
 }
 
 function HomeContent() {
   const router = useRouter();
+  const { create } = useLocalSearchParams<{ create?: string }>();
   const { getToken, isLoaded, isSignedIn } = useAuth({ treatPendingAsSignedOut: false });
   const { goalBody, profile } = useOnboarding();
   const { setDraft, setLatestGeneratedMenu, setTodayBodyPart, todayBodyPart } = useTrainingDraft();
@@ -106,7 +107,7 @@ function HomeContent() {
   const [homeData, setHomeData] = useState<HomeResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
-  const [showMenuBuilder, setShowMenuBuilder] = useState(false);
+  const [showMenuBuilder, setShowMenuBuilder] = useState(create === '1');
   const [builderCondition, setBuilderCondition] = useState<number | null>(null);
   const [builderBodyPart, setBuilderBodyPart] = useState<MenuBodyPart | null>(todayBodyPart);
   const [builderError, setBuilderError] = useState('');
@@ -258,13 +259,14 @@ function HomeContent() {
     <View style={styles.screen}>
       <SafeAreaView edges={['top']} style={styles.safeArea}>
         <ScrollView ref={scrollViewRef} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+          <Pressable accessibilityRole="button" onPress={() => router.canGoBack() ? router.back() : router.replace('/chat')} style={styles.outlineButton}><Text style={styles.outlineButtonText}>‹ AIチャットへ戻る</Text></Pressable>
           <View style={styles.header}>
-            <View><Text style={styles.brand}>筋トレ<Text style={styles.brandAccent}>PAS</Text></Text><Text style={styles.date}>{formatToday()}</Text></View>
+            <View><Text style={styles.brand}>AIメニュー</Text><Text style={styles.date}>{formatToday()}</Text></View>
             <View style={styles.goalPill}><Text style={styles.goalLabel}>GOAL</Text><Text numberOfLines={1} style={styles.goalValue}>{goalLabel}</Text></View>
           </View>
 
           {isLoading ? (
-            <ScreenStateCard message="今日のメニューを確認しています。" title="ホーム情報を読み込み中" type="loading" />
+            <ScreenStateCard message="今日のメニューを確認しています。" title="AIメニューを読み込み中" type="loading" />
           ) : null}
 
           {!isLoading && error ? (

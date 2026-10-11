@@ -8,10 +8,9 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 const navigationItems = [
-  { href: '/home', label: 'ホーム', icon: { ios: 'house', android: 'home', web: 'home' } },
   { href: '/training', label: 'トレーニング', icon: { ios: 'dumbbell', android: 'fitness_center', web: 'fitness_center' } },
   { href: '/food', label: '食事管理', icon: { ios: 'fork.knife', android: 'restaurant', web: 'restaurant' } },
-  { href: '/chat', label: 'チャット', icon: { ios: 'bubble.left.and.bubble.right', android: 'chat', web: 'chat' } },
+  { href: '/chat', label: 'AI', icon: { ios: 'sparkles', android: 'auto_awesome', web: 'auto_awesome' } },
   { href: '/my-page', label: 'マイページ', icon: { ios: 'person.crop.circle', android: 'account_circle', web: 'account_circle' } },
 ] as const;
 
@@ -29,7 +28,8 @@ export function BottomNavigation() {
       </Pressable>
       <View accessibilityRole="tablist" style={styles.navigation}>
         {navigationItems.map((item) => {
-          const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+          const atTabRoot = pathname === item.href || pathname.startsWith(`${item.href}/`);
+          const active = atTabRoot || (item.href === '/chat' && pathname === '/home');
 
           return (
             <Pressable
@@ -38,7 +38,7 @@ export function BottomNavigation() {
               accessibilityState={{ selected: active }}
               key={item.href}
               onPress={() => {
-                if (!canNavigateTab(active, lastPress.current, Date.now())) return;
+                if (!canNavigateTab(atTabRoot, lastPress.current, Date.now())) return;
                 lastPress.current = Date.now();
                 router.replace((plan.isFreePreview ? `${item.href}?previewPlan=free` : item.href) as Href);
               }}
