@@ -8,8 +8,8 @@ export type FoodRecord = {
   recordedDate: string;
   mealType: MealType;
   name: string;
-  calories: number;
-  proteinGrams: number;
+  calories: number | null;
+  proteinGrams: number | null;
 };
 
 export type FoodRecordInput = Omit<FoodRecord, 'id'>;

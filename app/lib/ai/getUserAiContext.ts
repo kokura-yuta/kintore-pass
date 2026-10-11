@@ -79,8 +79,8 @@ export type UserAiContext = {
     recordedDate: string;
     mealType: string;
     name: string;
-    calories: number;
-    proteinGrams: number;
+    calories: number | null;
+    proteinGrams: number | null;
   }[];
 
   // 同じ内容が続きすぎないようにAIが比較する直近の生成メニュー

@@ -1,6 +1,17 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+test('食事の栄養値は未指定・nullを受理し、0と区別する', () => {
+  const base = { recordedDate: '2026-10-11', mealType: '昼食', name: 'サンドイッチ' };
+  assert.equal(foodRecordCreateSchema.parse(base).calories, null);
+  assert.equal(foodRecordCreateSchema.parse(base).proteinGrams, null);
+  assert.equal(foodRecordCreateSchema.parse({ ...base, calories: 0 }).calories, 0);
+  assert.equal(foodRecordUpdateSchema.parse({ ...base, recordId: '550e8400-e29b-41d4-a716-446655440000', calories: null, proteinGrams: null }).calories, null);
+  for (const value of [-1, Infinity, 'abc', 10001]) {
+    assert.equal(foodRecordCreateSchema.safeParse({ ...base, calories: value }).success, false);
+  }
+});
+
 import {
   chatRequestSchema,
   deleteAccountSchema,
