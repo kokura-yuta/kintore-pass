@@ -108,7 +108,7 @@ export default function CalendarScreen() {
           </View>
 
           <Text style={styles.selectedTitle}>{selectedDate.replaceAll('-', '.')} の記録</Text>
-          {isLoading ? <ScreenStateCard compact title="記録を読み込み中" type="loading" /> : null}
+          {isLoading ? <Text accessibilityRole="progressbar" style={styles.previewNote}>記録を読み込み中…</Text> : null}
           {errorMessage ? (
             <ScreenStateCard actionLabel="もう一度読み込む" compact message={errorMessage} onAction={() => void reloadRecords()} title="記録を読み込めませんでした" type="error" />
           ) : null}
@@ -116,7 +116,7 @@ export default function CalendarScreen() {
           {!isLoading && !errorMessage && selectedRecords.length === 0 ? (
             <ScreenStateCard compact message="トレーニングを保存すると、この日に青色の印が付きます。" title="記録はありません" type="empty" />
           ) : null}
-          {!isLoading && !errorMessage ? selectedRecords.map((record, recordIndex) => (
+          {!errorMessage ? selectedRecords.map((record, recordIndex) => (
             <View key={record.id} style={styles.recordCard}>
               <View style={styles.recordHeading}><Text style={styles.recordTitle}>トレーニング {recordIndex + 1}</Text><Text style={styles.recordMeta}>{record.trainingMinutes ? `${record.trainingMinutes}分` : '時間未入力'} ・ 調子 {record.condition ?? '—'}/10</Text></View>
               {record.exercises.map((exercise) => (

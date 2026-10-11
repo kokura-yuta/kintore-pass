@@ -49,6 +49,7 @@ export default function WeightHistoryScreen() {
   const [recordedOn, setRecordedOn] = useState(formatLocalDate(new Date()));
   const [weightKg, setWeightKg] = useState('');
   const [error, setError] = useState('');
+  const [loadError, setLoadError] = useState('');
   const [success, setSuccess] = useState('');
   const [isLoading, setIsLoading] = useState(!isApiBypassEnabled);
   const [isSaving, setIsSaving] = useState(false);
@@ -70,6 +71,7 @@ export default function WeightHistoryScreen() {
     }
 
     setIsLoading(true);
+    setLoadError('');
     setError('');
 
     try {
@@ -82,11 +84,9 @@ export default function WeightHistoryScreen() {
       const response = await fetchWeightRecords(token);
       setRecords(response.records);
     } catch (loadError) {
-      setError(
-        loadError instanceof Error
-          ? loadError.message
-          : '体重履歴を読み込めませんでした。',
-      );
+      const message = loadError instanceof Error ? loadError.message : '体重履歴を読み込めませんでした。';
+      setError(message);
+      setLoadError(message);
     } finally {
       setIsLoading(false);
     }
@@ -313,7 +313,9 @@ export default function WeightHistoryScreen() {
                     );
                   })}
                 </View>
-              ) : <ScreenStateCard compact embedded message="体重を記録すると、直近7件の変化をグラフで確認できます。" title="体重の推移はまだありません" type="empty" />}
+              ) : isLoading ? <ScreenStateCard compact embedded title="体重の推移を確認中" type="loading" />
+                : loadError ? <ScreenStateCard compact embedded message="履歴を読み込んでから推移を表示します。" title="体重の推移を確認できませんでした" type="error" />
+                  : <ScreenStateCard compact embedded message="体重を記録すると、直近7件の変化をグラフで確認できます。" title="体重の推移はまだありません" type="empty" />}
             </View>
 
             <View style={styles.card}>

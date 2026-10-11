@@ -7,6 +7,15 @@ import { canNavigateTab } from '../src/lib/planPresentation.ts';
 const read = path => readFileSync(new URL(path, import.meta.url), 'utf8');
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve=yes; reject=no; }); return {promise,resolve,reject}; };
 
+test('weight graph does not label unknown or failed data empty; own calendar keeps cards during refresh',()=>{
+  const weight=read('../src/app/weight-history.tsx'),calendar=read('../src/app/calendar.tsx');
+  assert.match(weight,/\) : isLoading \? <ScreenStateCard compact embedded title="体重の推移を確認中" type="loading"/);
+  assert.match(weight,/: loadError \? <ScreenStateCard compact embedded/);
+  assert.match(calendar,/\{!errorMessage \? selectedRecords.map/);
+  assert.doesNotMatch(calendar,/!isLoading && !errorMessage \? selectedRecords.map/);
+  assert.match(calendar,/!isLoading && !errorMessage && selectedRecords.length === 0/);
+});
+
 test('10 concurrent plan checks perform one request and one state update', async () => {
   const gate=createRequestGate(), d=deferred(); let calls=0, updates=0;
   const tasks=Array.from({length:10},()=>gate.run(()=>{calls++;return d.promise;},()=>updates++,()=>assert.fail()));
