@@ -1,6 +1,7 @@
 import { useAuth } from '@clerk/expo';
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
-import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Platform, StyleSheet, Text, View } from 'react-native';
+import { Pressable } from '@/components/FeedbackPressable';
 import * as SecureStore from 'expo-secure-store';
 import { exerciseCatalog, type ExerciseCategory, type ExerciseOption } from '@/lib/exerciseCatalog';
 

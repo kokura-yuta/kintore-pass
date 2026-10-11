@@ -1,16 +1,8 @@
 import { useAuth } from '@clerk/expo';
 import { useRouter } from 'expo-router';
 import { useRef, useState } from 'react';
-import {
-  KeyboardAvoidingView,
-  ActivityIndicator,
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { KeyboardAvoidingView, ActivityIndicator, Platform, ScrollView, StyleSheet, Text, View,  } from 'react-native';
+import { Pressable } from '@/components/FeedbackPressable';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ProfileNumberField } from '@/components/ProfileNumberField';

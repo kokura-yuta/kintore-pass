@@ -1,4 +1,5 @@
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable } from '@/components/FeedbackPressable';
 
 import type { ExerciseOption } from '@/lib/exerciseCatalog';
 import type { PreviousSetPreview } from '@/lib/previousRecordPreview';

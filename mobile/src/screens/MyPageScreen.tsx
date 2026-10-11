@@ -1,7 +1,9 @@
 import { useAuth, useClerk, useReverification, useUser } from '@clerk/expo';
 import { type Href, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable } from '@/components/FeedbackPressable';
+import { feedback } from '@/lib/haptics';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ProfileNumberField } from '@/components/ProfileNumberField';
@@ -199,6 +201,7 @@ export default function MyPageScreen() {
       }
 
       setSavedMessage('プロフィールを保存しました。');
+      feedback('success');
     } catch (error) {
       setProfileError(
         error instanceof Error

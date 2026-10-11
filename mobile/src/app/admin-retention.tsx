@@ -1,5 +1,6 @@
 import { useRouter } from 'expo-router';
-import { Pressable, ScrollView, Text } from 'react-native';
+import { ScrollView, Text } from 'react-native';
+import { Pressable } from '@/components/FeedbackPressable';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { AdminRetention } from '@/components/AdminRetention';
 export default function RetentionScreen() {

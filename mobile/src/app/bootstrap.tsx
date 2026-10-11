@@ -1,7 +1,8 @@
 import { useAuth } from '@clerk/expo';
 import { Redirect, useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable } from '@/components/FeedbackPressable';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ScreenStateCard } from '@/components/ScreenStateCard';

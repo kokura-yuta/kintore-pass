@@ -3,7 +3,8 @@ import * as ImagePicker from 'expo-image-picker';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable } from '@/components/FeedbackPressable';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { BodyTypeCard } from '@/components/BodyTypeCard';

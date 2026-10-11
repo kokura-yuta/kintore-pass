@@ -1,7 +1,8 @@
 import { useAuth } from '@clerk/expo';
 import { useRouter } from 'expo-router';
 import { useCallback,useEffect,useRef,useState } from 'react';
-import { ActivityIndicator,Alert,Pressable,ScrollView,Text,View } from 'react-native';
+import { ActivityIndicator, Alert, ScrollView, Text, View } from 'react-native';
+import { Pressable } from '@/components/FeedbackPressable';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { apiRequest } from '@/lib/api';
 type Report={id:string;reporterId:string;targetId:string;name:string;exerciseNames:string[];reason:string;status:string;createdAt:string;suspended:boolean};

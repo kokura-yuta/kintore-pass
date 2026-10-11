@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
+import { Pressable } from '@/components/FeedbackPressable';
 import type { LongOptions, LongRetentionData } from '../../../shared/retention';
 import { RetentionLineChart, percentLabel as pct } from './RetentionLineChart';
 export function LongRetention({ data, options, onChange, individual=false }: { data: LongRetentionData; options: LongOptions; onChange: (v: LongOptions) => void;individual?:boolean }) {

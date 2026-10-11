@@ -1,7 +1,8 @@
 import { useAuth } from '@clerk/expo';
 import { type Href, useRouter, useFocusEffect } from 'expo-router';
 import { useCallback,useEffect,useRef,useState } from 'react';
-import { ActivityIndicator,Alert,Keyboard,KeyboardAvoidingView,Modal,Platform,Pressable,ScrollView,StyleSheet,Switch,Text,TextInput,View } from 'react-native';
+import { ActivityIndicator, Alert, Keyboard, KeyboardAvoidingView, Modal, Platform, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { Pressable } from '@/components/FeedbackPressable';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { apiRequest } from '@/lib/api';
 import { useAccountReadiness } from '@/contexts/AccountReadinessContext';

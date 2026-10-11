@@ -1,14 +1,8 @@
 import { useAuth } from '@clerk/expo';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
-import {
-  ActivityIndicator,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, View,  } from 'react-native';
+import { Pressable } from '@/components/FeedbackPressable';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useOnboarding } from '@/contexts/OnboardingContext';

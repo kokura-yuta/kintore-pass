@@ -4,7 +4,8 @@ import {
   useIAP,
 } from 'expo-iap';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { Pressable } from '@/components/FeedbackPressable';
 
 import { verifyAppleSubscription } from '@/lib/subscription';
 

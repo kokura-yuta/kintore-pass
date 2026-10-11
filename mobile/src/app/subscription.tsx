@@ -1,7 +1,8 @@
 import { useAuth } from '@clerk/expo';
 import { type Href, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable } from '@/components/FeedbackPressable';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 // Metroは実行端末に合わせて.native.tsxまたは.web.tsxを選択します。

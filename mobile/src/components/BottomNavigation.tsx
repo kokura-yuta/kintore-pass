@@ -4,7 +4,8 @@ import { useRef } from 'react';
 import { usePlanAccess } from '@/hooks/usePlanAccess';
 import { canNavigateTab, planLabel } from '@/lib/planPresentation';
 import { isApiBypassEnabled, isScreenshotMode } from '@/lib/api';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
+import { Pressable } from '@/components/FeedbackPressable';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 const navigationItems = [

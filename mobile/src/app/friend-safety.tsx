@@ -1,5 +1,6 @@
 import { useRouter } from 'expo-router';
-import { Linking, Pressable, ScrollView, Text } from 'react-native';
+import { Linking, ScrollView, Text } from 'react-native';
+import { Pressable } from '@/components/FeedbackPressable';
 import { SafeAreaView } from 'react-native-safe-area-context';
 export default function FriendSafetyScreen(){
   const router=useRouter();

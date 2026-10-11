@@ -3,7 +3,8 @@ import { PremiumScreen } from '@/components/PremiumScreen';
 import * as Crypto from 'expo-crypto';
 import { Redirect, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable } from '@/components/FeedbackPressable';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { BottomNavigation } from '@/components/BottomNavigation';

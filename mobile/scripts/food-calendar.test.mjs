@@ -14,6 +14,7 @@ function calendar(selectedDate) {
   vm.runInNewContext(compiled, { exports, require: id => {
     if (id === 'react') return { useState: () => [month, value => { month = value; }], useEffect: () => {} };
     if (id === 'react-native') return { View: 'View', Text: 'Text', Pressable: 'Pressable', StyleSheet: { create: value => value } };
+    if (id === '@/components/FeedbackPressable') return { Pressable: 'Pressable' };
     if (id === 'react/jsx-runtime') return { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) };
     throw new Error(id);
   } });

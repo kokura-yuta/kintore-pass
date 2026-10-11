@@ -1,6 +1,7 @@
 import { useRouter } from 'expo-router';
 import { useMemo, useRef, useState } from 'react';
-import { Alert, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable } from '@/components/FeedbackPressable';
 import { useAuth } from '@clerk/expo';
 import { SafeAreaView } from 'react-native-safe-area-context';
 

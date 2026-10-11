@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Modal, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable } from '@/components/FeedbackPressable';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { exerciseCatalog, exerciseCategories, type ExerciseOption } from '@/lib/exerciseCatalog';

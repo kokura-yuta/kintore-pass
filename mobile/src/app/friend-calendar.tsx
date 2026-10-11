@@ -1,7 +1,8 @@
 import { useAuth } from '@clerk/expo';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, AppState, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, AppState, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable } from '@/components/FeedbackPressable';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { apiRequest } from '@/lib/api';
 import { jstDay, monthCells, shiftMonth } from '@/lib/friend-calendar';

@@ -1,7 +1,9 @@
 import { useAuth } from '@clerk/expo';
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable } from '@/components/FeedbackPressable';
+import { feedback } from '@/lib/haptics';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { FoodCalendar } from '@/components/FoodCalendar';
@@ -153,6 +155,7 @@ export default function FoodScreen() {
         setEntries((current) => editingId ? current.map((item) => item.id === editingId ? savedRecord : item) : [...current, savedRecord]);
       } else { setViewDate(entryDate); }
       setSuccess(editingId ? '食事記録を更新しました。' : '食事を記録しました。');
+      feedback('success');
       if (!isApiBypassEnabled && entryDate === viewDate) void loadEntries(viewDate);
       resetForm();
     } catch (saveError) {

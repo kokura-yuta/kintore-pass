@@ -1,7 +1,9 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useMemo, useRef, useState } from 'react';
 import { useAuth } from '@clerk/expo';
-import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable } from '@/components/FeedbackPressable';
+import { feedback } from '@/lib/haptics';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { FavoriteExercises, FavoritesProvider } from '@/components/FavoriteExercises';
@@ -238,6 +240,7 @@ function TrainingContent() {
         scrollRef.current?.scrollTo({ y: 0, animated: false });
       }
       setSuccessMessage(`${response.message} カレンダーへ反映しました。`);
+      feedback('success');
       if (editingRecord) {
         router.setParams({ editId: undefined });
         router.back();

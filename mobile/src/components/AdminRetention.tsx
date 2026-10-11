@@ -1,7 +1,8 @@
 import { useAuth } from '@clerk/expo';
 import { type Href, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable } from '@/components/FeedbackPressable';
 import { apiRequest } from '@/lib/api';
 import type { RetentionData, LongRetentionData, LongOptions } from '../../../shared/retention';
 import { LongRetention } from './LongRetention';

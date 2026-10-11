@@ -1,15 +1,8 @@
 import { useAuth } from '@clerk/expo';
 import { type Href, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import {
-  ActivityIndicator,
-  Pressable,
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, View,  } from 'react-native';
+import { Pressable } from '@/components/FeedbackPressable';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { AdminRetention } from '@/components/AdminRetention';
 

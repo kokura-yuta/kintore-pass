@@ -4,10 +4,8 @@ import * as Crypto from 'expo-crypto';
 import { Redirect, useRouter, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Markdown from 'react-native-markdown-display';
-import {
-  ActivityIndicator, Alert, KeyboardAvoidingView, Modal, Platform, Pressable,
-  ScrollView, StyleSheet, Text, TextInput, View,
-} from 'react-native';
+import { ActivityIndicator, Alert, KeyboardAvoidingView, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, View,  } from 'react-native';
+import { Pressable } from '@/components/FeedbackPressable';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { type ChatMessage, useChatHistory } from '@/contexts/ChatHistoryContext';

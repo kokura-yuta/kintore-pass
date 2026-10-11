@@ -1,7 +1,8 @@
 import { BlurView } from 'expo-blur';
 import { useRouter, useSegments } from 'expo-router';
 import { type ReactNode } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable } from '@/components/FeedbackPressable';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { BottomNavigation } from '@/components/BottomNavigation';
 import { usePlanAccess } from '@/hooks/usePlanAccess';

@@ -1,7 +1,9 @@
 import { useAuth } from '@clerk/expo';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable } from '@/components/FeedbackPressable';
+import { feedback } from '@/lib/haptics';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ScreenStateCard } from '@/components/ScreenStateCard';
@@ -173,6 +175,7 @@ export default function WeightHistoryScreen() {
 
       setWeightKg('');
       setEditingRecordId(null);
+      feedback('success');
       setSuccess(
         updateTargetId
           ? '体重記録を更新しました。'
