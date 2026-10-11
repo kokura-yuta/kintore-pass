@@ -2,6 +2,7 @@ import { ClerkProvider, useAuth } from '@clerk/expo';
 import { tokenCache } from '@clerk/expo/token-cache';
 import { DarkTheme, Stack, ThemeProvider } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import * as SplashScreen from 'expo-splash-screen';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { ConfigurationRequiredScreen } from '@/components/ConfigurationRequiredScreen';
@@ -13,6 +14,9 @@ import { WeightHistoryProvider } from '@/contexts/WeightHistoryContext';
 import { ChatHistoryProvider } from '@/contexts/ChatHistoryContext';
 
 const publishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY;
+
+// Do not fade the native launch surface over the already-rendered brand screen.
+SplashScreen.setOptions({ fade: false, duration: 0 });
 
 const musclePasTheme = {
   ...DarkTheme,
@@ -62,7 +66,11 @@ function UserDataProviders() {
         <TrainingHistoryProvider>
           <WeightHistoryProvider>
             <ChatHistoryProvider>
-              <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#050A0F' } }} />
+              <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#050A0F' } }}>
+                <Stack.Screen name="index" options={{ animation: 'none' }} />
+                <Stack.Screen name="auth-gate" options={{ animation: 'none' }} />
+                <Stack.Screen name="bootstrap" options={{ animation: 'none' }} />
+              </Stack>
             </ChatHistoryProvider>
           </WeightHistoryProvider>
         </TrainingHistoryProvider>

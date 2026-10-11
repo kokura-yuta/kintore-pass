@@ -66,10 +66,7 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#050A0F",
-          "image": "./assets/images/kintore-pas-icon-v3-1024.png",
-          "imageWidth": 180,
-          "resizeMode": "contain"
+          "backgroundColor": "#050A0F"
         }
       ],
       "@clerk/expo",
