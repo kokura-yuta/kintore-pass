@@ -38,6 +38,19 @@ test('スマホ幅のグラフは欠測で分断し100%を超えても上限を�
   assert.deepEqual(lineSegments(points,'individual',320,260).paths,['M300.00,15.00']);
   assert.deepEqual(lineSegments([{start:'1',percent:null,individual:null}],'percent',320,260).paths,[]);
 });
+test('友達カレンダーは取得完了前に空の月や仮の名前を表示しない',()=>{
+  const calendar=readFileSync(new URL('../mobile/src/app/friend-calendar.tsx',import.meta.url),'utf8');
+  const gate=calendar.indexOf('if (!profile) return');
+  assert.ok(gate>calendar.indexOf('data?.key === key'));
+  assert.ok(gate<calendar.indexOf('monthCells(month).map'));
+  const pending=calendar.slice(gate,calendar.indexOf('return <SafeAreaView style={s.screen}><ScrollView'));
+  assert.match(pending,/カレンダーを読み込み中/);
+  assert.match(pending,/もう一度試す/);
+  assert.match(pending,/router.back\(\)/);
+  assert.doesNotMatch(pending,/monthCells|profile.name/);
+  assert.doesNotMatch(calendar,/profile\?\.name \?\? '友達'/);
+  assert.match(calendar,/if \(active\) setData\(\{ key, profile: result.profile \}\)/);
+});
 test('全体と個人を分離し、スマホ幅のグラフと折りたたみ数値を使用',()=>{
   const admin=readFileSync(new URL('../mobile/src/components/AdminRetention.tsx',import.meta.url),'utf8');
   const chart=readFileSync(new URL('../mobile/src/components/RetentionLineChart.tsx',import.meta.url),'utf8');

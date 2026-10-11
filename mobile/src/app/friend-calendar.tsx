@@ -48,9 +48,19 @@ export default function FriendCalendarScreen() {
     const next = shiftMonth(month, offset);
     setMonth(next); setSelected(`${next}-01`);
   }
+  // Never render an empty calendar before the authorized month's data arrives.
+  if (!profile) return <SafeAreaView style={s.screen}>
+    <View style={s.content}>
+      <Pressable accessibilityRole="button" onPress={() => router.back()}><Text style={s.link}>‹ 友達一覧へ</Text></Pressable>
+    </View>
+    <View style={s.loading}>
+      {error ? <View style={s.card}><Text style={s.error}>{error}</Text><Pressable accessibilityRole="button" onPress={() => setRevision(v => v + 1)}><Text style={s.link}>もう一度試す</Text></Pressable></View>
+        : <View accessibilityRole="progressbar" accessibilityLabel="カレンダーを読み込み中" style={s.loadingMessage}><ActivityIndicator color="#73E7FF"/><Text style={s.muted}>カレンダーを読み込み中…</Text></View>}
+    </View>
+  </SafeAreaView>;
   return <SafeAreaView style={s.screen}><ScrollView contentContainerStyle={s.content}>
     <Pressable accessibilityRole="button" onPress={() => router.back()}><Text style={s.link}>‹ 友達一覧へ</Text></Pressable>
-    <Text style={s.eyebrow}>FRIEND’S TRAINING</Text><Text style={s.title}>{profile?.name ?? '友達'} のカレンダー</Text>
+    <Text style={s.eyebrow}>FRIEND’S TRAINING</Text><Text style={s.title}>{profile.name} のカレンダー</Text>
     <Text style={s.muted}>共有を許可した友達の筋トレ記録だけ表示します。</Text>
     <View style={s.card}><View style={s.row}>
       <Pressable accessibilityRole="button" accessibilityLabel="前の月" disabled={month === '1900-01'} onPress={() => move(-1)} style={s.arrow}><Text style={s.link}>‹</Text></Pressable>
@@ -60,8 +70,6 @@ export default function FriendCalendarScreen() {
     <View style={s.grid}>{['日','月','火','水','木','金','土'].map(day => <View key={day} style={s.cell}><Text style={s.muted}>{day}</Text></View>)}</View>
     <View style={s.grid}>{monthCells(month).map((day, i) => day ? <Pressable key={day} accessibilityRole="button" accessibilityLabel={`${day}${dates.has(day) ? ' 筋トレ記録あり' : ''}`} accessibilityState={{ selected: day === selected }} onPress={() => setSelected(day)} style={s.cell}><View style={[s.day, day === selected && s.selected]}><Text style={[s.dayText, day === selected && s.selectedText]}>{Number(day.slice(8))}</Text></View><View style={[s.dot, dates.has(day) && s.activeDot]}/></Pressable> : <View key={`blank-${i}`} style={s.cell}/>)}</View>
     <Text style={s.muted}>● 筋トレ実施日 · 日本時間</Text></View>
-    {!profile && !error && <ActivityIndicator color="#73E7FF"/>}
-    {!!error && <View style={s.card}><Text style={s.error}>{error}</Text><Pressable accessibilityRole="button" onPress={() => setRevision(v => v + 1)}><Text style={s.link}>もう一度試す</Text></Pressable></View>}
     {profile && !profile.shared && <Text style={s.muted}>相手は記録を公開していません。</Text>}
     {profile?.shared && <><Text style={s.heading}>{selected.replaceAll('-', '.')} のトレーニング</Text><Text style={s.muted}>表示月の実施日数：{dates.size}日 · 選択日の記録：{daily.length}件</Text>
     {!daily.length && <View style={s.card}><Text style={s.muted}>この日の共有された筋トレ記録はありません。</Text></View>}
@@ -72,6 +80,7 @@ export default function FriendCalendarScreen() {
 }
 const s = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#050A0F' }, content: { padding: 20, paddingBottom: 100, gap: 16 },
+  loading: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 20 }, loadingMessage: { alignItems: 'center', gap: 16 },
   title: { color: '#F4F6F3', fontSize: 26, fontWeight: '800' }, heading: { color: '#F4F6F3', fontSize: 17, fontWeight: '700' }, eyebrow: { color: '#73E7FF', fontSize: 12, letterSpacing: 2 },
   link: { color: '#73E7FF', fontSize: 17, paddingVertical: 10 }, muted: { color: '#939DA5', fontSize: 13, lineHeight: 22 }, error: { color: '#ff8e83' },
   card: { backgroundColor: '#0C151D', borderColor: '#24323C', borderWidth: 1, borderRadius: 24, padding: 16, gap: 14 }, row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
