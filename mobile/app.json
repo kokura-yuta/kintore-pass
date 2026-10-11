@@ -11,7 +11,7 @@
     "ios": {
       "icon": "./assets/images/kintore-pas-icon-v3-1024.png",
       "bundleIdentifier": "com.kintorepas.app",
-      "buildNumber": "16",
+      "buildNumber": "17",
       "supportsTablet": false,
       "config": {
         "usesNonExemptEncryption": false
