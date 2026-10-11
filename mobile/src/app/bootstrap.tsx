@@ -5,6 +5,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ScreenStateCard } from '@/components/ScreenStateCard';
+import { BrandSplash } from '@/components/BrandSplash';
 import { ApiError, isApiBypassEnabled } from '@/lib/api';
 import { fetchBootstrap } from '@/lib/bootstrap';
 import { useOnboarding } from '@/contexts/OnboardingContext';
@@ -149,38 +150,23 @@ export default function BootstrapScreen() {
     return <Redirect href="/sign-in" />;
   }
 
+  if (status === 'loading') {
+    return <BrandSplash>
+      {isApiBypassEnabled ? <>
+        <Pressable accessibilityRole="button" onPress={() => router.replace('/ideal-body')} style={styles.developmentButton}>
+          <Text style={styles.developmentButtonText}>開発用に初回設定へ進む</Text>
+        </Pressable>
+        <Pressable accessibilityRole="button" onPress={() => router.replace('/training')} style={styles.developmentHomeButton}>
+          <Text style={styles.developmentHomeButtonText}>開発用に記録を確認する</Text>
+        </Pressable>
+      </> : null}
+    </BrandSplash>;
+  }
+
   return (
     <View style={styles.screen}>
       <SafeAreaView style={styles.safeArea}>
         <ScrollView style={styles.safeArea} contentContainerStyle={styles.scrollContent}>
-        {status === 'loading' ? (
-          <View style={styles.centerContent}>
-            <ScreenStateCard
-              message="ログイン状態と初回設定の進み具合を確認しています。"
-              title="ユーザー情報を読み込んでいます…"
-              type="loading"
-            />
-            {isApiBypassEnabled ? (
-              <>
-                <Pressable
-                  accessibilityRole="button"
-                  onPress={() => router.replace('/ideal-body')}
-                  style={styles.developmentButton}
-                >
-                  <Text style={styles.developmentButtonText}>開発用に初回設定へ進む</Text>
-                </Pressable>
-                <Pressable
-                  accessibilityRole="button"
-                  onPress={() => router.replace('/home')}
-                  style={styles.developmentHomeButton}
-                >
-                  <Text style={styles.developmentHomeButtonText}>開発用にホームを確認する</Text>
-                </Pressable>
-              </>
-            ) : null}
-          </View>
-        ) : null}
-
         {status === 'error' ? (
           <View style={styles.centerContent}>
             <ScreenStateCard
