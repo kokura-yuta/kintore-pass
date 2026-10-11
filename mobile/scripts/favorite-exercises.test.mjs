@@ -28,3 +28,14 @@ test('favorite persistence is account-scoped and blocks mutation until loaded', 
 test('all stack routes disable transitions and interactive swipe animations', () => {
   assert.match(read('../src/app/_layout.tsx'), /screenOptions=\{\{ headerShown: false, animation: 'none', gestureEnabled: false/);
 });
+
+test('category tap adds all its favorites directly and keeps the editor available', () => {
+  const source = read('../src/components/FavoriteExercises.tsx');
+  assert.match(source, /onPress=\{\(\) => selectPart\(item\)\}/);
+  assert.match(source, /item.category === category && ids.includes\(item.id\)/);
+  assert.match(source, /selectedFavorites.forEach\(item => onAdd\(item\)\)/);
+  assert.match(source, /setEditing\(selectedFavorites.length === 0\)/);
+  assert.match(source, /selecting && list.map/);
+  assert.match(source, /if \(!ready \|\| busy\) return/);
+  assert.match(read('../src/app/training.tsx'), /setExercises\(\(current\) => current.some\(item => item.id === exercise.id\) \? current : \[...current, createRecord\(exercise\)\]\)/);
+});
