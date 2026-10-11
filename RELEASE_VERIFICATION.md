@@ -2,6 +2,16 @@
 
 最新状況は先頭の2026-10-11節を優先し、それ以降の記録は当時の履歴として読む。
 
+## 2026-10-11：Apple課金の両環境対応・本番通知URL
+
+- 課金検証をauto対応へ変更。Productionで公式署名検証を行い、SDKのINVALID_ENVIRONMENTだけSandboxで再検証。署名・証明書・失効確認・アプリID・本人appAccountTokenの検証は維持する。Xcode/ローカル環境は認めない。
+- 保存する環境名は設定値でなく検証済みのtransaction.environmentから取得。通知本文と取引の環境一致、更新情報の同環境検証、DB更新対象の環境一致を追加。返金利用情報送信も検証済み環境のServer APIを使う。
+- GitHubソースc31562e、Sitesソース00fe201940a26842efea7841f401e1413f04aa1a。Sites Version 32を環境revision 19（APPLE_IAP_ENVIRONMENT=auto）で公開成功。公開URLは従来どおり https://musclepas-api.y0u2t1a8.chatgpt.site 。DB変更・iOS再ビルドは不要。
+- Appleアプリ情報のプロダクション通知URLに既存の/api/subscription/apple/notificationsを登録し、保存後の表示を確認。Sandbox URLは維持。証跡：app-store-screenshots/production-notification-url-2026-10-11.png。
+- 単体87件・ソースセキュリティ19件・公開API4件成功。型チェック・変更ファイルESLint・公開Workerビルド成功。新規8件は環境切替方針とルート配線の検証であり、Apple署名付き実購入の成功を代用しない。
+- 未実施：Build 15の一般アカウントで購入・キャンセル・復元・更新・失効、今回の設定で署名付きApple TEST通知の再確認、通報／ブロックの2アカウント実機確認。本人へPremium画面の購入／復元ボタン表示を確認依頼。
+- 課金審査画像、友達・身体分析スクショ、他サイズ画像の照合、App Privacyの最終照合、契約／税務／銀行の最新確認も残る。今回審査送信は行っていない。
+
 ## 2026-10-11：再ログイン後のApple登録完了分
 
 - TestFlightのBuild 15は「提出準備完了」、開発テストグループ割当済み。バージョン1.0の選択をBuild 8から15へ変更し、保存・再表示を確認。旧ビルド自体は削除していない。
