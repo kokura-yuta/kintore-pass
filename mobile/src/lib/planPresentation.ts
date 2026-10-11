@@ -17,6 +17,6 @@ export function planLabel(plan: Plan | null, now = Date.now()) {
   return 'Premium';
 }
 
-export function canNavigateTab(active: boolean, lastPress: number, now: number) {
-  return !active && now - lastPress >= 600;
+export function canNavigateTab(active: boolean, lastPress: number, now: number, sameDestination = true) {
+  return !active && (!sameDestination || now - lastPress >= 250);
 }

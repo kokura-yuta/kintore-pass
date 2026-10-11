@@ -12,6 +12,7 @@ import { TrainingDraftProvider } from '@/contexts/TrainingDraftContext';
 import { TrainingHistoryProvider } from '@/contexts/TrainingHistoryContext';
 import { WeightHistoryProvider } from '@/contexts/WeightHistoryContext';
 import { ChatHistoryProvider } from '@/contexts/ChatHistoryContext';
+import { PlanAccessProvider } from '@/contexts/PlanAccessContext';
 
 const publishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY;
 
@@ -61,7 +62,7 @@ function UserScopedApp() {
 
 function UserDataProviders() {
   return (
-    <OnboardingProvider>
+    <PlanAccessProvider><OnboardingProvider>
       <TrainingDraftProvider>
         <TrainingHistoryProvider>
           <WeightHistoryProvider>
@@ -75,6 +76,6 @@ function UserDataProviders() {
           </WeightHistoryProvider>
         </TrainingHistoryProvider>
       </TrainingDraftProvider>
-    </OnboardingProvider>
+    </OnboardingProvider></PlanAccessProvider>
   );
 }

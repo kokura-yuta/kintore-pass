@@ -1,6 +1,7 @@
 import { createContext, type PropsWithChildren, useCallback, useContext, useMemo, useState } from 'react';
 
 import { isScreenshotMode } from '@/lib/api';
+import { mergeConversationMetadata } from '@/lib/chatHistoryState';
 
 export type ChatMessage = {
   id: string;
@@ -92,7 +93,7 @@ export function ChatHistoryProvider({ children }: PropsWithChildren) {
 
   // Neonから取得したチャット一覧で現在のStateを置き換える
   const replaceConversations = useCallback((loadedConversations: ChatConversation[]) => {
-    setConversations(loadedConversations);
+    setConversations(current => mergeConversationMetadata(current, loadedConversations));
   }, []);
 
   // 選択したチャットへNeonから取得したメッセージを保存する

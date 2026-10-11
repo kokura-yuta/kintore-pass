@@ -7,7 +7,7 @@ const now = Date.parse('2026-10-08T00:00:00Z');
 test('Free確認用URLは開発時のみで、APIバイパスより優先して閉じる', () => {
   const source = readFileSync(new URL('../src/hooks/usePlanAccess.ts', import.meta.url), 'utf8');
   assert.match(source, /isFreePreview = __DEV__ && previewPlan === 'free'/);
-  assert.match(source, /if \(isFreePreview \|\| isApiBypassEnabled \|\| !isLoaded\) return/);
+  assert.match(source, /useVerifiedPlan\(\)/);
   assert.match(source, /allowed: !isFreePreview &&/);
 });
 const future = '2026-10-09T00:00:00Z';

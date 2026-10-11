@@ -38,18 +38,20 @@ function ChatContent() {
   const [input, setInput] = useState('');
   const [drawerVisible, setDrawerVisible] = useState(false);
   const [isSending, setIsSending] = useState(false);
-  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(!isApiBypassEnabled && conversations.length === 0);
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const [deletingConversationId, setDeletingConversationId] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [premiumRequired, setPremiumRequired] = useState(false);
   const [failedMessage, setFailedMessage] = useState('');
   const [historyReloadKey, setHistoryReloadKey] = useState(0);
+  const [messageRevision, setMessageRevision] = useState(0);
   const scrollRef = useRef<ScrollView>(null);
   const lastMenuPress = useRef(0);
   const getTokenRef = useRef(getToken);
   const loadedMessageConversationIds = useRef(new Set<string>());
   const messageRequestId = useRef(0);
+  const mutationEpoch = useRef(0);
   const pendingSendRequestId = useRef<string | null>(null);
   const resolvedActiveId = activeId ?? conversations[0]?.id ?? null;
   const activeConversation = conversations.find((chat) => chat.id === resolvedActiveId) ?? null;
@@ -65,6 +67,8 @@ function ChatContent() {
     if (!isLoaded || !isSignedIn) return;
     let cancelled = false;
 
+    const epoch = mutationEpoch.current;
+
     async function loadConversationList() {
       setIsLoadingHistory(true);
       setError('');
@@ -72,7 +76,7 @@ function ChatContent() {
         const token = await getTokenRef.current();
         if (!token) throw new Error('ログインを確認できませんでした。');
         const response = await fetchChatHistory(token);
-        if (cancelled) return;
+        if (cancelled || epoch !== mutationEpoch.current) return;
         const loadedConversations = response.conversations.map((conversation) => ({
           id: conversation.id,
           serverConversationId: conversation.id,
@@ -81,12 +85,13 @@ function ChatContent() {
           updatedAt: toTimestamp(conversation.updatedAt),
         }));
         loadedMessageConversationIds.current.clear();
+        setMessageRevision(value => value + 1);
         replaceConversations(loadedConversations);
         setActiveId((current) => loadedConversations.some((conversation) => conversation.id === current)
           ? current
           : loadedConversations[0]?.id ?? null);
       } catch (historyError) {
-        if (!cancelled) setError(historyError instanceof Error ? historyError.message : 'チャット履歴を取得できませんでした。');
+        if (!cancelled && epoch === mutationEpoch.current) setError(historyError instanceof Error ? historyError.message : 'チャット履歴を取得できませんでした。');
       } finally {
         if (!cancelled) setIsLoadingHistory(false);
       }
@@ -98,10 +103,10 @@ function ChatContent() {
 
   useEffect(() => {
     if (isApiBypassEnabled) return;
+    if (!messageRevision) return;
     const localConversationId = activeConversation?.id ?? null;
     const serverConversationId = activeConversation?.serverConversationId ?? null;
     if (!isLoaded || !isSignedIn || !localConversationId || !serverConversationId) return;
-    if ((activeConversation?.messages.length ?? 0) > 0) return;
     if (loadedMessageConversationIds.current.has(serverConversationId)) return;
 
     const selectedLocalConversationId: string = localConversationId;
@@ -111,6 +116,8 @@ function ChatContent() {
     messageRequestId.current = currentRequestId;
     let cancelled = false;
 
+    const epoch = mutationEpoch.current;
+
     async function loadMessages() {
       setIsLoadingMessages(true);
       setError('');
@@ -118,7 +125,7 @@ function ChatContent() {
         const token = await getTokenRef.current();
         if (!token) throw new Error('ログインを確認できませんでした。');
         const response = await fetchChatHistory(token, selectedServerConversationId);
-        if (cancelled) return;
+        if (cancelled || epoch !== mutationEpoch.current) return;
         setConversationMessages(selectedLocalConversationId, response.messages.map((message) => ({
           id: message.id,
           role: message.role,
@@ -127,7 +134,7 @@ function ChatContent() {
         })));
       } catch (messageError) {
         loadedMessageConversationIds.current.delete(selectedServerConversationId);
-        if (!cancelled) setError(messageError instanceof Error ? messageError.message : '過去のメッセージを取得できませんでした。');
+        if (!cancelled && epoch === mutationEpoch.current) setError(messageError instanceof Error ? messageError.message : '過去のメッセージを取得できませんでした。');
       } finally {
         if (messageRequestId.current === currentRequestId) setIsLoadingMessages(false);
       }
@@ -136,11 +143,14 @@ function ChatContent() {
     void loadMessages();
     return () => { cancelled = true; };
   }, [
-    activeConversation?.id, activeConversation?.messages.length,
-    activeConversation?.serverConversationId, isLoaded, isSignedIn, setConversationMessages,
+    activeConversation?.id,
+    activeConversation?.serverConversationId, isLoaded, isSignedIn, setConversationMessages, messageRevision,
   ]);
 
   function startNewChat() {
+    mutationEpoch.current += 1;
+    setIsLoadingHistory(false);
+    setIsLoadingMessages(false);
     const id = createConversation();
     setActiveId(id);
     setDrawerVisible(false);
@@ -161,6 +171,9 @@ function ChatContent() {
     // 1回の送信を識別するUUIDを作り、二重実行を同期的に止める
     const requestId = Crypto.randomUUID();
     pendingSendRequestId.current = requestId;
+    mutationEpoch.current += 1;
+    setIsLoadingMessages(false);
+    setIsLoadingHistory(false);
 
     let localConversationId = resolvedActiveId;
     let serverConversationId = activeConversation?.serverConversationId ?? null;
@@ -217,6 +230,7 @@ function ChatContent() {
     if (deletingConversationId) return;
     const conversation = conversations.find((chat) => chat.id === id) ?? null;
     if (!conversation) return;
+    mutationEpoch.current += 1;
     setError('');
     if (!conversation.serverConversationId) {
       deleteConversation(id);
@@ -282,9 +296,10 @@ function ChatContent() {
             <Text style={styles.menuEntryArrow}>›</Text>
           </Pressable>
           <ScrollView automaticallyAdjustKeyboardInsets contentContainerStyle={styles.messages} keyboardDismissMode="interactive" keyboardShouldPersistTaps="handled" onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })} ref={scrollRef} showsVerticalScrollIndicator={false}>
-            {isLoadingHistory || isLoadingMessages ? <StatusPanel label="保存済みのチャットを読み込んでいます…" />
+            {(isLoadingHistory || isLoadingMessages) && !activeConversation?.messages.length ? <StatusPanel label="保存済みのチャットを読み込んでいます…" />
               : !activeConversation?.messages.length ? <Welcome onSelectSuggestion={setInput} />
                 : activeConversation.messages.map((message) => <MessageBubble key={message.id} message={message} />)}
+            {(isLoadingHistory || isLoadingMessages) && !!activeConversation?.messages.length ? <Text style={styles.thinkingText}>最新の履歴を確認中…</Text> : null}
             {isSending ? <View style={[styles.bubbleRow, styles.assistantRow]}><View style={styles.assistantBubbleLoading}><ActivityIndicator color="#00D4FF" size="small" /><Text style={styles.thinkingText}>回答を生成しています…</Text></View></View> : null}
           </ScrollView>
 
@@ -306,7 +321,7 @@ function ChatContent() {
           <View style={styles.drawerHeader}><Text style={styles.drawerTitle}>チャット履歴</Text><Pressable accessibilityLabel="閉じる" onPress={() => setDrawerVisible(false)} style={styles.closeButton}><Text style={styles.closeText}>×</Text></Pressable></View>
           <Pressable disabled={isSending || Boolean(deletingConversationId)} onPress={startNewChat} style={styles.drawerNewButton}><Text style={styles.drawerNewText}>＋ 新しいチャット</Text></Pressable>
           <ScrollView contentContainerStyle={styles.chatList}>
-            {isLoadingHistory ? <StatusPanel label="履歴を読み込んでいます…" />
+            {isLoadingHistory && !conversations.length ? <StatusPanel label="履歴を読み込んでいます…" />
               : conversations.length === 0 ? <Text style={styles.emptyHistory}>保存済みのチャットはありません。新しい相談を始めてみましょう。</Text>
                 : conversations.map((chat) => <View key={chat.id} style={[styles.chatRow, resolvedActiveId === chat.id && styles.activeChatRow]}><Pressable disabled={Boolean(deletingConversationId)} onPress={() => { setActiveId(chat.id); setDrawerVisible(false); setError(''); }} style={styles.chatSelect}><Text numberOfLines={1} style={styles.chatTitle}>{chat.title}</Text><Text style={styles.chatMeta}>{chat.serverConversationId ? (chat.messages.length ? `${chat.messages.length}メッセージ` : '保存済み') : '新しいチャット'}</Text></Pressable><Pressable accessibilityLabel={`${chat.title}を削除`} disabled={Boolean(deletingConversationId)} onPress={() => confirmRemoveChat(chat.id, chat.title)} style={styles.deleteButton}>{deletingConversationId === chat.id ? <ActivityIndicator color="#FF8D98" size="small" /> : <Text style={styles.deleteText}>削除</Text>}</Pressable></View>)}
           </ScrollView>

@@ -18,6 +18,7 @@ export function BottomNavigation() {
   const pathname = usePathname();
   const router = useRouter();
   const lastPress = useRef(0);
+  const lastDestination = useRef('');
   const plan = usePlanAccess();
   const label = plan.isFreePreview ? 'Free表示の確認用（契約変更なし）' : isScreenshotMode ? 'Premium' : isApiBypassEnabled ? '開発プレビュー' : plan.error ? 'プラン確認エラー' : planLabel(plan.data);
 
@@ -38,8 +39,9 @@ export function BottomNavigation() {
               accessibilityState={{ selected: active }}
               key={item.href}
               onPress={() => {
-                if (!canNavigateTab(atTabRoot, lastPress.current, Date.now())) return;
+                if (!canNavigateTab(atTabRoot, lastPress.current, Date.now(), lastDestination.current === item.href)) return;
                 lastPress.current = Date.now();
+                lastDestination.current = item.href;
                 router.replace((plan.isFreePreview ? `${item.href}?previewPlan=free` : item.href) as Href);
               }}
               style={styles.item}
