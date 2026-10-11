@@ -23,6 +23,15 @@ function FavoriteList({ userId, addedIds, onAdd }: {
   const [error, setError] = useState('');
   const [part, setPart] = useState<ExerciseCategory | null>(null);
   const [editing, setEditing] = useState(false);
+
+  function selectPart(category: ExerciseCategory) {
+    if (!ready || busy) return;
+    const selectedFavorites = exerciseCatalog.filter(item => item.category === category && ids.includes(item.id));
+    // The parent uses a functional update and ignores duplicates, preserving entered sets.
+    selectedFavorites.forEach(item => onAdd(item));
+    setPart(category);
+    setEditing(selectedFavorites.length === 0);
+  }
   useEffect(() => {
     let active = true;
     void (async () => {
@@ -62,20 +71,21 @@ function FavoriteList({ userId, addedIds, onAdd }: {
   const list = selecting ? exerciseCatalog.filter(item => item.category === part) : favorites;
   return <View style={styles.card}>
     <Text style={styles.title}>部位別お気に入り種目</Text>
-    <Text style={styles.note}>いつもの種目を選んで、すぐ記録</Text>
+    <Text style={styles.note}>部位を押すと、お気に入り種目をまとめて記録欄に追加</Text>
     <View style={styles.parts}>{parts.map(item => <Pressable key={item} accessibilityRole="button"
-      accessibilityState={{ selected: part === item }} onPress={() => { setPart(part === item ? null : item); setEditing(false); }}
+      disabled={!ready || busy} accessibilityState={{ selected: part === item, disabled: !ready || busy }} onPress={() => selectPart(item)}
       style={[styles.chip, part === item && styles.selected]}>
       <Text style={styles.text}>{item === '脚' ? '足' : item}</Text>
     </Pressable>)}</View>
     {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
     {part && ready ? <View>
       <View style={styles.heading}><Text style={styles.text}>{part}のお気に入り</Text>
-        <Pressable accessibilityRole="button" onPress={() => setEditing(!editing)} style={styles.action}>
+        <Pressable accessibilityRole="button" disabled={busy} onPress={() => editing ? selectPart(part) : setEditing(true)} style={styles.action}>
           <Text style={styles.blue}>{editing ? '完了' : '追加・編集'}</Text>
         </Pressable></View>
       {favorites.length === 0 ? <Text style={styles.note}>まだ登録されていません。☆を押して追加してください。</Text> : null}
-      {list.map(item => <View key={item.id} style={styles.row}>
+      {!selecting ? <Text style={styles.note}>下の記録欄で重量・回数を入力できます。</Text> : null}
+      {selecting && list.map(item => <View key={item.id} style={styles.row}>
         <Pressable accessibilityRole="button" accessibilityLabel={`${item.name}を記録に追加`}
           disabled={addedIds.includes(item.id)} onPress={() => onAdd(item)} style={styles.exercise}>
           <Text style={styles.text}>{item.name}</Text>
