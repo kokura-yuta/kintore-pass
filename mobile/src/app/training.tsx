@@ -37,16 +37,12 @@ export default function TrainingScreen() {
   const router = useRouter();
   const { editId } = useLocalSearchParams<{ editId?: string }>();
   const { getToken } = useAuth();
-  const { draft } = useTrainingDraft();
+  const { draft, setDraft } = useTrainingDraft();
   const { addRecord, records, updateRecord } = useTrainingHistory();
   const editingRecord = useMemo(
     () => editId ? records.find((record) => record.id === editId) ?? null : null,
     [editId, records],
   );
-  const defaultExercises = ['bench-press', 'incline-dumbbell-press', 'side-raise']
-    .map((id) => exerciseCatalog.find((exercise) => exercise.id === id))
-    .filter((exercise): exercise is ExerciseOption => Boolean(exercise))
-    .map(createRecord);
   const [exercises, setExercises] = useState<ExerciseRecord[]>(() => {
     const recordToEdit = editId ? records.find((record) => record.id === editId) : null;
     if (recordToEdit) {
@@ -64,7 +60,7 @@ export default function TrainingScreen() {
         }];
       });
     }
-    if (!draft) return defaultExercises;
+    if (!draft) return [];
 
     return draft.exercises.flatMap((draftExercise) => {
       const exercise = exerciseCatalog.find((item) => item.id === draftExercise.exerciseId) ??
@@ -91,11 +87,15 @@ export default function TrainingScreen() {
   const [successMessage, setSuccessMessage] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const savingLock = useRef(false);
+  const scrollRef = useRef<ScrollView>(null);
+  const [formVersion, setFormVersion] = useState(0);
   const trainingDate = editingRecord?.performedOn ?? formatLocalDate(new Date());
 
   function addExercise(exercise: ExerciseOption) {
+    if (savingLock.current) return;
     setExercises((current) => current.some(item => item.id === exercise.id) ? current : [...current, createRecord(exercise)]);
     setErrorMessage('');
+    setSuccessMessage('');
   }
 
   function updateSet(exerciseIndex: number, setId: string, field: 'weightKg' | 'reps', value: string) {
@@ -225,6 +225,14 @@ export default function TrainingScreen() {
         updateRecord(savedRecord);
       } else {
         addRecord(savedRecord);
+        setExercises([]);
+        setTrainingMinutes('');
+        setCondition(null);
+        setMemo('');
+        setDraft(null);
+        setPickerVisible(false);
+        setFormVersion(version => version + 1);
+        scrollRef.current?.scrollTo({ y: 0, animated: false });
       }
       setSuccessMessage(`${response.message} カレンダーへ反映しました。`);
       if (editingRecord) router.back();
@@ -240,7 +248,7 @@ export default function TrainingScreen() {
     <View style={styles.screen}>
       <SafeAreaView edges={['top']} style={styles.safeArea}>
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : Platform.OS === 'android' ? 'height' : undefined} keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0} style={styles.safeArea}>
-        <ScrollView automaticallyAdjustKeyboardInsets contentContainerStyle={styles.content} keyboardDismissMode="interactive" keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+        <ScrollView ref={scrollRef} automaticallyAdjustKeyboardInsets contentContainerStyle={styles.content} keyboardDismissMode="interactive" keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
           <View style={styles.header}>
             <View>
               <Text style={styles.eyebrow}>TRAINING LOG</Text>
@@ -253,7 +261,7 @@ export default function TrainingScreen() {
           </View>
           <Text style={styles.lead}>今日取り組んだ種目を記録します。種目以外の項目は空欄でも保存できます。</Text>
 
-          <FavoriteExercises addedIds={exercises.map(exercise => exercise.id)} onAdd={addExercise} />
+          <FavoriteExercises key={formVersion} addedIds={exercises.map(exercise => exercise.id)} onAdd={addExercise} />
 
           <View style={styles.sectionHeading}>
             <Text style={styles.sectionTitle}>実施した種目</Text>
@@ -279,7 +287,7 @@ export default function TrainingScreen() {
             <Text style={styles.addButtonText}>種目を検索して追加</Text>
           </Pressable>
 
-          <View style={styles.detailsCard}>
+          {exercises.length > 0 ? <View style={styles.detailsCard}>
             <Text style={styles.cardTitle}>トレーニング詳細</Text>
             <Text style={styles.fieldLabel}>トレーニング時間 <Text style={styles.optionalText}>任意</Text></Text>
             <View style={styles.timeInputWrap}>
@@ -317,14 +325,14 @@ export default function TrainingScreen() {
               textAlignVertical="top"
               value={memo}
             />
-          </View>
+          </View> : null}
 
           {errorMessage ? <Text style={styles.error}>{errorMessage}</Text> : null}
           {successMessage ? <Text style={styles.success}>{successMessage}</Text> : null}
 
-          <Pressable accessibilityLabel="トレーニング記録を保存" accessibilityState={{ disabled: isSaving, busy: isSaving }} disabled={isSaving} onPress={saveRecord} style={[styles.saveButton, isSaving && styles.disabledButton]}>
+          {exercises.length > 0 ? <Pressable accessibilityLabel="トレーニング記録を保存" accessibilityState={{ disabled: isSaving, busy: isSaving }} disabled={isSaving} onPress={saveRecord} style={[styles.saveButton, isSaving && styles.disabledButton]}>
             {isSaving ? <ActivityIndicator color="#050A0F" /> : <Text style={styles.saveButtonText}>{editingRecord ? '変更を保存' : '記録を保存'}</Text>}
-          </Pressable>
+          </Pressable> : null}
           <Text style={styles.previewNote}>保存した記録は履歴とカレンダーへ反映されます。</Text>
         </ScrollView>
         </KeyboardAvoidingView>
