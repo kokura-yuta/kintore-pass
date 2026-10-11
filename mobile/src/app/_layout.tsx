@@ -66,7 +66,7 @@ function UserDataProviders() {
         <TrainingHistoryProvider>
           <WeightHistoryProvider>
             <ChatHistoryProvider>
-              <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#050A0F' } }}>
+              <Stack screenOptions={{ headerShown: false, animation: 'none', gestureEnabled: false, contentStyle: { backgroundColor: '#050A0F' } }}>
                 <Stack.Screen name="index" options={{ animation: 'none' }} />
                 <Stack.Screen name="auth-gate" options={{ animation: 'none' }} />
                 <Stack.Screen name="bootstrap" options={{ animation: 'none' }} />

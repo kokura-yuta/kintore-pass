@@ -5,6 +5,7 @@ import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollVie
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { BottomNavigation } from '@/components/BottomNavigation';
+import { FavoriteExercises } from '@/components/FavoriteExercises';
 import { ExercisePickerModal } from '@/components/ExercisePickerModal';
 import { ExerciseRecordCard, type ExerciseRecord } from '@/components/ExerciseRecordCard';
 import { useTrainingDraft } from '@/contexts/TrainingDraftContext';
@@ -93,7 +94,7 @@ export default function TrainingScreen() {
   const trainingDate = editingRecord?.performedOn ?? formatLocalDate(new Date());
 
   function addExercise(exercise: ExerciseOption) {
-    setExercises((current) => [...current, createRecord(exercise)]);
+    setExercises((current) => current.some(item => item.id === exercise.id) ? current : [...current, createRecord(exercise)]);
     setErrorMessage('');
   }
 
@@ -251,6 +252,8 @@ export default function TrainingScreen() {
             </View>
           </View>
           <Text style={styles.lead}>今日取り組んだ種目を記録します。種目以外の項目は空欄でも保存できます。</Text>
+
+          <FavoriteExercises addedIds={exercises.map(exercise => exercise.id)} onAdd={addExercise} />
 
           <View style={styles.sectionHeading}>
             <Text style={styles.sectionTitle}>実施した種目</Text>
