@@ -36,6 +36,10 @@ export async function POST(request: Request) {
     if (!signedTransactionInfo) return Response.json({ received: true });
 
     const transaction = await verifyAppleTransaction(signedTransactionInfo);
+    const environment = appleEnvironmentName(transaction.environment);
+    if (environment !== appleEnvironmentName(notification.data?.environment)) {
+      throw new Error("APPLE_NOTIFICATION_ENVIRONMENT_MISMATCH");
+    }
     const productId = expectedAppleProductId();
     if (
       transaction.productId !== productId ||
@@ -61,6 +65,7 @@ export async function POST(request: Request) {
               transaction.originalTransactionId,
             ),
             eq(userSubscriptions.productId, productId),
+            eq(userSubscriptions.environment, environment),
           ),
         )
         .limit(1);
@@ -113,6 +118,7 @@ export async function POST(request: Request) {
           sampleContentProvided: true,
           refundPreference,
         },
+        environment,
       );
 
       return Response.json({
@@ -122,7 +128,7 @@ export async function POST(request: Request) {
     }
 
     const renewal = notification.data?.signedRenewalInfo
-      ? await verifyAppleRenewalInfo(notification.data.signedRenewalInfo)
+      ? await verifyAppleRenewalInfo(notification.data.signedRenewalInfo, environment)
       : null;
     const now = new Date();
     const normalExpiresAt = new Date(transaction.expiresDate);
@@ -141,7 +147,7 @@ export async function POST(request: Request) {
       .update(userSubscriptions)
       .set({
         status,
-        environment: appleEnvironmentName(),
+        environment,
         expiresAt,
         lastVerifiedAt: now,
         updatedAt: now,
@@ -150,6 +156,7 @@ export async function POST(request: Request) {
         and(
           eq(userSubscriptions.originalTransactionId, transaction.originalTransactionId),
           eq(userSubscriptions.productId, productId),
+          eq(userSubscriptions.environment, environment),
         ),
       );
 

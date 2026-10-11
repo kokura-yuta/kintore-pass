@@ -111,7 +111,7 @@ export async function POST(request: Request) {
       originalTransactionId:
         transaction.originalTransactionId,
       status,
-      environment: appleEnvironmentName(),
+      environment: appleEnvironmentName(transaction.environment),
       expiresAt,
       lastVerifiedAt: now,
       updatedAt: now,

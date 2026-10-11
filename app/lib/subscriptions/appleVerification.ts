@@ -1,4 +1,6 @@
 import { Buffer } from "node:buffer";
+import { appleEnvironmentMode, verifyInAppleEnvironment, verifiedAppleEnvironment } from "./appleEnvironment";
+import type { AppleEnvironmentName } from "./appleEnvironment";
 
 import type {
   ConsumptionRequest,
@@ -32,12 +34,10 @@ function readRootCertificates() {
 }
 
 function configuredEnvironmentName() {
-  return process.env.APPLE_IAP_ENVIRONMENT === "production"
-    ? "production"
-    : "sandbox";
+  return appleEnvironmentMode(process.env.APPLE_IAP_ENVIRONMENT);
 }
 
-async function createVerifier() {
+async function createVerifier(environmentName: AppleEnvironmentName) {
   // Apple公式ライブラリは読込時に乱数を作るため、
   // Cloudflare Workerのグローバル領域ではなく、リクエスト中に遅延読込する。
   let library: typeof import("@apple/app-store-server-library");
@@ -50,7 +50,7 @@ async function createVerifier() {
   }
   const { Environment, SignedDataVerifier } = library;
   const environment =
-    configuredEnvironmentName() === "production"
+    environmentName === "production"
       ? Environment.PRODUCTION
       : Environment.SANDBOX;
   const appAppleId =
@@ -102,13 +102,13 @@ function requiredServerApiSetting(
   return value;
 }
 
-async function createServerApiClient() {
+async function createServerApiClient(environmentName: AppleEnvironmentName) {
   const {
     AppStoreServerAPIClient,
     Environment,
   } = await loadAppleLibrary();
   const environment =
-    configuredEnvironmentName() === "production"
+    environmentName === "production"
       ? Environment.PRODUCTION
       : Environment.SANDBOX;
   const privateKey = Buffer.from(
@@ -134,45 +134,44 @@ async function createServerApiClient() {
 export async function verifyAppleTransaction(
   signedTransactionInfo: string,
 ): Promise<JWSTransactionDecodedPayload> {
-  const verifier = await createVerifier();
-  return verifier.verifyAndDecodeTransaction(
-    signedTransactionInfo,
+  const { VerificationStatus } = await loadAppleLibrary();
+  return verifyInAppleEnvironment(
+    configuredEnvironmentName(),
+    async environment => (await createVerifier(environment)).verifyAndDecodeTransaction(signedTransactionInfo),
+    VerificationStatus.INVALID_ENVIRONMENT,
   );
 }
 
 export async function verifyAppleNotification(
   signedPayload: string,
 ): Promise<ResponseBodyV2DecodedPayload> {
-  let verifier: Awaited<ReturnType<typeof createVerifier>>;
   try {
-    verifier = await createVerifier();
+    const { VerificationStatus } = await loadAppleLibrary();
+    return await verifyInAppleEnvironment(
+      configuredEnvironmentName(),
+      async environment => (await createVerifier(environment)).verifyAndDecodeNotification(signedPayload),
+      VerificationStatus.INVALID_ENVIRONMENT,
+    );
   } catch (cause) {
     const setupCode = cause && typeof cause === "object" && "code" in cause
       ? cause.code : undefined;
-    const code = ["APPLE_ROOT_CERTIFICATES_MISSING", "APPLE_VERIFIER_IMPORT_FAILED", "APPLE_VERIFIER_CONSTRUCTION_FAILED"].includes(String(setupCode))
-      ? String(setupCode) : "APPLE_VERIFIER_SETUP_FAILED";
-    throw Object.assign(new Error("Apple verifier setup failed", { cause }), {
-      code,
-    });
-  }
-  try {
-    return await verifier.verifyAndDecodeNotification(signedPayload);
-  } catch (cause) {
     // 本文・署名・秘密鍵はログへ渡さず、公式検証ステータスだけを残す。
     const status = cause && typeof cause === "object" && "status" in cause
       ? cause.status
       : undefined;
-    const code = typeof status === "number" && Number.isInteger(status) && status >= 0 && status <= 7
-      ? `APPLE_VERIFICATION_STATUS_${status}`
-      : "APPLE_NOTIFICATION_VERIFICATION_FAILED";
+    const code = ["APPLE_ROOT_CERTIFICATES_MISSING", "APPLE_VERIFIER_IMPORT_FAILED", "APPLE_VERIFIER_CONSTRUCTION_FAILED"].includes(String(setupCode))
+      ? String(setupCode)
+      : typeof status === "number" && Number.isInteger(status) && status >= 0 && status <= 7
+        ? `APPLE_VERIFICATION_STATUS_${status}` : "APPLE_NOTIFICATION_VERIFICATION_FAILED";
     throw Object.assign(new Error("Apple notification verification failed", { cause }), { code });
   }
 }
 
 export async function verifyAppleRenewalInfo(
   signedRenewalInfo: string,
+  environment: AppleEnvironmentName,
 ): Promise<JWSRenewalInfoDecodedPayload> {
-  const verifier = await createVerifier();
+  const verifier = await createVerifier(environment);
   return verifier.verifyAndDecodeRenewalInfo(
     signedRenewalInfo,
   );
@@ -181,8 +180,9 @@ export async function verifyAppleRenewalInfo(
 export async function sendAppleConsumptionInformation(
   transactionId: string,
   consumptionRequest: ConsumptionRequest,
+  environment: AppleEnvironmentName,
 ) {
-  const client = await createServerApiClient();
+  const client = await createServerApiClient(environment);
   await client.sendConsumptionInformation(
     transactionId,
     consumptionRequest,
@@ -200,6 +200,6 @@ export function expectedAppleProductId() {
   return productId;
 }
 
-export function appleEnvironmentName() {
-  return configuredEnvironmentName();
+export function appleEnvironmentName(verifiedEnvironment: unknown) {
+  return verifiedAppleEnvironment(verifiedEnvironment);
 }
