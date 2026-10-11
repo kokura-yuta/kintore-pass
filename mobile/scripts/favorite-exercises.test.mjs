@@ -4,6 +4,19 @@ import { readFileSync } from 'node:fs';
 
 const read = path => readFileSync(new URL(path, import.meta.url), 'utf8');
 
+test('new records start empty and successful creation clears only the draft, not favorites', () => {
+  const source = read('../src/app/training.tsx');
+  assert.match(source, /if \(!draft\) return \[\]/);
+  assert.doesNotMatch(source, /defaultExercises/);
+  assert.match(source, /addRecord\(savedRecord\);\s+setExercises\(\[\]\)/);
+  assert.match(source, /setDraft\(null\)/);
+  assert.match(source, /FavoriteExercises key=\{formVersion\}/);
+  const failure = source.slice(source.indexOf('} catch (error)'), source.indexOf('} finally'));
+  assert.doesNotMatch(failure, /setExercises|setDraft|setMemo/);
+  assert.match(source, /if \(editingRecord\) router.back\(\)/);
+  assert.match(source, /exercises.length > 0 \? <View style=\{styles.detailsCard\}/);
+});
+
 test('all six favorite categories are available before training records without a paywall', () => {
   const source = read('../src/components/FavoriteExercises.tsx');
   assert.match(source, /\['胸', '背中', '腕', '肩', '脚', '腹筋'\]/);

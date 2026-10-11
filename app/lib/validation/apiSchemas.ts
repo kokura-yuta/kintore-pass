@@ -171,8 +171,8 @@ const foodRecordFieldsSchema = z.object({
   recordedDate: calendarDateSchema,
   mealType: z.enum(["朝食", "昼食", "夕食", "間食"]),
   name: z.string().trim().min(1).max(100),
-  calories: z.number().finite().min(0).max(10000),
-  proteinGrams: z.number().finite().min(0).max(1000),
+  calories: z.number().finite().min(0).max(10000).nullable().default(null),
+  proteinGrams: z.number().finite().min(0).max(1000).nullable().default(null),
 });
 
 export const foodRecordCreateSchema =

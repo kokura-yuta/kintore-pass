@@ -378,11 +378,9 @@ export const foodRecords = pgTable(
     // 利用者が入力した料理・食品名を保存する
     name: text("name").notNull(),
 
-    // カロリーとたんぱく質を0以上の数値で保存する
-    calories: real("calories").notNull(),
-    proteinGrams: real("protein_grams")
-      .notNull()
-      .default(0),
+    // 任意の栄養値。未入力はnull、入力された0は0として保持する
+    calories: real("calories"),
+    proteinGrams: real("protein_grams"),
 
     createdAt: timestamp("created_at", {
       withTimezone: true,

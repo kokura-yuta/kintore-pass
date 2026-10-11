@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { FoodCalendar } from '@/components/FoodCalendar';
 import { BottomNavigation } from '@/components/BottomNavigation';
 import { isApiBypassEnabled, isScreenshotMode } from '@/lib/api';
 import { createFoodRecord, deleteFoodRecord, fetchFoodRecords, updateFoodRecord, type FoodRecord, type MealType } from '@/lib/foodRecords';
@@ -36,12 +37,12 @@ export default function FoodScreen() {
   const scrollRef = useRef<ScrollView>(null);
   const savingLock = useRef(false);
   const deletingLock = useRef(false);
+  const loadVersion = useRef(0);
   const [entries, setEntries] = useState<FoodRecord[]>([]);
   const [localEntries, setLocalEntries] = useState<FoodRecord[]>(
     isScreenshotMode ? screenshotFoodRecords : [],
   );
   const [viewDate, setViewDate] = useState(today);
-  const [dateInput, setDateInput] = useState(today);
   const [entryDate, setEntryDate] = useState(today);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -55,34 +56,48 @@ export default function FoodScreen() {
   const [isLoading, setIsLoading] = useState(!isApiBypassEnabled);
   const [isSaving, setIsSaving] = useState(false);
 
-  const totalCalories = entries.reduce((total, entry) => total + entry.calories, 0);
-  const totalProtein = entries.reduce((total, entry) => total + entry.proteinGrams, 0);
+  const totalCalories = entries.reduce((total, entry) => total + (entry.calories ?? 0), 0);
+  const totalProtein = entries.reduce((total, entry) => total + (entry.proteinGrams ?? 0), 0);
 
   useEffect(() => { getTokenRef.current = getToken; }, [getToken]);
 
   const loadEntries = useCallback(async (date: string) => {
+    const version = ++loadVersion.current;
     if (isApiBypassEnabled) {
       setEntries(localEntries.filter((entry) => entry.recordedDate === date));
       setIsLoading(false);
       return;
     }
     setIsLoading(true);
+    setEntries([]);
     setError('');
     try {
       const token = await getTokenRef.current();
       if (!token) throw new Error('ログイン状態を確認できませんでした。');
       const response = await fetchFoodRecords(token, date);
+      if (version !== loadVersion.current) return;
       setEntries(response.records);
     } catch (loadError) {
+      if (version !== loadVersion.current) return;
       setEntries([]);
       setError(loadError instanceof Error ? loadError.message : '食事記録を読み込めませんでした。');
-    } finally { setIsLoading(false); }
+    } finally { if (version === loadVersion.current) setIsLoading(false); }
   }, [localEntries]);
 
   useEffect(() => {
     const timerId = setTimeout(() => { void loadEntries(viewDate); }, 0);
-    return () => clearTimeout(timerId);
+    return () => { clearTimeout(timerId); loadVersion.current += 1; };
   }, [loadEntries, viewDate]);
+
+  function selectHistoryDate(date: string) {
+    if (savingLock.current || deletingLock.current) return;
+    loadVersion.current += 1;
+    setEntries([]);
+    setIsLoading(true);
+    setError('');
+    setViewDate(date);
+    if (date === viewDate) void loadEntries(date);
+  }
 
   function resetForm() {
     setEditingId(null); setEntryDate(today()); setMealType('朝食'); setName(''); setCalories(''); setProtein('');
@@ -90,7 +105,7 @@ export default function FoodScreen() {
 
   function startEdit(entry: FoodRecord) {
     setEditingId(entry.id); setEntryDate(entry.recordedDate); setMealType(entry.mealType);
-    setName(entry.name); setCalories(String(entry.calories)); setProtein(String(entry.proteinGrams));
+    setName(entry.name); setCalories(entry.calories == null ? '' : String(entry.calories)); setProtein(entry.proteinGrams == null ? '' : String(entry.proteinGrams));
     setError(''); setSuccess('');
     scrollRef.current?.scrollTo({ y: 0, animated: true });
   }
@@ -98,13 +113,15 @@ export default function FoodScreen() {
   async function saveEntry() {
     if (savingLock.current) return;
     const normalizedName = name.trim();
-    const parsedCalories = Number(calories);
-    const parsedProtein = protein.trim() ? Number(protein) : 0;
+    const parsedCalories = calories.trim() ? Number(calories) : null;
+    const parsedProtein = protein.trim() ? Number(protein) : null;
     if (!isValidDate(entryDate)) { setError('記録日をYYYY-MM-DD形式で正しく入力してください。'); return; }
     if (!normalizedName) { setError('食事名を入力してください。'); return; }
-    if (!calories.trim() || !Number.isFinite(parsedCalories) || parsedCalories < 0) { setError('カロリーを正しく入力してください。'); return; }
-    if (!Number.isFinite(parsedProtein) || parsedProtein < 0) { setError('たんぱく質を正しく入力してください。'); return; }
+    if (parsedCalories !== null && (!Number.isFinite(parsedCalories) || parsedCalories < 0 || parsedCalories > 10000)) { setError('カロリーを正しく入力してください。'); return; }
+    if (parsedProtein !== null && (!Number.isFinite(parsedProtein) || parsedProtein < 0 || parsedProtein > 1000)) { setError('たんぱく質を正しく入力してください。'); return; }
 
+    loadVersion.current += 1;
+    setIsLoading(false);
     savingLock.current = true; setIsSaving(true); setError(''); setSuccess('');
     try {
       const input = { recordedDate: entryDate, mealType, name: normalizedName, calories: parsedCalories, proteinGrams: parsedProtein };
@@ -119,8 +136,9 @@ export default function FoodScreen() {
       }
       if (entryDate === viewDate) {
         setEntries((current) => editingId ? current.map((item) => item.id === editingId ? savedRecord : item) : [...current, savedRecord]);
-      } else { setViewDate(entryDate); setDateInput(entryDate); }
+      } else { setViewDate(entryDate); }
       setSuccess(editingId ? '食事記録を更新しました。' : '食事を記録しました。');
+      if (!isApiBypassEnabled && entryDate === viewDate) void loadEntries(viewDate);
       resetForm();
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : '食事記録を保存できませんでした。');
@@ -130,6 +148,7 @@ export default function FoodScreen() {
   async function removeEntry() {
     if (!deletingId || deletingLock.current) return;
     const recordId = deletingId;
+    loadVersion.current += 1;
     deletingLock.current = true; setIsDeleting(true); setError('');
     try {
       if (isApiBypassEnabled) setLocalEntries((current) => current.filter((entry) => entry.id !== recordId));
@@ -155,7 +174,7 @@ export default function FoodScreen() {
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.safeArea}>
           <ScrollView ref={scrollRef} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
             <View style={styles.header}><View><Text style={styles.eyebrow}>NUTRITION</Text><Text style={styles.title}>食事管理</Text></View><Text style={styles.date}>{viewDate === today() ? '今日' : viewDate}</Text></View>
-            <View style={styles.summaryCard}><Text style={styles.cardLabel}>{viewDate} の合計</Text><View style={styles.summaryRow}><View style={styles.summaryItem}><Text style={styles.summaryValue}>{totalCalories.toLocaleString()}</Text><Text style={styles.summaryUnit}>kcal</Text></View><View style={styles.divider} /><View style={styles.summaryItem}><Text style={styles.summaryValue}>{totalProtein.toFixed(1)}</Text><Text style={styles.summaryUnit}>たんぱく質 g</Text></View></View></View>
+            <View style={styles.summaryCard}><Text style={styles.cardLabel}>{viewDate} の合計（入力済み分）</Text><View style={styles.summaryRow}><View style={styles.summaryItem}><Text style={styles.summaryValue}>{isLoading ? '…' : entries.some(entry => entry.calories != null) ? totalCalories.toLocaleString() : '—'}</Text><Text style={styles.summaryUnit}>kcal</Text></View><View style={styles.divider} /><View style={styles.summaryItem}><Text style={styles.summaryValue}>{isLoading ? '…' : entries.some(entry => entry.proteinGrams != null) ? totalProtein.toFixed(1) : '—'}</Text><Text style={styles.summaryUnit}>たんぱく質 g</Text></View></View></View>
             <View style={styles.formCard}>
               <Text style={styles.sectionTitle}>{editingId ? '食事を編集' : '食事を追加'}</Text>
               <Text style={styles.formLabel}>記録日</Text>
@@ -164,7 +183,7 @@ export default function FoodScreen() {
               <View style={styles.mealTypeRow}>{mealTypes.map((item) => <Pressable accessibilityRole="radio" accessibilityState={{ checked: mealType === item }} key={item} onPress={() => setMealType(item)} style={[styles.mealTypeButton, mealType === item && styles.selectedMealType]}><Text style={[styles.mealTypeText, mealType === item && styles.selectedMealTypeText]}>{item}</Text></Pressable>)}</View>
               <Text style={styles.formLabel}>食事名</Text>
               <TextInput accessibilityLabel="食事名" maxLength={80} onChangeText={(value) => { setName(value); setError(''); }} placeholder="例：鶏むね肉とご飯" placeholderTextColor="#556772" style={styles.input} value={name} />
-              <View style={styles.numberRow}><View style={styles.numberField}><Text style={styles.formLabel}>カロリー</Text><View style={styles.inputWithUnit}><TextInput accessibilityLabel="カロリー" keyboardType="decimal-pad" onChangeText={(value) => { setCalories(value); setError(''); }} placeholder="0" placeholderTextColor="#556772" style={styles.numberInput} value={calories} /><Text style={styles.inputUnit}>kcal</Text></View></View><View style={styles.numberField}><Text style={styles.formLabel}>たんぱく質</Text><View style={styles.inputWithUnit}><TextInput accessibilityLabel="たんぱく質" keyboardType="decimal-pad" onChangeText={(value) => { setProtein(value); setError(''); }} placeholder="任意" placeholderTextColor="#556772" style={styles.numberInput} value={protein} /><Text style={styles.inputUnit}>g</Text></View></View></View>
+              <View style={styles.numberRow}><View style={styles.numberField}><Text style={styles.formLabel}>カロリー（任意）</Text><View style={styles.inputWithUnit}><TextInput accessibilityLabel="カロリー" keyboardType="decimal-pad" onChangeText={(value) => { setCalories(value); setError(''); }} placeholder="任意" placeholderTextColor="#556772" style={styles.numberInput} value={calories} /><Text style={styles.inputUnit}>kcal</Text></View></View><View style={styles.numberField}><Text style={styles.formLabel}>たんぱく質（任意）</Text><View style={styles.inputWithUnit}><TextInput accessibilityLabel="たんぱく質" keyboardType="decimal-pad" onChangeText={(value) => { setProtein(value); setError(''); }} placeholder="任意" placeholderTextColor="#556772" style={styles.numberInput} value={protein} /><Text style={styles.inputUnit}>g</Text></View></View></View>
               {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
               {success ? <Text style={styles.success}>{success}</Text> : null}
               <Pressable accessibilityRole="button" disabled={isSaving} onPress={() => { void saveEntry(); }} style={[styles.addButton, isSaving && styles.disabledButton]}>{isSaving ? <ActivityIndicator color="#050A0F" /> : <Text style={styles.addButtonText}>{editingId ? '変更を保存' : 'この食事を追加'}</Text>}</Pressable>
@@ -172,9 +191,9 @@ export default function FoodScreen() {
               {!isScreenshotMode ? <Text style={styles.previewNote}>{isApiBypassEnabled ? '開発用の仮記録です。画面を閉じると消えます。' : '保存した食事はログイン中の本人の記録として残ります。'}</Text> : null}
             </View>
             <View style={styles.listHeading}><Text style={styles.sectionTitle}>日付別の食事履歴</Text><Text style={styles.count}>{entries.length}件</Text></View>
-            <View style={styles.dateSelector}><TextInput accessibilityLabel="履歴の日付" keyboardType="numbers-and-punctuation" maxLength={10} onChangeText={setDateInput} placeholder="YYYY-MM-DD" placeholderTextColor="#556772" style={[styles.input, styles.dateInput]} value={dateInput} /><Pressable accessibilityRole="button" onPress={() => { if (!isValidDate(dateInput)) { setError('履歴の日付を正しく入力してください。'); return; } setError(''); setViewDate(dateInput); if (dateInput === viewDate) void loadEntries(viewDate); }} style={styles.dateButton}><Text style={styles.dateButtonText}>表示</Text></Pressable></View>
+            <FoodCalendar key={viewDate} selectedDate={viewDate} onSelect={selectHistoryDate} />
             <Text style={styles.historyDate}>{viewDate}{viewDate === today() ? '（今日）' : ''}</Text>
-            {isLoading ? <View style={styles.emptyCard}><ActivityIndicator color="#00D4FF" /><Text style={styles.emptyText}>食事記録を読み込んでいます。</Text></View> : entries.length === 0 ? <View style={styles.emptyCard}><Text style={styles.emptyTitle}>この日の食事記録はありません</Text><Text style={styles.emptyText}>食べたものを追加すると、この日の合計を確認できます。</Text></View> : <View style={styles.entryList}>{entries.map((entry) => <View key={entry.id} style={styles.entryCard}><View style={styles.entryCopy}><Text style={styles.entryType}>{entry.mealType}</Text><Text style={styles.entryName}>{entry.name}</Text><Text style={styles.entryProtein}>P {entry.proteinGrams.toFixed(1)} g</Text></View><View style={styles.entryNumbers}><Text style={styles.entryCalories}>{entry.calories.toLocaleString()} kcal</Text><Pressable accessibilityLabel={`${entry.name}を編集`} accessibilityRole="button" onPress={() => startEdit(entry)} style={styles.actionButton}><Text style={styles.actionText}>編集</Text></Pressable><Pressable accessibilityLabel={`${entry.name}を削除`} accessibilityRole="button" onPress={() => setDeletingId(entry.id)} style={styles.actionButton}><Text style={styles.deleteText}>削除</Text></Pressable></View></View>)}</View>}
+            {isLoading ? <View style={styles.emptyCard}><ActivityIndicator color="#00D4FF" /><Text style={styles.emptyText}>食事記録を読み込んでいます。</Text></View> : entries.length === 0 ? <View style={styles.emptyCard}><Text style={styles.emptyTitle}>この日の食事記録はありません</Text><Text style={styles.emptyText}>食べたものを追加すると、この日の合計を確認できます。</Text></View> : <View style={styles.entryList}>{entries.map((entry) => <View key={entry.id} style={styles.entryCard}><View style={styles.entryCopy}><Text style={styles.entryType}>{entry.mealType}</Text><Text style={styles.entryName}>{entry.name}</Text><Text style={styles.entryProtein}>P {entry.proteinGrams == null ? '未入力' : entry.proteinGrams.toFixed(1)} g</Text></View><View style={styles.entryNumbers}><Text style={styles.entryCalories}>{entry.calories == null ? '未入力' : entry.calories.toLocaleString()} kcal</Text><Pressable accessibilityLabel={`${entry.name}を編集`} accessibilityRole="button" onPress={() => startEdit(entry)} style={styles.actionButton}><Text style={styles.actionText}>編集</Text></Pressable><Pressable accessibilityLabel={`${entry.name}を削除`} accessibilityRole="button" onPress={() => setDeletingId(entry.id)} style={styles.actionButton}><Text style={styles.deleteText}>削除</Text></Pressable></View></View>)}</View>}
           </ScrollView>
         </KeyboardAvoidingView>
         </View>

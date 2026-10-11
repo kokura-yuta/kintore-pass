@@ -151,11 +151,11 @@ export async function GET(request: Request) {
       .limit(100);
 
     const totalCalories = records.reduce(
-      (total, record) => total + record.calories,
+      (total, record) => total + (record.calories ?? 0),
       0,
     );
     const totalProteinGrams = records.reduce(
-      (total, record) => total + record.proteinGrams,
+      (total, record) => total + (record.proteinGrams ?? 0),
       0,
     );
 

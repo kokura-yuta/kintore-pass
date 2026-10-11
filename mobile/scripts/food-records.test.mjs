@@ -37,6 +37,18 @@ const input = {
   proteinGrams: 42.5,
 };
 
+test('未入力の栄養値は0にせずnullのまま保存・更新する', async () => {
+  const api = loadFoodRecords(async (_path, options) => {
+    const body = JSON.parse(options.body);
+    assert.equal(body.calories, null);
+    assert.equal(body.proteinGrams, null);
+    return { record: { id: 'food-1', ...body } };
+  });
+  const optional = { ...input, calories: null, proteinGrams: null };
+  assert.equal((await api.createFoodRecord('token', optional)).calories, null);
+  assert.equal((await api.updateFoodRecord('token', 'food-1', optional)).proteinGrams, null);
+});
+
 test('指定日の食事記録をGETする', async () => {
   const api = loadFoodRecords(async (path, options) => {
     assert.equal(path, '/api/food-records?date=2026-09-11');
