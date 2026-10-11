@@ -2,6 +2,15 @@
 
 更新日：2026-10-11。これは配布手順であり、配布完了報告ではありません。
 
+### Build 23の更新（TestFlight配布完了）
+
+- 作成元は共有main e2112dde4d1931698db8494f0b47c0f04fe4f91a。a60e0b8の保持型Tabs／先読み／ちらつき対策に、最新5ade553の調子1〜5・種目検索の星／追加操作とe2112ddの軽い振動を統合。振動にはexpo-haptics ~57.0.3のネイティブ組み込みが必要。
+- Apple最新22と23未使用を確認。先行した旧内容の23 IPAは未送信のまま保存し、最新cloneから作成。配布コピーだけautoIncrement=false、本番のEAS公開環境値をメモリ経由で注入。開発モード／API bypassはfalse。クラウドビルド枠・有料プラン変更・審査提出なし。
+- 食事のDB 0021とSites Version 36、nullable-v1の旧版互換を維持。今回のDB変更なし。unit98件、安全性19件、プラン／遷移21件、振動4件、AI／お気に入り／カレンダー10件、mobile API28件、公開API4件、型・lint成功。開発Webで検索の星／追加の独立操作と5段階表示を確認。実iPhoneの振動強度・ちらつきゼロは未測定。
+- Macで署名済み1.0.0 (23)作成成功。本番API・Clerk公開値のバイナリ完全一致、ExpoHaptics／FavoritesProvider／nullable-v1／profileWeightKgを確認。IPA outputs/releases/kintorepas-build23.ipa（Git対象外）、SHA256 bea78f761498cc3020c7264d72289471580709a1b4eb23db904fc69b6d540211。同一IPAの送信開始、Apple処理・既存内部グループ割当はまだ未確認。
+- EAS送信b9e49da4-761c-4c7d-99aa-1b686117c138成功。Appleアップロード完了、処理中。App Store審査は提出していない。処理後の既存内部グループ割当・端末更新は確認待ち。
+- 2026-10-12：Apple Build 23（d174a6a4-9bd5-49db-80b6-244ab21002cd）の「提出準備完了・期限90日」と既存「筋トレPAS 開発テスト」割当を確認。証拠app-store-screenshots/build23-ready-2026-10-12.png。Mac作成・同一IPA送信・TestFlight配布完了。審査提出なし。端末で23へ更新後、調子5段階、星／追加、振動、タブ往復の入力維持・ちらつき、友達／分析の読込、食事の未入力表示を確認する。
+
 ### Build 22の更新（配布完了）
 
 - 作成元は共有main a6e384bdc6d5dce3643964e63c7fb4835ba20a88。プラン確認のユーザー別集約・同時要求の合流、異なるタブ即時受付、チャット本文維持と古い応答の破棄を追加。ホーム構成とFree認可は変更しない。
