@@ -3,7 +3,7 @@ import { SymbolView } from 'expo-symbols';
 import { useRef } from 'react';
 import { usePlanAccess } from '@/hooks/usePlanAccess';
 import { canNavigateTab, planLabel } from '@/lib/planPresentation';
-import { isApiBypassEnabled } from '@/lib/api';
+import { isApiBypassEnabled, isScreenshotMode } from '@/lib/api';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -20,7 +20,7 @@ export function BottomNavigation() {
   const router = useRouter();
   const lastPress = useRef(0);
   const plan = usePlanAccess();
-  const label = plan.isFreePreview ? 'Free表示の確認用（契約変更なし）' : isApiBypassEnabled ? '開発プレビュー' : plan.error ? 'プラン確認エラー' : planLabel(plan.data);
+  const label = plan.isFreePreview ? 'Free表示の確認用（契約変更なし）' : isScreenshotMode ? 'Premium' : isApiBypassEnabled ? '開発プレビュー' : plan.error ? 'プラン確認エラー' : planLabel(plan.data);
 
   return (
     <SafeAreaView edges={['bottom']} style={styles.safeArea}>

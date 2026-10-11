@@ -2,10 +2,13 @@ import { useAuth } from '@clerk/expo';
 import { Redirect } from 'expo-router';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 
-import { isApiBypassEnabled } from '@/lib/api';
+import { isApiBypassEnabled, isScreenshotMode } from '@/lib/api';
 
 export default function AuthGateScreen() {
   const { isLoaded, isSignedIn } = useAuth({ treatPendingAsSignedOut: false });
+
+  // 撮影用サンプルは認証サーバーへの接続を待たない。本番では必ずfalse。
+  if (isScreenshotMode) return <Redirect href="/bootstrap" />;
 
   if (!isLoaded) {
     return (

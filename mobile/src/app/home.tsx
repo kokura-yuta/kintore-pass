@@ -121,7 +121,7 @@ function HomeContent() {
   }, [getToken]);
 
   const loadHome = useCallback(async () => {
-    if (!isLoaded || (!isSignedIn && !isApiBypassEnabled) || isLoadingHomeRef.current) return;
+    if ((!isLoaded && !isScreenshotMode) || (!isSignedIn && !isApiBypassEnabled) || isLoadingHomeRef.current) return;
     isLoadingHomeRef.current = true;
     setIsLoading(true);
     setError('');
@@ -153,7 +153,7 @@ function HomeContent() {
   }, [isLoaded, isSignedIn, setLatestGeneratedMenu]);
 
   useEffect(() => {
-    if (!isLoaded) return;
+    if (!isLoaded && !isScreenshotMode) return;
 
     if (!isSignedIn && !isApiBypassEnabled) {
       hasAutomaticallyLoadedRef.current = false;
