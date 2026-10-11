@@ -1,8 +1,8 @@
 import { useAuth } from '@clerk/expo';
 import { PremiumScreen } from '@/components/PremiumScreen';
 import * as Crypto from 'expo-crypto';
-import { Redirect, useRouter } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
+import { Redirect, useRouter, useFocusEffect } from 'expo-router';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Markdown from 'react-native-markdown-display';
 import {
   ActivityIndicator, Alert, KeyboardAvoidingView, Modal, Platform, Pressable,
@@ -10,7 +10,6 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { BottomNavigation } from '@/components/BottomNavigation';
 import { type ChatMessage, useChatHistory } from '@/contexts/ChatHistoryContext';
 import { deleteChatConversation, fetchChatHistory, sendChatMessage } from '@/lib/chatApi';
 import { ApiError, isApiBypassEnabled } from '@/lib/api';
@@ -47,6 +46,8 @@ function ChatContent() {
   const [historyReloadKey, setHistoryReloadKey] = useState(0);
   const [messageRevision, setMessageRevision] = useState(0);
   const scrollRef = useRef<ScrollView>(null);
+  const hasFocused = useRef(false);
+  const scrollPending = useRef(true);
   const lastMenuPress = useRef(0);
   const getTokenRef = useRef(getToken);
   const loadedMessageConversationIds = useRef(new Set<string>());
@@ -55,6 +56,19 @@ function ChatContent() {
   const pendingSendRequestId = useRef<string | null>(null);
   const resolvedActiveId = activeId ?? conversations[0]?.id ?? null;
   const activeConversation = conversations.find((chat) => chat.id === resolvedActiveId) ?? null;
+  const lastMessageId = activeConversation?.messages.at(-1)?.id;
+  useFocusEffect(useCallback(() => {
+    if (hasFocused.current) setHistoryReloadKey(value => value + 1);
+    hasFocused.current = true;
+  }, []));
+  useEffect(() => {
+    scrollPending.current = true;
+    // Never animate loaded history across the screen or scroll on tab re-layout.
+    const frame = requestAnimationFrame(() => {
+      if (scrollPending.current) { scrollRef.current?.scrollToEnd({ animated: false }); scrollPending.current = false; }
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [resolvedActiveId, lastMessageId]);
   const isTooLong = input.length > MAX_MESSAGE_LENGTH;
   const canSend = Boolean(input.trim()) && !isTooLong && !isSending;
 
@@ -295,7 +309,7 @@ function ChatContent() {
             <View style={styles.menuEntryCopy}><Text style={styles.menuEntryTitle}>AIにメニューを作成してもらう</Text><Text style={styles.menuEntryNote}>今日の調子と部位に合わせて提案</Text></View>
             <Text style={styles.menuEntryArrow}>›</Text>
           </Pressable>
-          <ScrollView automaticallyAdjustKeyboardInsets contentContainerStyle={styles.messages} keyboardDismissMode="interactive" keyboardShouldPersistTaps="handled" onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })} ref={scrollRef} showsVerticalScrollIndicator={false}>
+          <ScrollView automaticallyAdjustKeyboardInsets contentContainerStyle={styles.messages} keyboardDismissMode="interactive" keyboardShouldPersistTaps="handled" onContentSizeChange={() => { if (scrollPending.current) { scrollRef.current?.scrollToEnd({ animated: false }); scrollPending.current = false; } }} ref={scrollRef} showsVerticalScrollIndicator={false}>
             {(isLoadingHistory || isLoadingMessages) && !activeConversation?.messages.length ? <StatusPanel label="保存済みのチャットを読み込んでいます…" />
               : !activeConversation?.messages.length ? <Welcome onSelectSuggestion={setInput} />
                 : activeConversation.messages.map((message) => <MessageBubble key={message.id} message={message} />)}
@@ -314,7 +328,6 @@ function ChatContent() {
           {isTooLong ? <Text style={styles.lengthError}>500文字以内で入力してください。</Text> : null}
         </KeyboardAvoidingView>
       </SafeAreaView>
-      <BottomNavigation />
 
       <Modal animationType="slide" onRequestClose={() => setDrawerVisible(false)} transparent visible={drawerVisible}>
         <View style={styles.modalBackdrop}><Pressable accessibilityLabel="履歴メニューを閉じる" onPress={() => setDrawerVisible(false)} style={styles.modalDismiss} /><SafeAreaView edges={['top', 'bottom']} style={styles.drawer}>

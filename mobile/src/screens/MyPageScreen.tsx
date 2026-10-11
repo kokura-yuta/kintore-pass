@@ -4,7 +4,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { BottomNavigation } from '@/components/BottomNavigation';
 import { ProfileNumberField } from '@/components/ProfileNumberField';
 import { type ProfileDraft, type TrainingLocation, type TrainingStyle, useOnboarding } from '@/contexts/OnboardingContext';
 import { isApiBypassEnabled } from '@/lib/api';
@@ -415,7 +414,6 @@ export default function MyPageScreen() {
           </ScrollView>
         </KeyboardAvoidingView>
       </SafeAreaView>
-      <BottomNavigation />
     </View>
   );
 }

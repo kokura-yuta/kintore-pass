@@ -43,18 +43,18 @@ test('現在タブと連打は遷移しない', () => {
 });
 test('有料画面を共通ガードで囲み、手動記録は囲まない', () => {
   for (const name of ['home', 'chat', 'ai-coach', 'body-analysis']) {
-    const source = readFileSync(new URL(`../src/app/${name}.tsx`, import.meta.url), 'utf8');
+    const source = readFileSync(new URL((name === 'chat' ? '../src/screens/ChatScreen.tsx' : name === 'training' ? '../src/screens/TrainingScreen.tsx' : name === 'food' ? '../src/screens/FoodScreen.tsx' : `../src/app/${name}.tsx`), import.meta.url), 'utf8');
     assert.match(source, /return <PremiumScreen/);
   }
   for (const name of ['training', 'food']) {
-    assert.doesNotMatch(readFileSync(new URL(`../src/app/${name}.tsx`, import.meta.url), 'utf8'), /<PremiumScreen/);
+    assert.doesNotMatch(readFileSync(new URL((name === 'chat' ? '../src/screens/ChatScreen.tsx' : name === 'training' ? '../src/screens/TrainingScreen.tsx' : name === 'food' ? '../src/screens/FoodScreen.tsx' : `../src/app/${name}.tsx`), import.meta.url), 'utf8'), /<PremiumScreen/);
   }
 });
 test('通常起動と初回設定の完了先は記録画面', () => {
   const bootstrap = readFileSync(new URL('../src/app/bootstrap.tsx', import.meta.url), 'utf8');
   assert.match(bootstrap, /if \(data.onboardingCompleted\) \{\s*router.replace\('\/training'\)/);
   for (const name of ['initial-analysis', 'body-analysis']) {
-    const source = readFileSync(new URL(`../src/app/${name}.tsx`, import.meta.url), 'utf8');
+    const source = readFileSync(new URL((name === 'chat' ? '../src/screens/ChatScreen.tsx' : name === 'training' ? '../src/screens/TrainingScreen.tsx' : name === 'food' ? '../src/screens/FoodScreen.tsx' : `../src/app/${name}.tsx`), import.meta.url), 'utf8');
     assert.match(source, /router.replace\('\/training'\)/);
     assert.doesNotMatch(source, /router.replace\('\/home'\)/);
   }

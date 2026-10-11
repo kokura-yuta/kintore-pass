@@ -262,7 +262,7 @@ test("アカウント削除は本人再確認と確認文字を必須にする",
   const accountScreen = await readFile(
     path.join(
       projectRoot,
-      "mobile/src/app/my-page.tsx",
+      "mobile/src/screens/MyPageScreen.tsx",
     ),
     "utf8",
   );

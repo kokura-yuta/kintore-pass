@@ -1,42 +1,33 @@
 import { useAuth } from '@clerk/expo';
-import { type Href, useRouter } from 'expo-router';
-import { useEffect,useRef,useState } from 'react';
+import { type Href, useRouter, useFocusEffect } from 'expo-router';
+import { useCallback,useEffect,useRef,useState } from 'react';
 import { ActivityIndicator,Alert,Keyboard,KeyboardAvoidingView,Modal,Platform,Pressable,ScrollView,StyleSheet,Switch,Text,TextInput,View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { apiRequest } from '@/lib/api';
+import { useAccountReadiness } from '@/contexts/AccountReadinessContext';
 type Relation={id:string;name:string;status:'pending'|'accepted';outgoing:boolean};
 type Settings={id:string;alias:string|null;emailSearchEnabled:boolean;shareTraining:boolean;socialSuspended?:boolean};
 export default function FriendsScreen() {
-  const {getToken,userId,isLoaded}=useAuth({treatPendingAsSignedOut:false}); const router=useRouter();
-  const tokenRef=useRef(getToken);const settingsDirty=useRef(false);
+  const {getToken}=useAuth({treatPendingAsSignedOut:false}); const router=useRouter();
+  const {friends: snapshot,friendError,refreshFriends,invalidateFriends}=useAccountReadiness();
+  const tokenRef=useRef(getToken);
   const [hasChanges,setHasChanges]=useState(false);
   useEffect(()=>{tokenRef.current=getToken;},[getToken]);
   const scrollRef=useRef<ScrollView>(null);const searchTop=useRef(0);
-  const [settings,setSettings]=useState<Settings|null>(null);const [relations,setRelations]=useState<Relation[]>([]);
+  const [settingsDraft,setSettingsDraft]=useState<Settings|null>(null);const relations=snapshot?.relations??[];
+  const settings=hasChanges?settingsDraft:snapshot?.settings??null;
   const [query,setQuery]=useState('');const [results,setResults]=useState<{id:string;name:string}[]>([]);
   const [managedFriend,setManagedFriend]=useState<string|null>(null);const [error,setError]=useState('');const [busy,setBusy]=useState(false);
-  const [blocked,setBlocked]=useState<{id:string}[]>([]);
+  const blocked=snapshot?.blocked??[];
   const [reportTarget,setReportTarget]=useState<Relation|null>(null);
   const [notice,setNotice]=useState('');
   const [showSettings,setShowSettings]=useState(false);
   const [showRequests,setShowRequests]=useState(false);
-  function editSettings(change:Partial<Settings>){settingsDirty.current=true;setHasChanges(true);setSettings(current=>current?{...current,...change}:current);}
-  async function api<T>(path:string,body?:unknown) {const token=await tokenRef.current();if(!token)throw new Error('ログインしてください。');return apiRequest<T>(path,{token,method:body?'POST':'GET',...(body?{body:JSON.stringify(body)}:{})});}
-  async function reload(){const preserveDraft=settingsDirty.current;const data=await api<{settings:Settings;relations:Relation[];blocked?:{id:string}[]}>('/api/friends');if(!preserveDraft&&!settingsDirty.current)setSettings(data.settings);setRelations(data.relations);setBlocked(data.blocked??[]);}
-  useEffect(()=>{
-    let active = true;
-    if(!isLoaded)return;
-    (async()=>{
-      const token=await tokenRef.current();
-      if(!active)return;
-      settingsDirty.current=false;setHasChanges(false);setSettings(null);setRelations([]);setManagedFriend(null);setResults([]);setError('');setBlocked([]);setReportTarget(null);setNotice('');
-      if(!token) throw new Error('ログインしてください。');
-      const data=await apiRequest<{settings:Settings;relations:Relation[];blocked?:{id:string}[]}>('/api/friends',{token,method:'GET'});
-      if(active){if(!settingsDirty.current)setSettings(data.settings);setRelations(data.relations);setBlocked(data.blocked??[]);}
-    })().catch(e=>{if(active)setError(e instanceof Error?e.message:'読み込めませんでした。');});
-    return ()=>{active=false;};
-  },[userId,isLoaded]);
-  async function saveSettings(){if(busy||!settings)return;setBusy(true);setError('');try{await api('/api/friends',{action:'settings',alias:settings.alias?.trim()||null,emailSearchEnabled:settings.emailSearchEnabled,shareTraining:settings.shareTraining});settingsDirty.current=false;setHasChanges(false);await reload();}catch(e){setError(e instanceof Error?e.message:'設定を保存できませんでした。');}finally{setBusy(false);}}
+  function editSettings(change:Partial<Settings>){setSettingsDraft(settings?{...settings,...change}:null);setHasChanges(true);}
+  async function api<T>(path:string,body?:unknown) {const token=await tokenRef.current();if(!token)throw new Error('ログインしてください。');if(body)invalidateFriends();return apiRequest<T>(path,{token,method:body?'POST':'GET',...(body?{body:JSON.stringify(body)}:{})});}
+  async function reload(){invalidateFriends();await refreshFriends();}
+  useFocusEffect(useCallback(()=>{void refreshFriends();},[refreshFriends]));
+  async function saveSettings(){if(busy||!settings)return;setBusy(true);setError('');try{await api('/api/friends',{action:'settings',alias:settings.alias?.trim()||null,emailSearchEnabled:settings.emailSearchEnabled,shareTraining:settings.shareTraining});await reload();setHasChanges(false);}catch(e){setError(e instanceof Error?e.message:'設定を保存できませんでした。');}finally{setBusy(false);}}
   async function act(body:unknown){if(busy)return;setBusy(true);setError('');try{await api('/api/friends',body);setManagedFriend(null);setResults([]);await reload();}catch(e){setError(e instanceof Error?e.message:'操作できませんでした。');}finally{setBusy(false);}}
   async function search(){if(busy)return;Keyboard.dismiss();setBusy(true);setError('');setResults([]);try{const r=await api<{results:{id:string;name:string}[]}>('/api/friends',{action:'search',query});setResults(r.results);if(!r.results.length)setError('検索結果はありません。メール検索は相手が許可した場合のみ利用できます。');}catch(e){setError(e instanceof Error?e.message:'検索できませんでした。');}finally{setBusy(false);}}
   function block(id:string){Alert.alert('ブロックしますか？','友達関係を解除し、お互いの検索・申請・記録閲覧を停止します。解除しても友達関係は復元されません。',[{text:'キャンセル'},{text:'ブロック',style:'destructive',onPress:()=>act({action:'block',targetId:id})}]);}
@@ -61,7 +52,7 @@ export default function FriendsScreen() {
       <Text style={styles.caption}>IDまたは許可済みメールで完全一致検索 · 30回／日</Text>
       {results.map(r=><View style={styles.friendCard} key={r.id}><View style={styles.avatar}><Text style={styles.avatarText}>{r.name.slice(0,1).toUpperCase()}</Text></View><View style={styles.friendInfo}><Text style={styles.name}>{r.name}</Text><ActionButton busy={busy} label="友達申請を送る" onPress={()=>act({action:'request',targetId:r.id})}/><ActionButton busy={busy} label="ブロックする" onPress={()=>block(r.id)}/></View></View>)}
     </View>
-    {busy&&<ActivityIndicator color="#73E7FF"/>}{!!error&&<Text style={{color:'#ff8e83'}}>{error}</Text>}
+    {busy&&<ActivityIndicator color="#73E7FF"/>}{!!(error||friendError)&&<Text style={{color:'#ff8e83'}}>{error||friendError}</Text>}
     {!!notice&&<Text style={text}>{notice}</Text>}
     {settings?.socialSuspended&&<Text style={{color:'#ff8e83'}}>友達機能の公開が停止されています。運営へお問い合わせください。</Text>}
     {!settings&&<ActionButton busy={busy} label="再読み込み" onPress={()=>{reload().catch(e=>setError(e.message));}}/>}
@@ -75,8 +66,9 @@ export default function FriendsScreen() {
     </View>}
     <Pressable accessibilityRole="button" accessibilityState={{expanded:showRequests}} onPress={()=>setShowRequests(v=>!v)} style={styles.requestButton}><Text style={styles.requestText}>友達申請 {incoming.length>0?`· 受信${incoming.length}件`:''}{outgoing.length>0?` · 送信${outgoing.length}件`:''}</Text><Text style={styles.chevron}>{showRequests?'⌃':'⌄'}</Text></Pressable>
     {showRequests&&<View style={{gap:12}}><Text style={styles.sectionTitle}>受信した申請</Text>{!incoming.length&&<Text style={styles.caption}>申請はありません。</Text>}{incoming.map(r=><View style={card} key={r.id}><Text style={styles.name}>{r.name}</Text><ActionButton busy={busy} label="承認する" onPress={()=>act({action:'accept',targetId:r.id})}/><ActionButton busy={busy} label="拒否する" onPress={()=>act({action:'reject',targetId:r.id})}/>{safetyActions(r)}</View>)}<Text style={styles.sectionTitle}>送信した申請</Text>{!outgoing.length&&<Text style={styles.caption}>申請はありません。</Text>}{outgoing.map(r=><View style={card} key={r.id}><Text style={styles.name}>{r.name}</Text><ActionButton busy={busy} label="申請を取り消す" onPress={()=>act({action:'cancel',targetId:r.id})}/></View>)}</View>}
-    <View style={styles.headingRow}><Text style={styles.sectionTitle}>友達一覧</Text><Text style={styles.count}>{friends.length}人</Text></View>
-    {!friends.length&&<View style={styles.emptyCard}><Text style={styles.emptyTitle}>友達を見つけよう</Text><Text style={styles.caption}>相手のユーザーIDを検索して申請できます。承認されると、ここに表示されます。</Text></View>}
+    <View style={styles.headingRow}><Text style={styles.sectionTitle}>友達一覧</Text><Text style={styles.count}>{snapshot?`${friends.length}人`:'—'}</Text></View>
+    {!snapshot&&!friendError&&<View style={styles.emptyCard}><ActivityIndicator color="#73E7FF"/><Text style={styles.caption}>友達を確認しています…</Text></View>}
+    {snapshot&&!friends.length&&<View style={styles.emptyCard}><Text style={styles.emptyTitle}>友達を見つけよう</Text><Text style={styles.caption}>相手のユーザーIDを検索して申請できます。承認されると、ここに表示されます。</Text></View>}
     {friends.map(r=><View key={r.id} style={{gap:6}}>
       <Pressable accessibilityRole="button" accessibilityLabel={`${r.name} のカレンダーを開く`} disabled={busy} onPress={()=>router.push(`/friend-calendar?userId=${r.id}` as Href)} style={styles.friendCard}>
         <View style={styles.avatar}><Text style={styles.avatarText}>{r.name.slice(0,1).toUpperCase()}</Text></View>

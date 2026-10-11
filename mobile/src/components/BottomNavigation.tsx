@@ -14,7 +14,7 @@ const navigationItems = [
   { href: '/my-page', label: 'マイページ', icon: { ios: 'person.crop.circle', android: 'account_circle', web: 'account_circle' } },
 ] as const;
 
-export function BottomNavigation() {
+export function BottomNavigation({ onNavigate }: { onNavigate?: (href: string) => void } = {}) {
   const pathname = usePathname();
   const router = useRouter();
   const lastPress = useRef(0);
@@ -42,7 +42,8 @@ export function BottomNavigation() {
                 if (!canNavigateTab(atTabRoot, lastPress.current, Date.now(), lastDestination.current === item.href)) return;
                 lastPress.current = Date.now();
                 lastDestination.current = item.href;
-                router.replace((plan.isFreePreview ? `${item.href}?previewPlan=free` : item.href) as Href);
+                if (onNavigate && !plan.isFreePreview) onNavigate(item.href);
+                else router.navigate((plan.isFreePreview ? `${item.href}?previewPlan=free` : item.href) as Href);
               }}
               style={styles.item}
             >

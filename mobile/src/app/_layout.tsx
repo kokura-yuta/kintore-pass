@@ -13,6 +13,7 @@ import { TrainingHistoryProvider } from '@/contexts/TrainingHistoryContext';
 import { WeightHistoryProvider } from '@/contexts/WeightHistoryContext';
 import { ChatHistoryProvider } from '@/contexts/ChatHistoryContext';
 import { PlanAccessProvider } from '@/contexts/PlanAccessContext';
+import { AccountReadinessProvider } from '@/contexts/AccountReadinessContext';
 
 const publishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY;
 
@@ -62,7 +63,7 @@ function UserScopedApp() {
 
 function UserDataProviders() {
   return (
-    <PlanAccessProvider><OnboardingProvider>
+    <AccountReadinessProvider><PlanAccessProvider><OnboardingProvider>
       <TrainingDraftProvider>
         <TrainingHistoryProvider>
           <WeightHistoryProvider>
@@ -71,11 +72,12 @@ function UserDataProviders() {
                 <Stack.Screen name="index" options={{ animation: 'none' }} />
                 <Stack.Screen name="auth-gate" options={{ animation: 'none' }} />
                 <Stack.Screen name="bootstrap" options={{ animation: 'none' }} />
+                <Stack.Screen name="(tabs)" options={{ animation: 'none' }} />
               </Stack>
             </ChatHistoryProvider>
           </WeightHistoryProvider>
         </TrainingHistoryProvider>
       </TrainingDraftProvider>
-    </OnboardingProvider></PlanAccessProvider>
+    </OnboardingProvider></PlanAccessProvider></AccountReadinessProvider>
   );
 }

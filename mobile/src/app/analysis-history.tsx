@@ -1,12 +1,9 @@
-import { useAuth } from '@clerk/expo';
 import {
   useFocusEffect,
   useRouter,
 } from 'expo-router';
 import {
   useCallback,
-  useEffect,
-  useRef,
   useState,
 } from 'react';
 import {
@@ -19,16 +16,11 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ScreenStateCard } from '@/components/ScreenStateCard';
+import { useAccountReadiness } from '@/contexts/AccountReadinessContext';
 
 import {
   type BodyAnalysisHistoryItem,
-  fetchBodyAnalysisHistory,
 } from '@/lib/bodyAnalyses';
-
-type LoadingStatus =
-  | 'loading'
-  | 'ready'
-  | 'error';
 
 // 部位別スコアの平均を小数1桁で計算する
 function getAverageScore(
@@ -69,61 +61,15 @@ function formatAnalysisDate(
 
 export default function AnalysisHistoryScreen() {
   const router = useRouter();
-  const { getToken } = useAuth({
-    treatPendingAsSignedOut: false,
-  });
-  const getTokenRef = useRef(getToken);
-  const [analyses, setAnalyses] = useState<
-    BodyAnalysisHistoryItem[]
-  >([]);
+  const { analyses: snapshot, analysisError, refreshAnalyses } = useAccountReadiness();
+  const analyses = snapshot ?? [];
   const [selectedId, setSelectedId] =
     useState<string | null>(null);
-  const [status, setStatus] =
-    useState<LoadingStatus>('loading');
-  const [errorMessage, setErrorMessage] =
-    useState('');
-
-  // getTokenの最新版をRefへ保存し、履歴取得関数が再描画のたびに作り直されないようにする
-  useEffect(() => {
-    getTokenRef.current = getToken;
-  }, [getToken]);
+  const status = snapshot !== null ? 'ready' : analysisError ? 'error' : 'loading';
+  const errorMessage = analysisError;
 
   // 本人の身体分析履歴をバックエンド経由でNeonから取得する
-  const loadHistory = useCallback(async () => {
-    setStatus('loading');
-    setErrorMessage('');
-
-    try {
-      const token = await getTokenRef.current();
-
-      if (!token) {
-        throw new Error(
-          'ログイン状態を確認できませんでした。',
-        );
-      }
-
-      const response =
-        await fetchBodyAnalysisHistory(token);
-
-      setAnalyses(response.analyses);
-      setSelectedId((currentId) =>
-        response.analyses.some(
-          (analysis) =>
-            analysis.id === currentId,
-        )
-          ? currentId
-          : response.analyses[0]?.id ?? null,
-      );
-      setStatus('ready');
-    } catch (error) {
-      setErrorMessage(
-        error instanceof Error
-          ? error.message
-          : '身体分析履歴を取得できませんでした。',
-      );
-      setStatus('error');
-    }
-  }, []);
+  const loadHistory = refreshAnalyses;
 
   // 分析画面から戻った場合も最新履歴へ更新する
   useFocusEffect(
@@ -136,7 +82,7 @@ export default function AnalysisHistoryScreen() {
     analyses.find(
       (analysis) =>
         analysis.id === selectedId,
-    ) ?? null;
+    ) ?? analyses[0] ?? null;
   const latestAverageScore =
     getAverageScore(analyses[0] ?? null);
   const oldestAnalysisId =
@@ -221,7 +167,7 @@ export default function AnalysisHistoryScreen() {
                   <View style={styles.timeline}>
                     {analyses.map((analysis) => {
                       const isSelected =
-                        selectedId === analysis.id;
+                        selected?.id === analysis.id;
                       const isInitial =
                         analysis.id ===
                         oldestAnalysisId;

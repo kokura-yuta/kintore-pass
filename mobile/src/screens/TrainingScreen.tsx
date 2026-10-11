@@ -4,7 +4,6 @@ import { useAuth } from '@clerk/expo';
 import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { BottomNavigation } from '@/components/BottomNavigation';
 import { FavoriteExercises } from '@/components/FavoriteExercises';
 import { ExercisePickerModal } from '@/components/ExercisePickerModal';
 import { ExerciseRecordCard, type ExerciseRecord } from '@/components/ExerciseRecordCard';
@@ -235,7 +234,10 @@ export default function TrainingScreen() {
         scrollRef.current?.scrollTo({ y: 0, animated: false });
       }
       setSuccessMessage(`${response.message} カレンダーへ反映しました。`);
-      if (editingRecord) router.back();
+      if (editingRecord) {
+        router.setParams({ editId: undefined });
+        router.back();
+      }
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : '記録の保存に失敗しました。');
     } finally {
@@ -338,7 +340,6 @@ export default function TrainingScreen() {
         </KeyboardAvoidingView>
       </SafeAreaView>
 
-      <BottomNavigation />
       <ExercisePickerModal
         addedIds={exercises.map((exercise) => exercise.id)}
         onAdd={addExercise}

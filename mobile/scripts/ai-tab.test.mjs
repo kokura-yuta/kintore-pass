@@ -13,7 +13,7 @@ test('bottom navigation has four tabs with one AI entry and no home tab', () => 
 });
 
 test('AI menu entry is behind unchanged Premium boundary and opens existing builder', () => {
-  const chat = read('../src/app/chat.tsx');
+  const chat = read('../src/screens/ChatScreen.tsx');
   assert.match(chat, /<PremiumScreen title="AI"><ChatContent \/><\/PremiumScreen>/);
   assert.match(chat, /router.push\('\/home\?create=1'\)/);
   const menu = read('../src/app/home.tsx');

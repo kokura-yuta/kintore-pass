@@ -5,14 +5,15 @@ import { lineSegments } from '../shared/longChart.ts';
 const friends=readFileSync(new URL('../mobile/src/app/friends.tsx',import.meta.url),'utf8');
 test('Clerkの不安定なgetToken参照で友達の初期取得を再実行しない',()=>{
   assert.match(friends,/tokenRef\.current=getToken/);
-  assert.match(friends,/\},\[userId,isLoaded\]\)/);
+  const readiness=readFileSync(new URL('../mobile/src/contexts/AccountReadinessContext.tsx',import.meta.url),'utf8');
+  assert.match(readiness,/\[friendGate, isLoaded, userId\]/);
   const withoutTokenRefSync=friends.replace('useEffect(()=>{tokenRef.current=getToken;},[getToken]);','');
   assert.doesNotMatch(withoutTokenRefSync,/\},\[getToken\]\)/);
 });
 test('公開スイッチの未保存変更は再取得に上書きされず保存まで保護する',()=>{
-  assert.match(friends,/if\(!settingsDirty\.current\)setSettings\(data\.settings\)/);
-  assert.match(friends,/settingsDirty\.current=true;setHasChanges\(true\)/);
-  assert.match(friends,/setSettings\(current=>current\?\{\.\.\.current,\.\.\.change\}:current\)/);
+  assert.match(friends,/settings=hasChanges\?settingsDraft:snapshot\?\.settings\?\?null/);
+  assert.match(friends,/setSettingsDraft\(settings\?\{\.\.\.settings,\.\.\.change\}:null\);setHasChanges\(true\)/);
+  assert.match(friends,/await reload\(\);setHasChanges\(false\)/);
   assert.match(friends,/await api\('\/api\/friends',\{action:'settings'/);
   assert.match(friends,/Switch disabled=\{busy\}/);
   assert.match(friends,/TextInput editable=\{!busy\}/);

@@ -1,5 +1,5 @@
 import { BlurView } from 'expo-blur';
-import { useRouter } from 'expo-router';
+import { useRouter, useSegments } from 'expo-router';
 import { type ReactNode } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -9,6 +9,7 @@ import { usePlanAccess } from '@/hooks/usePlanAccess';
 export function PremiumScreen({ title, children }: { title: string; children: ReactNode }) {
   const plan = usePlanAccess();
   const router = useRouter();
+  const inTabs = (useSegments() as string[]).includes('(tabs)');
   // Do not mount paid screens or fetch their data behind the blur.
   if (plan.allowed) return <>{children}</>;
   return <View style={styles.screen}>
@@ -35,7 +36,7 @@ export function PremiumScreen({ title, children }: { title: string; children: Re
         </View>
       </ScrollView>
     </SafeAreaView>
-    <BottomNavigation />
+    {!inTabs && <BottomNavigation />}
   </View>;
 }
 

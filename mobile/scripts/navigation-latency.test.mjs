@@ -49,10 +49,68 @@ test('shared plan checks are user scoped, expiry checked and fail closed',()=>{
   assert.match(hook,/canAccessPaidScreen\(state.data\)/); assert.doesNotMatch(hook,/fetchSubscriptionStatus|AppState/);
 });
 test('chat refresh keeps content visible and rejects responses predating edits',()=>{
-  const screen=read('../src/app/chat.tsx');
+  const screen=read('../src/screens/ChatScreen.tsx');
   assert.match(screen,/epoch !== mutationEpoch.current/); assert.match(screen,/mutationEpoch.current \+= 1/);
   assert.match(screen,/isLoadingMessages\) && !activeConversation\?\.messages.length/);
   assert.match(screen,/最新の履歴を確認中/);
   assert.match(screen,/setMessageRevision\(value => value \+ 1\)/);
   assert.doesNotMatch(screen,/if \(\(activeConversation\?\.messages.length/);
+});
+
+test('main tabs keep mounted screens, URLs, inputs and one navigation bar',()=>{
+  const tabs=read('../src/app/(tabs)/_layout.tsx');
+  assert.match(tabs,/detachInactiveScreens=\{false\}/);
+  assert.match(tabs,/lazy: false, animation: 'none', freezeOnBlur: false/);
+  for(const [route,screen] of [['training','Training'],['food','Food'],['chat','Chat'],['my-page','MyPage']]) {
+    assert.match(tabs,new RegExp(`Tabs.Screen name="${route}"`));
+    assert.ok(read(`../src/app/(tabs)/${route}.tsx`).includes(`@/screens/${screen}Screen`));
+    assert.doesNotMatch(read(`../src/screens/${screen}Screen.tsx`),/<BottomNavigation/);
+  }
+  assert.match(read('../src/components/PremiumScreen.tsx'),/!inTabs && <BottomNavigation/);
+});
+test('owner-only prefetch is user scoped, merges concurrent requests and fails closed',()=>{
+  const provider=read('../src/contexts/AccountReadinessContext.tsx');
+  const root=read('../src/app/_layout.tsx');
+  assert.match(root,/UserDataProviders key=\{userId/);
+  assert.match(root,/<AccountReadinessProvider>/);
+  assert.match(provider,/friendGate.run/); assert.match(provider,/analysisGate.run/);
+  assert.match(provider,/friends: null, friendError: error/);
+  assert.match(provider,/analyses: null, analysisError: error/);
+  assert.match(provider,/listener.remove\(\); friendGate.invalidate\(\); analysisGate.invalidate\(\)/);
+  assert.doesNotMatch(provider,/AsyncStorage|SecureStore|friend-profile|friend-calendar/);
+  assert.match(read('../src/app/friends.tsx'),/async function reload\(\)\{invalidateFriends\(\);await refreshFriends\(\)/);
+});
+test('unknown lists never flash a verified zero and unsaved settings survive refresh',()=>{
+  const friends=read('../src/app/friends.tsx'), analyses=read('../src/app/analysis-history.tsx');
+  assert.match(friends,/snapshot\?`\$\{friends.length\}人`:'—'/);
+  assert.match(friends,/snapshot&&!friends.length/);
+  assert.match(friends,/settings=hasChanges\?settingsDraft:snapshot\?\.settings/);
+  assert.match(analyses,/snapshot !== null \? 'ready' : analysisError \? 'error' : 'loading'/);
+  assert.doesNotMatch(analyses,/setAnalyses|setStatus|setSelectedId\(\(currentId\)/);
+});
+test('food same-date refresh preserves rows; chat layout cannot trigger animated scrolling',()=>{
+  const food=read('../src/screens/FoodScreen.tsx'),chat=read('../src/screens/ChatScreen.tsx');
+  assert.match(food,/showInitialLoading = isLoading && loadedDate !== viewDate/);
+  assert.match(food,/if \(displayedDate.current !== date\) setEntries\(\[\]\)/);
+  assert.match(food,/if \(version !== loadVersion.current\) return/);
+  assert.match(chat,/\[resolvedActiveId, lastMessageId\]/);
+  assert.match(chat,/onContentSizeChange=\{\(\) => \{ if \(scrollPending.current\)/);
+  assert.doesNotMatch(chat,/scrollToEnd\(\{ animated: true/);
+});
+test('new AI menu/edit initializes form while clearing saved draft keeps success UI',()=>{
+  const route=read('../src/app/(tabs)/training.tsx');
+  assert.match(route,/if \(draft && menuKey !== draft.menuId\) setMenuKey\(draft.menuId\)/);
+  assert.match(route,/editId \? `edit:\$\{editId\}` : `menu:\$\{menuKey\}`/);
+  assert.match(read('../src/screens/TrainingScreen.tsx'),/router.setParams\(\{ editId: undefined \}\)/);
+});
+
+test('prefetch begun before a settings mutation cannot overwrite its refreshed result',async()=>{
+  const gate=createRequestGate(),before=deferred(),during=deferred(),seen=[];
+  const first=gate.run(()=>before.promise,v=>seen.push(v),()=>assert.fail());
+  gate.invalidate();
+  const second=gate.run(()=>during.promise,v=>seen.push(v),()=>assert.fail());
+  gate.invalidate();
+  await gate.run(async()=> 'saved-settings',v=>seen.push(v),()=>assert.fail());
+  before.resolve('old-settings');during.resolve('intermediate-settings');
+  await Promise.all([first,second]);assert.deepEqual(seen,['saved-settings']);
 });

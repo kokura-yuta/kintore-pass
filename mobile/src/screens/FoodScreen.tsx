@@ -1,10 +1,10 @@
 import { useAuth } from '@clerk/expo';
+import { useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { FoodCalendar } from '@/components/FoodCalendar';
-import { BottomNavigation } from '@/components/BottomNavigation';
 import { isApiBypassEnabled, isScreenshotMode } from '@/lib/api';
 import { createFoodRecord, deleteFoodRecord, fetchFoodRecords, updateFoodRecord, type FoodRecord, type MealType } from '@/lib/foodRecords';
 
@@ -43,6 +43,9 @@ export default function FoodScreen() {
     isScreenshotMode ? screenshotFoodRecords : [],
   );
   const [viewDate, setViewDate] = useState(today);
+  const displayedDate = useRef(viewDate);
+  const hasFocused = useRef(false);
+  const [loadedDate, setLoadedDate] = useState<string | null>(null);
   const [entryDate, setEntryDate] = useState(today);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -55,6 +58,7 @@ export default function FoodScreen() {
   const [success, setSuccess] = useState('');
   const [isLoading, setIsLoading] = useState(!isApiBypassEnabled);
   const [isSaving, setIsSaving] = useState(false);
+  const showInitialLoading = isLoading && loadedDate !== viewDate;
 
   const totalCalories = entries.reduce((total, entry) => total + (entry.calories ?? 0), 0);
   const totalProtein = entries.reduce((total, entry) => total + (entry.proteinGrams ?? 0), 0);
@@ -65,11 +69,13 @@ export default function FoodScreen() {
     const version = ++loadVersion.current;
     if (isApiBypassEnabled) {
       setEntries(localEntries.filter((entry) => entry.recordedDate === date));
+      setLoadedDate(date);
       setIsLoading(false);
       return;
     }
     setIsLoading(true);
-    setEntries([]);
+    if (displayedDate.current !== date) setEntries([]);
+    displayedDate.current = date;
     setError('');
     try {
       const token = await getTokenRef.current();
@@ -77,9 +83,11 @@ export default function FoodScreen() {
       const response = await fetchFoodRecords(token, date);
       if (version !== loadVersion.current) return;
       setEntries(response.records);
+      setLoadedDate(date);
     } catch (loadError) {
       if (version !== loadVersion.current) return;
       setEntries([]);
+      setLoadedDate(null);
       setError(loadError instanceof Error ? loadError.message : '食事記録を読み込めませんでした。');
     } finally { if (version === loadVersion.current) setIsLoading(false); }
   }, [localEntries]);
@@ -89,10 +97,17 @@ export default function FoodScreen() {
     return () => { clearTimeout(timerId); loadVersion.current += 1; };
   }, [loadEntries, viewDate]);
 
+  const focusRefresh = useRef(() => {});
+  useEffect(() => { focusRefresh.current = () => { void loadEntries(viewDate); }; }, [loadEntries, viewDate]);
+  useFocusEffect(useCallback(() => {
+    if (hasFocused.current && !savingLock.current && !deletingLock.current) focusRefresh.current();
+    hasFocused.current = true;
+  }, []));
+
   function selectHistoryDate(date: string) {
     if (savingLock.current || deletingLock.current) return;
     loadVersion.current += 1;
-    setEntries([]);
+    if (date !== viewDate) setEntries([]);
     setIsLoading(true);
     setError('');
     setViewDate(date);
@@ -174,7 +189,7 @@ export default function FoodScreen() {
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.safeArea}>
           <ScrollView ref={scrollRef} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
             <View style={styles.header}><View><Text style={styles.eyebrow}>NUTRITION</Text><Text style={styles.title}>食事管理</Text></View><Text style={styles.date}>{viewDate === today() ? '今日' : viewDate}</Text></View>
-            <View style={styles.summaryCard}><Text style={styles.cardLabel}>{viewDate} の合計（入力済み分）</Text><View style={styles.summaryRow}><View style={styles.summaryItem}><Text style={styles.summaryValue}>{isLoading ? '…' : entries.some(entry => entry.calories != null) ? totalCalories.toLocaleString() : '—'}</Text><Text style={styles.summaryUnit}>kcal</Text></View><View style={styles.divider} /><View style={styles.summaryItem}><Text style={styles.summaryValue}>{isLoading ? '…' : entries.some(entry => entry.proteinGrams != null) ? totalProtein.toFixed(1) : '—'}</Text><Text style={styles.summaryUnit}>たんぱく質 g</Text></View></View></View>
+            <View style={styles.summaryCard}><Text style={styles.cardLabel}>{viewDate} の合計（入力済み分）</Text><View style={styles.summaryRow}><View style={styles.summaryItem}><Text style={styles.summaryValue}>{showInitialLoading ? '…' : entries.some(entry => entry.calories != null) ? totalCalories.toLocaleString() : '—'}</Text><Text style={styles.summaryUnit}>kcal</Text></View><View style={styles.divider} /><View style={styles.summaryItem}><Text style={styles.summaryValue}>{showInitialLoading ? '…' : entries.some(entry => entry.proteinGrams != null) ? totalProtein.toFixed(1) : '—'}</Text><Text style={styles.summaryUnit}>たんぱく質 g</Text></View></View></View>
             <View style={styles.formCard}>
               <Text style={styles.sectionTitle}>{editingId ? '食事を編集' : '食事を追加'}</Text>
               <Text style={styles.formLabel}>記録日</Text>
@@ -193,12 +208,11 @@ export default function FoodScreen() {
             <View style={styles.listHeading}><Text style={styles.sectionTitle}>日付別の食事履歴</Text><Text style={styles.count}>{entries.length}件</Text></View>
             <FoodCalendar key={viewDate} selectedDate={viewDate} onSelect={selectHistoryDate} />
             <Text style={styles.historyDate}>{viewDate}{viewDate === today() ? '（今日）' : ''}</Text>
-            {isLoading ? <View style={styles.emptyCard}><ActivityIndicator color="#00D4FF" /><Text style={styles.emptyText}>食事記録を読み込んでいます。</Text></View> : entries.length === 0 ? <View style={styles.emptyCard}><Text style={styles.emptyTitle}>この日の食事記録はありません</Text><Text style={styles.emptyText}>食べたものを追加すると、この日の合計を確認できます。</Text></View> : <View style={styles.entryList}>{entries.map((entry) => <View key={entry.id} style={styles.entryCard}><View style={styles.entryCopy}><Text style={styles.entryType}>{entry.mealType}</Text><Text style={styles.entryName}>{entry.name}</Text><Text style={styles.entryProtein}>P {entry.proteinGrams == null ? '未入力' : entry.proteinGrams.toFixed(1)} g</Text></View><View style={styles.entryNumbers}><Text style={styles.entryCalories}>{entry.calories == null ? '未入力' : entry.calories.toLocaleString()} kcal</Text><Pressable accessibilityLabel={`${entry.name}を編集`} accessibilityRole="button" onPress={() => startEdit(entry)} style={styles.actionButton}><Text style={styles.actionText}>編集</Text></Pressable><Pressable accessibilityLabel={`${entry.name}を削除`} accessibilityRole="button" onPress={() => setDeletingId(entry.id)} style={styles.actionButton}><Text style={styles.deleteText}>削除</Text></Pressable></View></View>)}</View>}
+            {showInitialLoading ? <View style={styles.emptyCard}><ActivityIndicator color="#00D4FF" /><Text style={styles.emptyText}>食事記録を読み込んでいます。</Text></View> : entries.length === 0 ? <View style={styles.emptyCard}><Text style={styles.emptyTitle}>この日の食事記録はありません</Text><Text style={styles.emptyText}>食べたものを追加すると、この日の合計を確認できます。</Text></View> : <View style={styles.entryList}>{entries.map((entry) => <View key={entry.id} style={styles.entryCard}><View style={styles.entryCopy}><Text style={styles.entryType}>{entry.mealType}</Text><Text style={styles.entryName}>{entry.name}</Text><Text style={styles.entryProtein}>P {entry.proteinGrams == null ? '未入力' : entry.proteinGrams.toFixed(1)} g</Text></View><View style={styles.entryNumbers}><Text style={styles.entryCalories}>{entry.calories == null ? '未入力' : entry.calories.toLocaleString()} kcal</Text><Pressable accessibilityLabel={`${entry.name}を編集`} accessibilityRole="button" onPress={() => startEdit(entry)} style={styles.actionButton}><Text style={styles.actionText}>編集</Text></Pressable><Pressable accessibilityLabel={`${entry.name}を削除`} accessibilityRole="button" onPress={() => setDeletingId(entry.id)} style={styles.actionButton}><Text style={styles.deleteText}>削除</Text></Pressable></View></View>)}</View>}
           </ScrollView>
         </KeyboardAvoidingView>
         </View>
       </SafeAreaView>
-      <BottomNavigation />
       <Modal animationType="fade" onRequestClose={() => { if (!isDeleting) setDeletingId(null); }} transparent visible={Boolean(deletingId)}><View style={styles.modalBackdrop}><View style={styles.confirmCard}><Text style={styles.confirmText}>この食事記録を削除しますか？</Text><View style={styles.confirmActions}><Pressable accessibilityRole="button" disabled={isDeleting} onPress={() => setDeletingId(null)}><Text style={styles.actionText}>キャンセル</Text></Pressable><Pressable accessibilityRole="button" disabled={isDeleting} onPress={() => { void removeEntry(); }}><Text style={styles.deleteText}>{isDeleting ? '削除中…' : '削除する'}</Text></Pressable></View></View></View></Modal>
     </View>
   );

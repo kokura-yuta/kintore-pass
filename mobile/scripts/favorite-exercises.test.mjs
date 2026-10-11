@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 const read = path => readFileSync(new URL(path, import.meta.url), 'utf8');
 
 test('new records start empty and successful creation clears only the draft, not favorites', () => {
-  const source = read('../src/app/training.tsx');
+  const source = read('../src/screens/TrainingScreen.tsx');
   assert.match(source, /if \(!draft\) return \[\]/);
   assert.doesNotMatch(source, /defaultExercises/);
   assert.match(source, /addRecord\(savedRecord\);\s+setExercises\(\[\]\)/);
@@ -22,7 +22,7 @@ test('all six favorite categories are available before training records without 
   assert.match(source, /\['胸', '背中', '腕', '肩', '脚', '腹筋'\]/);
   assert.doesNotMatch(source, /PremiumGate|usePlanAccess/);
   assert.match(source, /editing \|\| favorites.length === 0/);
-  const screen = read('../src/app/training.tsx');
+  const screen = read('../src/screens/TrainingScreen.tsx');
   assert.ok(screen.indexOf('<FavoriteExercises') < screen.indexOf('>実施した種目</Text>'));
   assert.match(screen, /current.some\(item => item.id === exercise.id\) \? current/);
 });
@@ -50,5 +50,5 @@ test('category tap adds all its favorites directly and keeps the editor availabl
   assert.match(source, /setEditing\(selectedFavorites.length === 0\)/);
   assert.match(source, /selecting && list.map/);
   assert.match(source, /if \(!ready \|\| busy\) return/);
-  assert.match(read('../src/app/training.tsx'), /setExercises\(\(current\) => current.some\(item => item.id === exercise.id\) \? current : \[...current, createRecord\(exercise\)\]\)/);
+  assert.match(read('../src/screens/TrainingScreen.tsx'), /setExercises\(\(current\) => current.some\(item => item.id === exercise.id\) \? current : \[...current, createRecord\(exercise\)\]\)/);
 });
