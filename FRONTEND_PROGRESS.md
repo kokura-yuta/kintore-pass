@@ -11,6 +11,7 @@
 - 公開API回帰4件成功。作成元9b8a581からMac/XcodeでBuild 20を開始。今日の全変更を含み、EAS本番公開値をメモリ経由で注入、認証回避・スクショモードfalse。作業コピーだけautoIncrement=falseとして番号20を明示、共有設定はautoIncrement=trueを維持。Apple送信・処理完了・実機更新はまだ未完了。
 - MacローカルBuild 20の署名済みIPA作成成功。Bundle ID com.kintorepas.app／1.0.0 (20)、バイナリ内の本番API・Clerk公開値の完全一致とnullable-v1を検証。IPA SHA256: d882ffbb8b8319ac6a7bec1e9b611264b3ce6a76a68e60289b5f1c17d410b736。outputs/releases/kintorepas-build20.ipaへ保存（Git対象外）。作成元9b8a581＋番号20は最新共有main 8ac1b12のアプリ機能と一致。EAS送信f62855f6-cbfd-4d61-98aa-b3bf768d17baを開始、Apple処理と既存内部グループへの割当は確認待ち。審査提出なし。
 - EAS送信成功。App Store Connectで1.0.0 (20)の受付（2026-10-11 15:10 JST）と「処理中」を確認。再送信は行わない。Apple処理完了・既存内部グループ割当・iPhone更新は確認待ち。
+- 15:14 JSTにApple処理完了を確認。Build 20（Apple ID cc953401-1e44-4016-8830-08e47dc18c28）は「提出準備完了・期限90日」で既存内部グループ「筋トレPAS 開発テスト」へ割当済み。証拠: app-store-screenshots/build20-ready-2026-10-11.png。新たなテスター追加・App Store審査提出・有料プラン変更なし。残るのはiPhoneで20へ更新して起動／空欄と実0の食事保存・編集削除／食事カレンダー／AI4タブ／お気に入りと記録リセット／Free制限の操作確認。本番アカウント操作や実機テストを完了済みとは扱わない。
 
 ## 2026-10-11：ホーム・チャットをAIタブへ統合
 

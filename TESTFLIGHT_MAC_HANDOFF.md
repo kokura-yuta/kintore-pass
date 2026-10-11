@@ -9,6 +9,7 @@
 - 実ルート＋隔離DBでCRUD・合計・旧UIフォーマット・401・他ユーザー404を検証。Sites Version 35公開成功、既存環境revision 19維持。本番アカウント／実機でのCRUD操作は未実施のため、以下の確認項目5は実機検査として残す。
 - このMacの配布用コピーでBuild 20の署名済みIPA作成完了。本番API／Clerk公開値のバイナリ完全一致、nullable-v1、com.kintorepas.app／1.0.0 (20)を確認。作成元9b8a581＋番号20は最新main 8ac1b12のmobile全141ファイルと一致（作業コピーのみautoIncrement=false）。クラウドビルド枠やプラン変更は使用していない。
 - IPA: outputs/releases/kintorepas-build20.ipa（Git対象外）。SHA256: d882ffbb8b8319ac6a7bec1e9b611264b3ce6a76a68e60289b5f1c17d410b736。EAS送信f62855f6-cbfd-4d61-98aa-b3bf768d17baを開始。Apple処理とグループ割当は確認待ち。実機検査は未実施。
+- 2026-10-11 15:14 JST：EAS送信成功後、Apple側Build 20（cc953401-1e44-4016-8830-08e47dc18c28）の「提出準備完了・期限90日」と「筋トレPAS 開発テスト」割当を確認。Mac作成とTestFlight配布は完了。iPhoneの更新・実機操作確認はテスターが行う。App Store審査提出はしていない。
 
 ## 現在地
 
