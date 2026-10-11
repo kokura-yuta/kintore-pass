@@ -1,19 +1,25 @@
 import { useAuth } from '@clerk/expo';
-import { useEffect, useRef, useState } from 'react';
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import { exerciseCatalog, type ExerciseCategory, type ExerciseOption } from '@/lib/exerciseCatalog';
 
 const parts: ExerciseCategory[] = ['胸', '背中', '腕', '肩', '脚', '腹筋'];
 
-export function FavoriteExercises(props: { addedIds: string[]; onAdd: (exercise: ExerciseOption) => void }) {
+const FavoritesContext = createContext<{ ids: string[]; ready: boolean; busy: boolean; error: string; toggle: (id: string) => Promise<void> } | null>(null);
+export function useFavorites() {
+  const value = useContext(FavoritesContext);
+  if (!value) throw new Error('FavoritesProvider is required');
+  return value;
+}
+export function FavoritesProvider({ children }: { children: ReactNode }) {
   const { userId } = useAuth();
   // Remount on identity changes so one account never renders another's favorites.
-  return <FavoriteList key={userId ?? 'guest'} {...props} userId={userId ?? null} />;
+  return <FavoriteStore key={userId ?? 'guest'} userId={userId ?? null}>{children}</FavoriteStore>;
 }
 
-function FavoriteList({ userId, addedIds, onAdd }: {
-  userId: string | null; addedIds: string[]; onAdd: (exercise: ExerciseOption) => void;
+function FavoriteStore({ userId, children }: {
+  userId: string | null; children: ReactNode;
 }) {
   const storageKey = userId ? `favorite-exercises-v1-${userId}` : null;
   const [ids, setIds] = useState<string[]>([]);
@@ -21,17 +27,6 @@ function FavoriteList({ userId, addedIds, onAdd }: {
   const [busy, setBusy] = useState(false);
   const lock = useRef(false);
   const [error, setError] = useState('');
-  const [part, setPart] = useState<ExerciseCategory | null>(null);
-  const [editing, setEditing] = useState(false);
-
-  function selectPart(category: ExerciseCategory) {
-    if (!ready || busy) return;
-    const selectedFavorites = exerciseCatalog.filter(item => item.category === category && ids.includes(item.id));
-    // The parent uses a functional update and ignores duplicates, preserving entered sets.
-    selectedFavorites.forEach(item => onAdd(item));
-    setPart(category);
-    setEditing(selectedFavorites.length === 0);
-  }
   useEffect(() => {
     let active = true;
     void (async () => {
@@ -66,9 +61,19 @@ function FavoriteList({ userId, addedIds, onAdd }: {
     finally { lock.current = false; setBusy(false); }
   }
 
+  return <FavoritesContext.Provider value={{ ids, ready, busy, error, toggle }}>{children}</FavoritesContext.Provider>;
+}
+
+export function FavoriteExercises({ onAdd }: { addedIds: string[]; onAdd: (exercise: ExerciseOption) => void }) {
+  const { ids, ready, busy, error } = useFavorites();
+  const [part, setPart] = useState<ExerciseCategory | null>(null);
+  function selectPart(category: ExerciseCategory) {
+    if (!ready || busy) return;
+    const selectedFavorites = exerciseCatalog.filter(item => item.category === category && ids.includes(item.id));
+    selectedFavorites.forEach(item => onAdd(item));
+    setPart(category);
+  }
   const favorites = exerciseCatalog.filter(item => item.category === part && ids.includes(item.id));
-  const selecting = editing || favorites.length === 0;
-  const list = selecting ? exerciseCatalog.filter(item => item.category === part) : favorites;
   return <View style={styles.card}>
     <Text style={styles.title}>部位別お気に入り種目</Text>
     <Text style={styles.note}>部位を押すと、お気に入り種目をまとめて記録欄に追加</Text>
@@ -79,25 +84,7 @@ function FavoriteList({ userId, addedIds, onAdd }: {
     </Pressable>)}</View>
     {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
     {part && ready ? <View>
-      <View style={styles.heading}><Text style={styles.text}>{part}のお気に入り</Text>
-        <Pressable accessibilityRole="button" disabled={busy} onPress={() => editing ? selectPart(part) : setEditing(true)} style={styles.action}>
-          <Text style={styles.blue}>{editing ? '完了' : '追加・編集'}</Text>
-        </Pressable></View>
-      {favorites.length === 0 ? <Text style={styles.note}>まだ登録されていません。☆を押して追加してください。</Text> : null}
-      {!selecting ? <Text style={styles.note}>下の記録欄で重量・回数を入力できます。</Text> : null}
-      {selecting && list.map(item => <View key={item.id} style={styles.row}>
-        <Pressable accessibilityRole="button" accessibilityLabel={`${item.name}を記録に追加`}
-          disabled={addedIds.includes(item.id)} onPress={() => onAdd(item)} style={styles.exercise}>
-          <Text style={styles.text}>{item.name}</Text>
-          <Text style={styles.note}>{addedIds.includes(item.id) ? '記録に追加済み' : '＋ 記録に追加'}</Text>
-        </Pressable>
-        <Pressable accessibilityRole="button" accessibilityLabel={`${item.name}のお気に入りを${ids.includes(item.id) ? '解除' : '登録'}`}
-          accessibilityState={{ selected: ids.includes(item.id), disabled: busy }} disabled={busy}
-          onPress={() => { setEditing(true); void toggle(item.id); }} style={styles.action}>
-          <Text style={styles.star}>{ids.includes(item.id) ? '★' : '☆'}</Text>
-        </Pressable>
-      </View>)}
-      <Text style={styles.note}>{userId ? 'お気に入りはこの端末に保存されます。' : 'ログイン前のお気に入りは一時的な設定です。'}</Text>
+      <Text style={styles.note}>{favorites.length === 0 ? '種目を検索して、お気に入りを登録してください。' : '下の記録欄で重量・回数を入力できます。'}</Text>
     </View> : part && !error ? <Text style={styles.note}>お気に入りを確認中…</Text> : null}
   </View>;
 }

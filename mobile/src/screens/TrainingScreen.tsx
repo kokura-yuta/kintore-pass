@@ -4,7 +4,7 @@ import { useAuth } from '@clerk/expo';
 import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { FavoriteExercises } from '@/components/FavoriteExercises';
+import { FavoriteExercises, FavoritesProvider } from '@/components/FavoriteExercises';
 import { ExercisePickerModal } from '@/components/ExercisePickerModal';
 import { ExerciseRecordCard, type ExerciseRecord } from '@/components/ExerciseRecordCard';
 import { useTrainingDraft } from '@/contexts/TrainingDraftContext';
@@ -33,6 +33,10 @@ function formatLocalDate(date: Date) {
 }
 
 export default function TrainingScreen() {
+  return <FavoritesProvider><TrainingContent /></FavoritesProvider>;
+}
+
+function TrainingContent() {
   const router = useRouter();
   const { editId } = useLocalSearchParams<{ editId?: string }>();
   const { getToken } = useAuth();

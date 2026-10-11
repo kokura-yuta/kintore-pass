@@ -209,7 +209,7 @@ function HomeContent() {
   async function generateMenuOnHome() {
     if (menuRequestRef.current || isGenerating) return;
     if (!builderCondition) {
-      setBuilderError('今日の調子を1〜10で選択してください。');
+      setBuilderError('今日の調子を1〜5で選択してください。');
       return;
     }
     // nullは未入力エラーではなく、画面で選択した「おまかせ」を表す。
@@ -295,7 +295,12 @@ function HomeContent() {
                 <Pressable accessibilityLabel="メニュー調整を閉じる" disabled={isGenerating} onPress={() => setShowMenuBuilder(false)} style={styles.builderClose}><Text style={styles.builderCloseText}>×</Text></Pressable>
               </View>
               <Text style={styles.builderLabel}>今日の調子</Text>
-              <View style={styles.ratingRow}>{Array.from({ length: 10 }, (_, index) => index + 1).map((score) => <Pressable accessibilityRole="radio" accessibilityState={{ checked: builderCondition === score }} key={score} onPress={() => { setBuilderCondition(score); setBuilderError(''); }} style={[styles.ratingButton, builderCondition === score && styles.selectedRatingButton]}><Text style={[styles.ratingText, builderCondition === score && styles.selectedRatingText]}>{score}</Text></Pressable>)}</View>
+              {/* Keep the API's 10-point scale; each visible step represents two points. */}
+              <View style={styles.fivePointRow}>{[1, 2, 3, 4, 5].map((score) => {
+                const selected = builderCondition !== null && Math.ceil(builderCondition / 2) === score;
+                return <Pressable accessibilityRole="radio" accessibilityLabel={`調子 ${score} / 5`} accessibilityState={{ checked: selected, disabled: isGenerating }} disabled={isGenerating} key={score} onPress={() => { setBuilderCondition(score * 2); setBuilderError(''); }} style={[styles.ratingButton, styles.fivePointButton, selected && styles.selectedRatingButton]}><Text style={[styles.ratingText, selected && styles.selectedRatingText]}>{score}</Text></Pressable>;
+              })}</View>
+              <Text style={styles.builderOptional}>1：控えめに　　3：ふつう　　5：絶好調</Text>
               <Text style={styles.builderLabel}>鍛える部位 <Text style={styles.builderOptional}>おまかせ可</Text></Text>
               <View style={styles.bodyPartRow}>
                 <Pressable accessibilityRole="radio" accessibilityState={{ checked: builderBodyPart === null }} onPress={() => { setBuilderBodyPart(null); setBuilderError(''); }} style={[styles.bodyPartChip, builderBodyPart === null && styles.selectedBodyPartChip]}><Text style={[styles.bodyPartText, builderBodyPart === null && styles.selectedBodyPartText]}>おまかせ</Text></Pressable>
@@ -342,6 +347,8 @@ function HomeContent() {
 }
 
 const styles = StyleSheet.create({
+  fivePointRow: { flexDirection: 'row', gap: 6, marginTop: 10, marginBottom: 10 },
+  fivePointButton: { flex: 1, width: undefined, height: undefined, minHeight: 48 },
   screen: { flex: 1, backgroundColor: '#050A0F' }, safeArea: { flex: 1 }, content: { flexGrow: 1, paddingHorizontal: 18, paddingTop: 16, paddingBottom: 28 },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, brand: { color: '#F4F6F3', fontSize: 22, fontWeight: '700', letterSpacing: -1 }, brandAccent: { color: '#73E7FF' }, date: { marginTop: 4, color: '#72828D', fontSize: 11, fontWeight: '700' },
   goalPill: { maxWidth: '48%', paddingHorizontal: 13, paddingVertical: 9, borderWidth: 1, borderColor: '#203441', borderRadius: 22, backgroundColor: '#0C151D' }, goalLabel: { color: '#72828D', fontSize: 8, fontWeight: '700', letterSpacing: 1.2 }, goalValue: { marginTop: 2, color: '#E8EBE8', fontSize: 11, fontWeight: '700' },

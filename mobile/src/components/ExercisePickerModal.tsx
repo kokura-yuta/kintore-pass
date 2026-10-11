@@ -3,6 +3,7 @@ import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { exerciseCatalog, exerciseCategories, type ExerciseOption } from '@/lib/exerciseCatalog';
+import { useFavorites } from '@/components/FavoriteExercises';
 
 type Props = {
   addedIds: string[];
@@ -12,6 +13,7 @@ type Props = {
 };
 
 export function ExercisePickerModal({ addedIds, onAdd, onClose, visible }: Props) {
+  const { ids, ready, busy, error, toggle } = useFavorites();
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState<(typeof exerciseCategories)[number]>('すべて');
   const filteredExercises = useMemo(() => {
@@ -56,22 +58,33 @@ export function ExercisePickerModal({ addedIds, onAdd, onClose, visible }: Props
             </ScrollView>
           </View>
 
+          <Text style={styles.hint}>☆でお気に入り登録・解除 ／ ＋で今回の記録に追加</Text>
+          <Text style={styles.hint}>お気に入りはアカウント別にこの端末へ保存されます。</Text>
+          {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
           <ScrollView contentContainerStyle={styles.list} keyboardShouldPersistTaps="handled">
             {filteredExercises.map((exercise) => {
               const added = addedIds.includes(exercise.id);
               return (
-                <Pressable
-                  disabled={added}
+                <View
                   key={exercise.id}
-                  onPress={() => onAdd(exercise)}
-                  style={[styles.exerciseRow, added && styles.addedRow]}
+                  style={styles.exerciseRow}
                 >
                   <View style={styles.exerciseCopy}>
                     <Text style={styles.exerciseName}>{exercise.name}</Text>
                     <Text style={styles.exerciseMeta}>{exercise.category} · {exercise.equipment}</Text>
                   </View>
-                  <Text style={[styles.addText, added && styles.addedText]}>{added ? '追加済み' : '＋ 追加'}</Text>
-                </Pressable>
+                  <View style={styles.actions}>
+                    <Pressable accessibilityRole="button" accessibilityLabel={`${exercise.name}のお気に入りを${ids.includes(exercise.id) ? '解除' : '登録'}`}
+                      accessibilityState={{ selected: ids.includes(exercise.id), disabled: !ready || busy }} disabled={!ready || busy}
+                      onPress={() => void toggle(exercise.id)} style={styles.action}>
+                      <Text style={[styles.addText, (!ready || busy) && styles.addedText]}>{ids.includes(exercise.id) ? '★' : '☆'} お気に入り</Text>
+                    </Pressable>
+                    <Pressable accessibilityRole="button" accessibilityLabel={`${exercise.name}を記録に追加`} accessibilityState={{ disabled: added }}
+                      disabled={added} onPress={() => onAdd(exercise)} style={styles.action}>
+                      <Text style={[styles.addText, added && styles.addedText]}>{added ? '追加済み' : '＋ 追加'}</Text>
+                    </Pressable>
+                  </View>
+                </View>
               );
             })}
             {filteredExercises.length === 0 ? <Text style={styles.emptyText}>該当する種目がありません。</Text> : null}
@@ -83,6 +96,10 @@ export function ExercisePickerModal({ addedIds, onAdd, onClose, visible }: Props
 }
 
 const styles = StyleSheet.create({
+  hint: { color: '#99AAB4', fontSize: 12, marginHorizontal: 20, marginBottom: 6 },
+  error: { color: '#FF9595', marginHorizontal: 20, marginBottom: 8 },
+  actions: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 4 },
+  action: { minHeight: 44, minWidth: 58, paddingHorizontal: 8, alignItems: 'center', justifyContent: 'center' },
   screen: { flex: 1, backgroundColor: '#050A0F' },
   safeArea: { flex: 1 },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 12 },
@@ -97,9 +114,9 @@ const styles = StyleSheet.create({
   categoryText: { color: '#99AAB4', fontSize: 11, fontWeight: '600' },
   selectedChipText: { color: '#050A0F' },
   list: { paddingHorizontal: 20, paddingBottom: 24 },
-  exerciseRow: { minHeight: 67, flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: '#142833' },
+  exerciseRow: { minHeight: 67, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#142833' },
   addedRow: { opacity: 0.45 },
-  exerciseCopy: { flex: 1, paddingRight: 12 },
+  exerciseCopy: { flexGrow: 1, flexBasis: 130, paddingRight: 12 },
   exerciseName: { color: '#F4F6F3', fontSize: 13, fontWeight: '700' },
   exerciseMeta: { marginTop: 4, color: '#72828D', fontSize: 10 },
   addText: { color: '#73E7FF', fontSize: 11, fontWeight: '700' },
