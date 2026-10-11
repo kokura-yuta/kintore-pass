@@ -6,6 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ScreenStateCard } from '@/components/ScreenStateCard';
 import { useWeightHistory } from '@/contexts/WeightHistoryContext';
+import { useOnboarding } from '@/contexts/OnboardingContext';
 import { isApiBypassEnabled } from '@/lib/api';
 import { sanitizeDecimalInput } from '@/lib/numberInput';
 import {
@@ -32,6 +33,7 @@ function isValidDate(value: string) {
 
 export default function WeightHistoryScreen() {
   const router = useRouter();
+  const { updateProfileWeight } = useOnboarding();
   const { getToken } = useAuth({
     treatPendingAsSignedOut: false,
   });
@@ -137,6 +139,9 @@ export default function WeightHistoryScreen() {
           weightKg: numericWeight,
         };
         savePreviewRecord(previewRecord);
+        const latestPreview = [...records.filter(record => record.id !== previewRecord.id), previewRecord]
+          .sort((a, b) => a.recordedOn.localeCompare(b.recordedOn)).at(-1);
+        if (latestPreview) updateProfileWeight(latestPreview.weightKg);
         setRecords((current) => [
           ...current.filter(
             (record) => record.id !== previewRecord.id && record.recordedOn !== recordedOn,
@@ -153,6 +158,10 @@ export default function WeightHistoryScreen() {
         const savedRecord = updateTargetId
           ? await updateWeightRecord(token, updateTargetId, numericWeight)
           : await createWeightRecord(token, recordedOn, numericWeight);
+
+        if (typeof savedRecord.profileWeightKg === 'number') {
+          updateProfileWeight(savedRecord.profileWeightKg);
+        }
 
         setRecords((current) => [
           ...current.filter(
@@ -213,7 +222,14 @@ export default function WeightHistoryScreen() {
           throw new Error('ログイン状態を確認できませんでした。');
         }
 
-        await deleteWeightRecord(token, recordId);
+        const response = await deleteWeightRecord(token, recordId);
+        if (typeof response.profileWeightKg === 'number') {
+          updateProfileWeight(response.profileWeightKg);
+        }
+      } else {
+        const remainingLatest = records.filter(record => record.id !== recordId)
+          .sort((a, b) => a.recordedOn.localeCompare(b.recordedOn)).at(-1);
+        if (remainingLatest) updateProfileWeight(remainingLatest.weightKg);
       }
 
       setRecords((current) =>

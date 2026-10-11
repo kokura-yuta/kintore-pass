@@ -2,7 +2,6 @@
 // 次の作業から、処理を1つずつ追加します。
 // DB検索で使う比較機能
 import {
-  and,
   desc,
   eq,
 } from "drizzle-orm";
@@ -24,6 +23,7 @@ import {
   weightRecordUpdateSchema,
 } from "@/app/lib/validation/apiSchemas";
 import { logServerError } from "@/app/lib/observability/serverLog";
+import { mutateWeightRecord } from "@/app/lib/weight-records";
 
 // 体重記録のJSONを受け取り、ログイン中の本人の履歴として保存する
 export async function POST(
@@ -98,25 +98,9 @@ export async function POST(
 
 
     // 本人の体重記録をNeonへ追加する
-    const createdRecords = await db
-      .insert(weightRecords)
-      .values({
-        userId: currentUser.id,
-        recordedDate,
-        weightKg,
-      })
-      // 同じ日付が登録済みなら新しい行を追加しない
-      .onConflictDoNothing({
-        target: [
-          weightRecords.userId,
-          weightRecords.recordedDate,
-        ],
-      })
-      .returning();
-
-    // PostgreSQLから配列で返された作成結果を取り出す
-    const createdRecord =
-      createdRecords[0] ?? null;
+    const createdRecord = await mutateWeightRecord(db, currentUser.id, {
+      kind: 'create', recordedDate, weightKg,
+    });
 
     // 同じ日付が登録済みだった場合はHTTP 409を返す
     if (!createdRecord) {
@@ -353,29 +337,9 @@ export async function PATCH(
 
 
     // 記録IDと本人のユーザーIDが両方一致する記録だけを更新する
-    const updatedRecords = await db
-      .update(weightRecords)
-      .set({
-        weightKg,
-        updatedAt: new Date(),
-      })
-      .where(
-        and(
-          eq(
-            weightRecords.id,
-            recordId,
-          ),
-          eq(
-            weightRecords.userId,
-            currentUser.id,
-          ),
-        ),
-      )
-      .returning();
-
-    // PostgreSQLから返された更新結果を取り出す
-    const updatedRecord =
-      updatedRecords[0] ?? null;
+    const updatedRecord = await mutateWeightRecord(db, currentUser.id, {
+      kind: 'update', recordId, weightKg,
+    });
 
     // 本人が持つ対象記録がなければHTTP 404を返す
     if (!updatedRecord) {
@@ -488,27 +452,9 @@ export async function DELETE(
 
 
     // 記録IDと本人のユーザーIDが一致する記録だけを削除する
-    const deletedRecords = await db
-      .delete(weightRecords)
-      .where(
-        and(
-          eq(
-            weightRecords.id,
-            validRecordId,
-          ),
-          eq(
-            weightRecords.userId,
-            currentUser.id,
-          ),
-        ),
-      )
-      .returning({
-        id: weightRecords.id,
-      });
-
-    // PostgreSQLから返された削除結果を取り出す
-    const deletedRecord =
-      deletedRecords[0] ?? null;
+    const deletedRecord = await mutateWeightRecord(db, currentUser.id, {
+      kind: 'delete', recordId: validRecordId,
+    });
 
     // 対象がない、または本人の記録でなければHTTP 404を返す
     if (!deletedRecord) {
@@ -527,6 +473,7 @@ export async function DELETE(
         "体重記録を削除しました。",
       deletedRecordId:
         deletedRecord.id,
+      profileWeightKg: deletedRecord.profileWeightKg,
     });
   } catch (error) {
     // 詳しい原因はサーバーログへ残す

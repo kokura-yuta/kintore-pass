@@ -103,6 +103,7 @@ test('体重変更JSONをPATCHする', async () => {
         id: 'record-1',
         recordedDate: '2026-09-09',
         weightKg: 66.2,
+        profileWeightKg: 67,
       },
     };
   });
@@ -113,6 +114,7 @@ test('体重変更JSONをPATCHする', async () => {
     66.2,
   );
   assert.equal(record.weightKg, 66.2);
+  assert.equal(record.profileWeightKg, 67);
 });
 
 test('削除する記録IDをURLへ入れてDELETEする', async () => {

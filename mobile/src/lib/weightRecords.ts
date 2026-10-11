@@ -5,12 +5,14 @@ export type WeightRecord = {
   id: string;
   recordedOn: string;
   weightKg: number;
+  profileWeightKg?: number | null;
 };
 
 type ApiWeightRecord = {
   id: string;
   recordedDate: string;
   weightKg: number;
+  profileWeightKg?: number | null;
 };
 
 type WeightRecordsResponse = {
@@ -35,6 +37,7 @@ function toWeightRecord(
     id: record.id,
     recordedOn: record.recordedDate,
     weightKg: record.weightKg,
+    ...(record.profileWeightKg !== undefined ? { profileWeightKg: record.profileWeightKg } : {}),
   };
 }
 
@@ -109,6 +112,7 @@ export function deleteWeightRecord(
   return apiRequest<{
     message: string;
     deletedRecordId: string;
+    profileWeightKg?: number | null;
   }>(
     `/api/weight-records?recordId=${encodeURIComponent(recordId)}`,
     {

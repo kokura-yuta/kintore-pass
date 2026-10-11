@@ -1,4 +1,4 @@
-import { createContext, type PropsWithChildren, useContext, useMemo, useState } from 'react';
+import { createContext, type PropsWithChildren, useCallback, useContext, useMemo, useState } from 'react';
 
 import { isScreenshotMode } from '@/lib/api';
 
@@ -36,6 +36,7 @@ type OnboardingContextValue = {
   profile: ProfileDraft;
   setGoalBody: (selection: GoalBodySelection) => void;
   setProfile: (profile: ProfileDraft) => void;
+  updateProfileWeight: (weightKg: number) => void;
 };
 
 const OnboardingContext = createContext<OnboardingContextValue | null>(null);
@@ -45,9 +46,13 @@ export function OnboardingProvider({ children }: PropsWithChildren) {
     isScreenshotMode ? { kind: 'preset', bodyTypeId: 'lean-muscle' } : null,
   );
   const [profile, setProfile] = useState<ProfileDraft>(initialProfile);
+  const updateProfileWeight = useCallback((weightKg: number) => {
+    if (!Number.isFinite(weightKg)) return;
+    setProfile(current => ({ ...current, weightKg: String(weightKg) }));
+  }, []);
   const value = useMemo(
-    () => ({ goalBody, profile, setGoalBody, setProfile }),
-    [goalBody, profile],
+    () => ({ goalBody, profile, setGoalBody, setProfile, updateProfileWeight }),
+    [goalBody, profile, updateProfileWeight],
   );
 
   return <OnboardingContext.Provider value={value}>{children}</OnboardingContext.Provider>;

@@ -42,6 +42,7 @@ export default function MyPageScreen() {
   const { signOut } = useClerk();
   const { goalBody, profile, setProfile } = useOnboarding();
   const [form, setForm] = useState<ProfileDraft>(profile);
+  const [profileWeightSnapshot, setProfileWeightSnapshot] = useState(profile.weightKg);
   const [errors, setErrors] = useState<Errors>({});
   const [isSaving, setIsSaving] = useState(false);
   const [isLoadingProfile, setIsLoadingProfile] = useState(!isApiBypassEnabled);
@@ -54,6 +55,12 @@ export default function MyPageScreen() {
   const [isAdmin, setIsAdmin] = useState(false);
   const getTokenRef = useRef(getToken);
   const savingLock = useRef(false);
+
+  // 体重履歴から戻った時も反映する。他の未保存入力は上書きしない。
+  if (profileWeightSnapshot !== profile.weightKg) {
+    setProfileWeightSnapshot(profile.weightKg);
+    setForm(current => ({ ...current, weightKg: profile.weightKg }));
+  }
 
   // 削除APIが本人再確認を要求した場合、Clerkの確認画面を表示して成功後に同じ処理を再実行する
   const deleteAccountWithReverification = useReverification(
@@ -163,7 +170,7 @@ export default function MyPageScreen() {
     if (!form.heightCm) nextErrors.heightCm = '身長を入力してください。';
     else if (height < 100 || height > 250) nextErrors.heightCm = '100〜250cmで入力してください。';
     if (!form.weightKg) nextErrors.weightKg = '体重を入力してください。';
-    else if (weight < 30 || weight > 300) nextErrors.weightKg = '30〜300kgで入力してください。';
+    else if (weight < 20 || weight > 500) nextErrors.weightKg = '20〜500kgで入力してください。';
     if (form.bodyFatPercentage && (bodyFat < 2 || bodyFat > 70)) nextErrors.bodyFatPercentage = '2〜70%で入力してください。';
     if (!form.trainingStyle) nextErrors.trainingStyle = 'トレーニング形式を選択してください。';
     if (!form.weeklyTrainingDays) nextErrors.weeklyTrainingDays = '週の筋トレ目標回数を選択してください。';
@@ -293,7 +300,7 @@ export default function MyPageScreen() {
               <ShortcutCard label="分析履歴" onPress={() => router.push('/analysis-history' as Href)} value="結果を見る" />
             </View>
 
-            <ShortcutCard label="友達" onPress={() => router.push('/friends' as Href)} value="申請・公開設定・友達の記録" />
+            <ShortcutCard fullWidth label="友達" onPress={() => router.push('/friends' as Href)} value="申請・公開設定・友達の記録" />
 
             {isAdmin ? (
               <Pressable
@@ -413,8 +420,8 @@ export default function MyPageScreen() {
   );
 }
 
-function ShortcutCard({ label, onPress, value }: { label: string; onPress?: () => void; value: string }) {
-  return <Pressable disabled={!onPress} onPress={onPress} style={styles.shortcutCard}><Text style={styles.shortcutLabel}>{label}</Text><Text style={[styles.shortcutValue, onPress && styles.activeShortcut]}>{value}</Text></Pressable>;
+function ShortcutCard({ fullWidth, label, onPress, value }: { fullWidth?: boolean; label: string; onPress?: () => void; value: string }) {
+  return <Pressable disabled={!onPress} onPress={onPress} style={[styles.shortcutCard, fullWidth && styles.fullWidthShortcut]}><Text style={styles.shortcutLabel}>{label}</Text><Text style={[styles.shortcutValue, onPress && styles.activeShortcut]}>{value}</Text></Pressable>;
 }
 
 function OptionTitle({ label, optional }: { label: string; optional?: boolean }) {
@@ -436,6 +443,7 @@ const styles = StyleSheet.create({
   loadingText: { color: '#99AAB4', fontSize: 11 },
   shortcutRow: { flexDirection: 'row', gap: 8, marginTop: 20 },
   shortcutCard: { flex: 1, minHeight: 72, padding: 11, borderWidth: 1, borderColor: '#203441', borderRadius: 14, backgroundColor: '#0C151D' },
+  fullWidthShortcut: { flex: 0, marginTop: 13 },
   shortcutLabel: { color: '#E8EBE8', fontSize: 11, fontWeight: '700' },
   shortcutValue: { marginTop: 9, color: '#657681', fontSize: 8, fontWeight: '600' },
   activeShortcut: { color: '#73E7FF' },
