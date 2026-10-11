@@ -1,7 +1,7 @@
 import { useAuth } from '@clerk/expo';
 import { type Href, useRouter } from 'expo-router';
 import { useEffect,useRef,useState } from 'react';
-import { ActivityIndicator,Alert,Keyboard,KeyboardAvoidingView,Modal,Platform,Pressable,ScrollView,Switch,Text,TextInput,View } from 'react-native';
+import { ActivityIndicator,Alert,Keyboard,KeyboardAvoidingView,Modal,Platform,Pressable,ScrollView,StyleSheet,Switch,Text,TextInput,View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { apiRequest } from '@/lib/api';
 type Relation={id:string;name:string;status:'pending'|'accepted';outgoing:boolean};
@@ -19,6 +19,9 @@ export default function FriendsScreen() {
   const [blocked,setBlocked]=useState<{id:string}[]>([]);
   const [reportTarget,setReportTarget]=useState<Relation|null>(null);
   const [notice,setNotice]=useState('');
+  const [showSettings,setShowSettings]=useState(false);
+  const [showRequests,setShowRequests]=useState(false);
+  const [expandedRecord,setExpandedRecord]=useState<number|null>(null);
   function editSettings(change:Partial<Settings>){settingsDirty.current=true;setHasChanges(true);setSettings(current=>current?{...current,...change}:current);}
   async function api<T>(path:string,body?:unknown) {const token=await tokenRef.current();if(!token)throw new Error('ログインしてください。');return apiRequest<T>(path,{token,method:body?'POST':'GET',...(body?{body:JSON.stringify(body)}:{})});}
   async function reload(){const preserveDraft=settingsDirty.current;const data=await api<{settings:Settings;relations:Relation[];blocked?:{id:string}[]}>('/api/friends');if(!preserveDraft&&!settingsDirty.current)setSettings(data.settings);setRelations(data.relations);setBlocked(data.blocked??[]);}
@@ -38,7 +41,7 @@ export default function FriendsScreen() {
   async function saveSettings(){if(busy||!settings)return;setBusy(true);setError('');try{await api('/api/friends',{action:'settings',alias:settings.alias?.trim()||null,emailSearchEnabled:settings.emailSearchEnabled,shareTraining:settings.shareTraining});settingsDirty.current=false;setHasChanges(false);await reload();}catch(e){setError(e instanceof Error?e.message:'設定を保存できませんでした。');}finally{setBusy(false);}}
   async function act(body:unknown){if(busy)return;setBusy(true);setError('');try{await api('/api/friends',body);setProfile(null);setResults([]);await reload();}catch(e){setError(e instanceof Error?e.message:'操作できませんでした。');}finally{setBusy(false);}}
   async function search(){if(busy)return;Keyboard.dismiss();setBusy(true);setError('');setResults([]);try{const r=await api<{results:{id:string;name:string}[]}>('/api/friends',{action:'search',query});setResults(r.results);if(!r.results.length)setError('検索結果はありません。メール検索は相手が許可した場合のみ利用できます。');}catch(e){setError(e instanceof Error?e.message:'検索できませんでした。');}finally{setBusy(false);}}
-  async function visit(id:string){if(busy)return;setBusy(true);setError('');try{const r=await api<{profile:Profile}>(`/api/friends?userId=${id}`);setProfile(r.profile);}catch(e){setError(e instanceof Error?e.message:'閲覧できませんでした。');}finally{setBusy(false);}}
+  async function visit(id:string){if(busy)return;setBusy(true);setError('');setProfile(null);setExpandedRecord(null);try{const r=await api<{profile:Profile}>(`/api/friends?userId=${id}`);setProfile(r.profile);}catch(e){setError(e instanceof Error?e.message:'閲覧できませんでした。');}finally{setBusy(false);}}
   function block(id:string){Alert.alert('ブロックしますか？','友達関係を解除し、お互いの検索・申請・記録閲覧を停止します。解除しても友達関係は復元されません。',[{text:'キャンセル'},{text:'ブロック',style:'destructive',onPress:()=>act({action:'block',targetId:id})}]);}
   async function sendReport(reason:'harassment'|'inappropriate'|'spam'|'other'){
     if(!reportTarget||busy)return;setBusy(true);setError('');setNotice('');
@@ -46,19 +49,27 @@ export default function FriendsScreen() {
     catch(e){setError(e instanceof Error?e.message:'通報できませんでした。');}
     finally{setBusy(false);}
   }
-  function SafetyActions({relation}:{relation:Relation}){return <View><ActionButton busy={busy} label="通報する" onPress={()=>setReportTarget(relation)}/><ActionButton busy={busy} label="ブロックする" onPress={()=>block(relation.id)}/></View>;}
+  function safetyActions(relation:Relation){return <View><ActionButton busy={busy} label="通報する" onPress={()=>setReportTarget(relation)}/><ActionButton busy={busy} label="ブロックする" onPress={()=>block(relation.id)}/></View>;}
   const text={color:'#F4F6F3',fontSize:14};const card={padding:16,gap:10,borderWidth:1,borderColor:'#203441',borderRadius:16,backgroundColor:'#0C151D'};
+  const friends=relations.filter(r=>r.status==='accepted');
+  const incoming=relations.filter(r=>r.status==='pending'&&!r.outgoing);
+  const outgoing=relations.filter(r=>r.status==='pending'&&r.outgoing);
+  const selectedRelation=friends.find(r=>r.id===profile?.id);
   return <SafeAreaView style={{flex:1,backgroundColor:'#050A0F'}}>
     <KeyboardAvoidingView style={{flex:1}} behavior={Platform.OS==='android'?'height':undefined}>
     <ScrollView ref={scrollRef} automaticallyAdjustKeyboardInsets keyboardDismissMode={Platform.OS==='ios'?'interactive':'on-drag'} keyboardShouldPersistTaps="handled" contentContainerStyle={{padding:20,paddingBottom:120,gap:16}}>
-    <ActionButton busy={busy} label="‹ マイページへ" onPress={()=>router.back()}/><Text style={{...text,fontSize:26,fontWeight:'700'}}>友達</Text>
-    <Text style={text}>公開タイムラインはありません。記録共有は初期状態でOFF。承認済みの友達だけに、筋トレの種目・重量・回数・セットを公開できます。</Text>
-    {busy&&<ActivityIndicator color="#73E7FF"/>}{error&&<Text style={{color:'#ff8e83'}}>{error}</Text>}
+    <ActionButton busy={busy} label="‹ マイページへ" onPress={()=>router.back()}/>
+    <View style={styles.headingRow}><Text style={styles.title}>友達</Text><Pressable accessibilityRole="button" accessibilityLabel="友達の公開設定を開く" accessibilityState={{expanded:showSettings}} onPress={()=>setShowSettings(v=>!v)} style={styles.settingsButton}><Text style={styles.settingsIcon}>＋</Text><Text style={styles.settingsLabel}>設定</Text></Pressable></View>
+    <View onLayout={event=>{searchTop.current=event.nativeEvent.layout.y;}}>
+      <View style={styles.searchRow}><View style={styles.searchField}><Text style={styles.searchIcon}>⌕</Text><TextInput accessibilityLabel="友達のユーザーIDまたはメールアドレス" placeholder="ユーザーIDで検索" placeholderTextColor="#858D94" autoCapitalize="none" autoCorrect={false} returnKeyType="search" onSubmitEditing={search} onFocus={()=>{scrollRef.current?.scrollTo({y:Math.max(0,searchTop.current-20),animated:true});}} value={query} onChangeText={v=>{setQuery(v);setResults([]);}} maxLength={254} style={styles.searchInput}/></View><Pressable accessibilityRole="button" accessibilityLabel="検索" disabled={busy||!query.trim()} onPress={search} style={[styles.searchButton,(busy||!query.trim())&&styles.disabled]}><Text style={styles.searchButtonText}>検索</Text></Pressable></View>
+      <Text style={styles.caption}>IDまたは許可済みメールで完全一致検索 · 30回／日</Text>
+      {results.map(r=><View style={styles.friendCard} key={r.id}><View style={styles.avatar}><Text style={styles.avatarText}>{r.name.slice(0,1).toUpperCase()}</Text></View><View style={styles.friendInfo}><Text style={styles.name}>{r.name}</Text><ActionButton busy={busy} label="友達申請を送る" onPress={()=>act({action:'request',targetId:r.id})}/><ActionButton busy={busy} label="ブロックする" onPress={()=>block(r.id)}/></View></View>)}
+    </View>
+    {busy&&<ActivityIndicator color="#73E7FF"/>}{!!error&&<Text style={{color:'#ff8e83'}}>{error}</Text>}
     {!!notice&&<Text style={text}>{notice}</Text>}
-    <ActionButton busy={busy} label="安全な利用について・運営へのお問い合わせ" onPress={()=>router.push('/friend-safety' as Href)}/>
     {settings?.socialSuspended&&<Text style={{color:'#ff8e83'}}>友達機能の公開が停止されています。運営へお問い合わせください。</Text>}
     {!settings&&<ActionButton busy={busy} label="再読み込み" onPress={()=>{reload().catch(e=>setError(e.message));}}/>}
-    {settings&&<View style={card}><Text selectable style={text}>あなたのユーザーID：{settings.id}</Text>
+    {showSettings&&settings&&<View style={card}><Text style={styles.sectionTitle}>プロフィール・公開設定</Text><Text selectable style={text}>あなたのユーザーID：{settings.id}</Text>
       <Text style={text}>友達向けの表示名（本名を使う必要はありません）</Text><TextInput editable={!busy} value={settings.alias??''} maxLength={40} onChangeText={alias=>editSettings({alias})} style={{...text,borderColor:'#203441',borderWidth:1,padding:12}}/>
       <View style={{flexDirection:'row',alignItems:'center',justifyContent:'space-between'}}><Text style={text}>メールでの検索を許可</Text><Switch disabled={busy} accessibilityLabel="メールでの検索を許可" value={settings.emailSearchEnabled} onValueChange={emailSearchEnabled=>editSettings({emailSearchEnabled})}/></View>
       <View style={{flexDirection:'row',alignItems:'center',justifyContent:'space-between'}}><Text style={text}>承認済み友達に記録を共有</Text><Switch disabled={busy} accessibilityLabel="承認済み友達に記録を共有" value={settings.shareTraining} onValueChange={shareTraining=>editSettings({shareTraining})}/></View>
@@ -66,16 +77,17 @@ export default function FriendsScreen() {
       {hasChanges&&<Text style={{color:'#ffb454'}}>未保存の変更があります。下の保存ボタンで反映します。</Text>}
       <ActionButton busy={busy} label="公開設定を保存" onPress={()=>{if(settings.shareTraining||settings.emailSearchEnabled)Alert.alert('公開設定の確認','許可した検索・記録共有が有効になります。',[{text:'キャンセル'},{text:'保存',onPress:saveSettings}]);else void saveSettings();}}/>
     </View>}
-    <View style={card} onLayout={event=>{searchTop.current=event.nativeEvent.layout.y;}}><Text style={text}>ユーザーIDまたはメールアドレス（完全一致・検索30回/日）</Text><TextInput accessibilityLabel="友達のユーザーIDまたはメールアドレス" autoCapitalize="none" autoCorrect={false} returnKeyType="search" onSubmitEditing={search} onFocus={()=>{scrollRef.current?.scrollTo({y:Math.max(0,searchTop.current-20),animated:true});}} value={query} onChangeText={v=>{setQuery(v);setResults([]);}} maxLength={254} style={{...text,borderColor:'#203441',borderWidth:1,padding:12}}/><ActionButton busy={busy} label="検索" onPress={search}/>
-      <ActionButton busy={busy} label="キーボードを閉じる" onPress={()=>Keyboard.dismiss()}/>
-      {results.map(r=><View key={r.id}><Text style={text}>{r.name}</Text><ActionButton busy={busy} label="友達申請を送る" onPress={()=>act({action:'request',targetId:r.id})}/><ActionButton busy={busy} label="ブロックする" onPress={()=>block(r.id)}/></View>)}
-    </View>
-    <Text style={{...text,fontSize:20}}>受信した申請</Text>{relations.filter(r=>r.status==='pending'&&!r.outgoing).map(r=><View style={card} key={r.id}><Text style={text}>{r.name}</Text><ActionButton busy={busy} label="承認する" onPress={()=>act({action:'accept',targetId:r.id})}/><ActionButton busy={busy} label="拒否する" onPress={()=>act({action:'reject',targetId:r.id})}/><SafetyActions relation={r}/></View>)}
-    <Text style={{...text,fontSize:20}}>送信した申請</Text>{relations.filter(r=>r.status==='pending'&&r.outgoing).map(r=><View style={card} key={r.id}><Text style={text}>{r.name}</Text><ActionButton busy={busy} label="申請を取り消す" onPress={()=>act({action:'cancel',targetId:r.id})}/></View>)}
-    <Text style={{...text,fontSize:20}}>友達一覧</Text>{relations.filter(r=>r.status==='accepted').map(r=><View style={card} key={r.id}><ActionButton busy={busy} label={`${r.name} のプロフィール`} onPress={()=>visit(r.id)}/><ActionButton busy={busy} label="友達を解除" onPress={()=>Alert.alert('友達解除','解除後はお互いの記録を閲覧できません。',[{text:'キャンセル'},{text:'解除',style:'destructive',onPress:()=>act({action:'remove',targetId:r.id})}])}/><SafetyActions relation={r}/></View>)}
-    {profile&&<View style={card}><Text style={{...text,fontSize:20}}>{profile.name} の最近の筋トレ</Text><Text style={text}>最新20記録。既に見た内容の記憶やスクリーンショットは解除後も消去できません。</Text>{!profile.shared&&<Text style={text}>相手は記録を公開していません。</Text>}{profile.shared&&!profile.records.length&&<Text style={text}>記録はありません。</Text>}{profile.records.map((r,i)=><View key={i} style={{gap:8,marginTop:14}}><Text style={text}>{new Date(r.performedAt).toLocaleDateString('ja-JP',{timeZone:'Asia/Tokyo'})}</Text>{r.exercises.map((e,j)=><View key={j}><Text style={text}>{e.bodyPart} · {e.name}（{e.sets.length}セット）</Text>{e.sets.map(s=><Text style={text} key={s.setNumber}>{s.setNumber}セット目：{s.weightKg??'未記録'}kg × {s.reps??'未記録'}回</Text>)}</View>)}</View>)}</View>}
+    <Pressable accessibilityRole="button" accessibilityState={{expanded:showRequests}} onPress={()=>setShowRequests(v=>!v)} style={styles.requestButton}><Text style={styles.requestText}>友達申請 {incoming.length>0?`· 受信${incoming.length}件`:''}{outgoing.length>0?` · 送信${outgoing.length}件`:''}</Text><Text style={styles.chevron}>{showRequests?'⌃':'⌄'}</Text></Pressable>
+    {showRequests&&<View style={{gap:12}}><Text style={styles.sectionTitle}>受信した申請</Text>{!incoming.length&&<Text style={styles.caption}>申請はありません。</Text>}{incoming.map(r=><View style={card} key={r.id}><Text style={styles.name}>{r.name}</Text><ActionButton busy={busy} label="承認する" onPress={()=>act({action:'accept',targetId:r.id})}/><ActionButton busy={busy} label="拒否する" onPress={()=>act({action:'reject',targetId:r.id})}/>{safetyActions(r)}</View>)}<Text style={styles.sectionTitle}>送信した申請</Text>{!outgoing.length&&<Text style={styles.caption}>申請はありません。</Text>}{outgoing.map(r=><View style={card} key={r.id}><Text style={styles.name}>{r.name}</Text><ActionButton busy={busy} label="申請を取り消す" onPress={()=>act({action:'cancel',targetId:r.id})}/></View>)}</View>}
+    <View style={styles.headingRow}><Text style={styles.sectionTitle}>友達一覧</Text><Text style={styles.count}>{friends.length}人</Text></View>
+    {!friends.length&&<View style={styles.emptyCard}><Text style={styles.emptyTitle}>友達を見つけよう</Text><Text style={styles.caption}>相手のユーザーIDを検索して申請できます。承認されると、ここに表示されます。</Text></View>}
+    {friends.map(r=><Pressable accessibilityRole="button" accessibilityLabel={`${r.name} のプロフィール`} accessibilityState={{selected:profile?.id===r.id}} disabled={busy} key={r.id} onPress={()=>visit(r.id)} style={[styles.friendCard,profile?.id===r.id&&styles.selectedCard]}><View style={styles.avatar}><Text style={styles.avatarText}>{r.name.slice(0,1).toUpperCase()}</Text></View><View style={styles.friendInfo}><Text style={styles.name}>{r.name}</Text><Text style={styles.friendSubtitle}>{profile?.id===r.id?(profile.shared?(profile.records[0]?`最終トレーニング：${formatRecordDate(profile.records[0].performedAt)}`:'共有された記録はありません'):'記録は非公開です'):'タップして最近の記録を見る'}</Text></View><Text style={styles.chevron}>›</Text></Pressable>)}
+    <View style={styles.divider}/><View style={styles.headingRow}><Text style={styles.sectionTitle}>友達の最近のトレーニング</Text>{profile&&<Text style={styles.count}>最新20記録</Text>}</View>
+    {!profile&&<Text style={styles.caption}>友達を選ぶと、共有を許可された記録だけ表示します。</Text>}
+    {profile&&<View style={{gap:16}}><Text style={styles.caption}>{profile.name} · {!profile.shared?'相手は記録を公開していません。':!profile.records.length?'共有された記録はありません。':'公開タイムラインではありません。'}</Text>{profile.shared&&profile.records.map((r,i)=><View key={`${r.performedAt}-${i}`} style={styles.recordCard}><View style={styles.headingRow}><View style={styles.friendInfo}><Text style={styles.name}>{profile.name}</Text><Text style={styles.friendSubtitle}>{formatRecordDate(r.performedAt)} · {[...new Set(r.exercises.map(e=>e.bodyPart).filter(Boolean))].join('／')||'部位未設定'}</Text></View><View style={styles.badge}><Text style={styles.badgeText}>{r.exercises.length}種目</Text></View></View><View style={styles.divider}/>{r.exercises.slice(0,expandedRecord===i?undefined:3).map((e,j)=><View style={{gap:6}} key={j}><Text style={styles.exerciseName}>{e.name}</Text><Text style={styles.friendSubtitle}>{summarizeSets(e.sets)}</Text>{expandedRecord===i&&e.sets.map(s=><Text style={styles.caption} key={s.setNumber}>{s.setNumber}セット目：{s.weightKg===null?'重量未記録':`${s.weightKg}kg`} × {s.reps===null?'回数未記録':`${s.reps}回`}</Text>)}</View>)}{expandedRecord!==i&&r.exercises.length>3&&<Text style={styles.caption}>ほか{r.exercises.length-3}種目</Text>}<Pressable accessibilityRole="button" accessibilityState={{expanded:expandedRecord===i}} onPress={()=>setExpandedRecord(current=>current===i?null:i)} style={styles.detailButton}><Text style={styles.detailText}>{expandedRecord===i?'記録を閉じる':'詳しい記録を見る'}　 →</Text></Pressable></View>)}{selectedRelation&&<View style={card}><Text style={styles.caption}>{profile.name} の管理</Text>{safetyActions(selectedRelation)}<ActionButton busy={busy} label="友達を解除" onPress={()=>Alert.alert('友達解除','解除後はお互いの記録を閲覧できません。',[{text:'キャンセル'},{text:'解除',style:'destructive',onPress:()=>act({action:'remove',targetId:selectedRelation.id})}])}/></View>}</View>}
     <ActionButton busy={busy} label="最新情報に更新" onPress={()=>{setProfile(null);reload().catch(e=>setError(e.message));}}/>
-    <Text style={{...text,fontSize:20}}>ブロックしたユーザー</Text>{!blocked.length&&<Text style={text}>ブロックしたユーザーはいません。</Text>}{blocked.map(r=><View style={card} key={r.id}><Text style={text}>{r.id}</Text><ActionButton busy={busy} label="ブロックを解除" onPress={()=>Alert.alert('ブロック解除','友達関係は復元されません。共有には再度の申請と承認が必要です。',[{text:'キャンセル'},{text:'解除',onPress:()=>act({action:'unblock',targetId:r.id})}])}/></View>)}
+    <ActionButton busy={busy} label="安全な利用について・運営へのお問い合わせ" onPress={()=>router.push('/friend-safety' as Href)}/>
+    {showSettings&&<View style={{gap:12}}><Text style={styles.sectionTitle}>ブロックしたユーザー</Text>{!blocked.length&&<Text style={styles.caption}>ブロックしたユーザーはいません。</Text>}{blocked.map(r=><View style={card} key={r.id}><Text selectable style={text}>{r.id}</Text><ActionButton busy={busy} label="ブロックを解除" onPress={()=>Alert.alert('ブロック解除','友達関係は復元されません。共有には再度の申請と承認が必要です。',[{text:'キャンセル'},{text:'解除',onPress:()=>act({action:'unblock',targetId:r.id})}])}/></View>)}</View>}
   </ScrollView></KeyboardAvoidingView>
   <Modal visible={reportTarget!==null} transparent animationType="fade" onRequestClose={()=>{if(!busy)setReportTarget(null);}}>
     <View style={{flex:1,justifyContent:'center',padding:24,backgroundColor:'#000a'}}><View style={card}>
@@ -86,3 +98,18 @@ export default function FriendsScreen() {
   </Modal></SafeAreaView>;
 }
 function ActionButton({label,onPress,busy}:{label:string;onPress:()=>void;busy:boolean}){return <Pressable disabled={busy} onPress={onPress} accessibilityRole="button"><Text style={{color:'#73E7FF',paddingVertical:10,opacity:busy?0.5:1}}>{label}</Text></Pressable>;}
+function formatRecordDate(value:string){const date=new Date(value);return Number.isNaN(date.getTime())?'日付不明':date.toLocaleDateString('ja-JP',{timeZone:'Asia/Tokyo',month:'long',day:'numeric'});}
+function summarizeSets(sets:Profile['records'][number]['exercises'][number]['sets']){if(!sets.length)return 'セット未記録';const first=sets[0];if(sets.every(s=>s.weightKg===first.weightKg&&s.reps===first.reps))return `${first.weightKg===null?'重量未記録':`${first.weightKg}kg`} × ${first.reps===null?'回数未記録':`${first.reps}回`} × ${sets.length}セット`;return `${sets.length}セット · 重量・回数は詳細で確認`;}
+const styles=StyleSheet.create({
+  headingRow:{flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:12},
+  title:{fontSize:30,fontWeight:'800',color:'#F4F6F3'},sectionTitle:{fontSize:21,fontWeight:'700',color:'#F4F6F3',flexShrink:1},
+  settingsButton:{minWidth:48,minHeight:48,alignItems:'center',justifyContent:'center'},settingsIcon:{color:'#F4F6F3',fontSize:28},settingsLabel:{color:'#939DA5',fontSize:11},
+  searchRow:{flexDirection:'row',alignItems:'center',gap:10},searchField:{flex:1,flexDirection:'row',alignItems:'center',backgroundColor:'#20262C',borderRadius:20,paddingHorizontal:14,minHeight:56},searchIcon:{fontSize:28,color:'#939DA5',marginRight:8},searchInput:{flex:1,minWidth:0,color:'#F4F6F3',fontSize:16,paddingVertical:16},
+  searchButton:{backgroundColor:'#F4F6F3',borderRadius:28,minHeight:50,minWidth:72,paddingHorizontal:18,justifyContent:'center',alignItems:'center'},searchButtonText:{color:'#050A0F',fontSize:16,fontWeight:'700'},disabled:{opacity:0.45},
+  caption:{color:'#939DA5',fontSize:12,lineHeight:19,marginTop:6},count:{color:'#939DA5',fontSize:14},
+  requestButton:{flexDirection:'row',alignItems:'center',justifyContent:'space-between',minHeight:44},requestText:{color:'#73E7FF',fontSize:13},
+  friendCard:{flexDirection:'row',alignItems:'center',gap:14,padding:16,borderWidth:1,borderColor:'#24323C',borderRadius:24,backgroundColor:'#080F15'},selectedCard:{borderColor:'#73E7FF'},
+  avatar:{width:48,height:48,borderRadius:24,backgroundColor:'#242D34',justifyContent:'center',alignItems:'center'},avatarText:{color:'#F4F6F3',fontSize:21,fontWeight:'700'},friendInfo:{flex:1,minWidth:0},name:{fontSize:19,fontWeight:'700',color:'#F4F6F3'},friendSubtitle:{color:'#939DA5',fontSize:13,lineHeight:21,marginTop:5},chevron:{color:'#939DA5',fontSize:26},
+  emptyCard:{padding:20,borderRadius:24,borderWidth:1,borderColor:'#24323C'},emptyTitle:{fontSize:17,fontWeight:'700',color:'#F4F6F3'},divider:{height:1,backgroundColor:'#202C35',marginVertical:8},
+  recordCard:{borderWidth:1,borderColor:'#24323C',borderRadius:24,padding:18,gap:18,backgroundColor:'#080F15'},badge:{backgroundColor:'#242D34',paddingHorizontal:12,paddingVertical:6,borderRadius:18},badgeText:{color:'#B6BEC4',fontSize:12},exerciseName:{color:'#F4F6F3',fontSize:16,fontWeight:'600'},detailButton:{borderRadius:28,borderWidth:1,borderColor:'#42505A',minHeight:48,alignItems:'center',justifyContent:'center',paddingHorizontal:12},detailText:{color:'#B6BEC4',fontSize:14,fontWeight:'600'},
+});
