@@ -8,6 +8,8 @@
 - 単体91件・セキュリティ19件、Web／アプリ型チェック・mobile lint成功。日本時間の月境界、うるう年、月入力検証、既存API互換、SQL認可／月全件取得を確認。公開API反映と新TestFlightビルドを準備中。2アカウント実機確認は未実施。
 - GitHubへ15cd461をpush済み。バックエンド3ファイルのみを既存公開ソースへ反映し、Version 33（a789ea9）公開成功。環境revision 19を維持し、本番カレンダーAPIの未認証401を確認。iOS/Hermes本番バンドル1589モジュール生成成功。
 - production Build 17（48784468-b517-49ac-bee3-6ae3e7f6d426）を開始、TestFlight自動送信を予約。開発認証回避／スクショモードfalse、既存共同Owner・Project ID・署名維持。Apple送信完了・配布可能状態はまだ未確認。審査提出はしない。
+- Build 17作成・Apple送信433ec390-beab-457b-9641-1a3fc44b8607は双方FINISHEDを確認。Apple側の処理・配布可能状態を確認中。端末でのカレンダー操作と2アカウントの共有／ブロック確認は未実施。
+- App Store Connectに1.0.0 (17)の受付・「処理中」を確認（10月11日12:58 JST受付）。処理後の配布可能表示はまだ未確認。確認画像app-store-screenshots/build17-processing-2026-10-11.pngを保存。
 
 ## 2026-10-11：友達検索画面のカード型レイアウト
 
