@@ -3,12 +3,14 @@ import {useEffect,useRef,useState} from 'react';
 import {Switch,Text,View} from 'react-native';
 import {Pressable} from '@/components/FeedbackPressable';
 import {fetchFriendNotifications,registerFriendPush,saveFriendNotification,type FriendNotificationState} from '@/lib/friendPush';
+import {ApiError} from '@/lib/api';
 export function FriendNotificationSettings({friends}:{friends:{id:string;name:string}[]}){
  const {getToken}=useAuth({treatPendingAsSignedOut:false}),tokenRef=useRef(getToken);
  useEffect(()=>{tokenRef.current=getToken;},[getToken]);
  const [state,setState]=useState<FriendNotificationState|null>(null),[error,setError]=useState(''),[busy,setBusy]=useState(false);
+ const [unavailable,setUnavailable]=useState(false);
  const mounted=useRef(true),lock=useRef(false);
- useEffect(()=>{mounted.current=true;void (async()=>{try{const token=await tokenRef.current();if(!token)throw Error('ログインしてください。');const result=await fetchFriendNotifications(token);if(mounted.current)setState(result);}catch(e){if(mounted.current)setError(e instanceof Error?e.message:'通知設定を確認できませんでした。');}})();return()=>{mounted.current=false;};},[]);
+ useEffect(()=>{mounted.current=true;void (async()=>{try{const token=await tokenRef.current();if(!token)throw Error('ログインしてください。');const result=await fetchFriendNotifications(token);if(mounted.current)setState(result);}catch(e){if(!mounted.current)return;if(e instanceof ApiError&&e.status===503&&e.message==='通知機能は配信準備中です。')setUnavailable(true);else setError(e instanceof Error?e.message:'通知設定を確認できませんでした。');}})();return()=>{mounted.current=false;};},[]);
  async function load(){const token=await tokenRef.current();if(!token)throw Error('ログインしてください。');const result=await fetchFriendNotifications(token);if(mounted.current){setState(result);setError('');}}
  async function change(enabled:boolean,targetId?:string){
   if(lock.current||!state)return;lock.current=true;setBusy(true);setError('');
@@ -19,6 +21,8 @@ export function FriendNotificationSettings({friends}:{friends:{id:string;name:st
   finally{lock.current=false;if(mounted.current)setBusy(false);}
  }
  const text={color:'#F4F6F3',fontSize:14};
+ // Do not advertise an incomplete production feature; ordinary failures remain visible.
+ if(unavailable)return null;
  return <View style={{padding:16,gap:12,borderWidth:1,borderColor:'#203441',borderRadius:16,backgroundColor:'#0C151D'}}>
   <Text style={{...text,fontWeight:'700'}}>友達の記録更新通知</Text>
   {!state?<><Text style={text}>{error||'通知設定を確認中…'}</Text>{!!error&&<Pressable onPress={()=>void load().catch(e=>setError(e.message))}><Text style={{color:'#73E7FF'}}>再読み込み</Text></Pressable>}</>:<>
