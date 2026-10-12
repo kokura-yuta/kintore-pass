@@ -2,6 +2,15 @@
 
 更新日：2026-10-11。これは配布手順であり、配布完了報告ではありません。
 
+### Build 26の更新（TestFlight配布完了）
+
+- 2026-10-13：Appleの処理完了（提出準備完了）と既存「筋トレPAS 開発テスト」割当を確認。審査用バージョンへ26を選択・保存し再読込で保持を確認。最終App Review提出なし。通知本番OFFと実機未検証は継続。
+
+- 作成元a8557b7cbad400f2b198ec15fb6df7521607d2ae、mobileは4917752と同一。Mac署名済み1.0.0 (26)、本番公開値・通知モジュール・production APNs entitlementを検証。
+- IPA outputs/releases/kintorepas-build26.ipa、SHA256 39b79d7c98909a9acc807375a049453faa37494328fe8a1af6c7d90fe48f77c0。同一IPAのEAS送信30c52e94-b10e-47dc-96f9-ef1637c0fb2a成功、Apple処理中を画面確認。
+- 起動ブランドちらつき対策と部位お気に入り再タップ開閉を含む。実iPhoneのラグゼロは未実測。通知は設定・DB・定期実行が未準備のため本番OFF／設定欄非表示。
+- サーバーVersion 37、環境revision 20で公開。最新掲載画像の撮影用コピーは別bundle ID com.kintorepas.screenshots、Debug・API接続先なし・サンプル状態で購入操作を禁止。配布IPAへ混ぜない。審査提出はまだ行っていない。
+
 ### Build 25の更新（TestFlight配布完了）
 
 - Apple最新24／25未使用を確認。最新main 993f7a0（部位別お気に入り復元3d6d92a、分析履歴100点／残り回数993f7a0）からMacで作成する。DB／サーバー更新なし、食事nullable-v1互換と振動モジュールを維持。審査提出なし。
