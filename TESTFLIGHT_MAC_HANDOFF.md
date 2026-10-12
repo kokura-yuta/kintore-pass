@@ -2,10 +2,13 @@
 
 更新日：2026-10-11。これは配布手順であり、配布完了報告ではありません。
 
-### Build 25の更新（配布準備）
+### Build 25の更新（TestFlight配布完了）
 
 - Apple最新24／25未使用を確認。最新main 993f7a0（部位別お気に入り復元3d6d92a、分析履歴100点／残り回数993f7a0）からMacで作成する。DB／サーバー更新なし、食事nullable-v1互換と振動モジュールを維持。審査提出なし。
 - お気に入り／平均／残り回数／遷移／振動回帰31件成功。型チェックと追加の既存API検査を行い、本番環境値をメモリ注入した署名IPAを検証後、その同一ファイルだけを送る。配布完了・実機表示はまだ未確認。
+- 型・対象lint、単体98件、mobile API28件成功。作成元1d7506af0749845d678868d20703eb369639bc8e、配布コピー/private/tmp/kintorepas-build25.ncwkQ4/mobileだけautoIncrement=false。開発envはコピーせずEAS本番値をメモリ注入。1.0.0 (25)の署名成功、IPAの本番公開設定完全一致、部位別お気に入り／100点／残り回数／ExpoHaptics／nullable-v1／profileWeightKg収録確認。保存先outputs/releases/kintorepas-build25.ipa（Git対象外）、SHA256 d5c19399b8ef9bd80d9cffe59662bcad0f23b2bb93cd709006a55b511b5988c8。同一IPA送信開始。既知の依存監査39件は前版と同じ、今回依存更新なし。Apple処理・配布は確認待ち。
+- EAS送信efc74443-096b-4972-ac70-c94cf9807ecf成功、Appleアップロード完了。Apple処理・既存内部グループ割当は確認待ち。App Store審査は提出していない。
+- 2026-10-12：Apple Build 25（6e8c765e-b042-444a-9037-74cc3d40d48b）の「提出準備完了・期限90日」と既存「筋トレPAS 開発テスト」割当を確認。証拠app-store-screenshots/build25-ready-2026-10-12.jpg。Mac作成・同一IPA送信・TestFlight配布完了。審査提出なし。テスターは1.0.0 (25)に更新して、☆登録後の部位別一覧／＋追加と分析履歴の100点／残数を確認する。実機検査は未実施。
 
 ### Build 24の更新（TestFlight配布完了）
 
