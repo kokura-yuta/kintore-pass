@@ -29,7 +29,7 @@ test('training shows category favorites and search favorites remain without a pa
 test('body selection only lists registered favorites; explicit addition prevents duplicates', () => {
   const source = read('../src/components/FavoriteExercises.tsx');
   const selection = source.slice(source.indexOf('function selectPart'), source.indexOf('const favorites ='));
-  assert.match(selection, /setPart\(category\)/);
+  assert.match(selection, /setPart\(current => current === category \? null : category\)/);
   assert.doesNotMatch(selection, /onAdd|forEach/);
   assert.match(source, /item.category === part && ids.includes\(item.id\)/);
   assert.match(source, /favorites.map\(exercise/);
@@ -39,6 +39,19 @@ test('body selection only lists registered favorites; explicit addition prevents
   assert.match(source, /この部位のお気に入りはまだありません/);
   assert.match(source, /!ready && !error/);
   assert.doesNotMatch(source, /まとめて記録欄に追加/);
+});
+
+test('same body part closes; switching parts opens the new one without altering favorites', () => {
+  const source = read('../src/components/FavoriteExercises.tsx');
+  const expression = source.match(/setPart\((current => current === category \? null : category)\)/)?.[1];
+  assert.ok(expression);
+  const select = new Function('current', 'category', `return (${expression})(current);`);
+  assert.equal(select(null, '胸'), '胸');
+  assert.equal(select('胸', '胸'), null);
+  assert.equal(select('胸', '背中'), '背中');
+  assert.equal(select(null, '胸'), '胸');
+  const selection = source.slice(source.indexOf('function selectPart'), source.indexOf('const favorites ='));
+  assert.doesNotMatch(selection, /onAdd|toggle|setIds/);
 });
 
 test('favorite persistence is account-scoped and blocks mutation until loaded', () => {
