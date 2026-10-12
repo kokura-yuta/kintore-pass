@@ -17,13 +17,28 @@ test('new records start empty and successful creation clears only the draft, not
   assert.match(source, /exercises.length > 0 \? <View style=\{styles.detailsCard\}/);
 });
 
-test('training has no category favorites card but search favorites remain without a paywall', () => {
+test('training shows category favorites and search favorites remain without a paywall', () => {
   const screen = read('../src/screens/TrainingScreen.tsx');
-  assert.doesNotMatch(screen, /<FavoriteExercises\b|部位別お気に入り種目|formVersion/);
+  assert.match(screen, /<FavoriteExercises addedIds=\{exercises.map\(exercise => exercise.id\)\} onAdd=\{addExercise\} disabled=\{isSaving\}/);
   assert.match(screen, /<ExercisePickerModal/);
   assert.match(screen, /<FavoritesProvider><TrainingContent \/><\/FavoritesProvider>/);
   assert.doesNotMatch(read('../src/components/ExercisePickerModal.tsx'), /PremiumGate|usePlanAccess/);
   assert.match(screen, /current.some\(item => item.id === exercise.id\) \? current/);
+});
+
+test('body selection only lists registered favorites; explicit addition prevents duplicates', () => {
+  const source = read('../src/components/FavoriteExercises.tsx');
+  const selection = source.slice(source.indexOf('function selectPart'), source.indexOf('const favorites ='));
+  assert.match(selection, /setPart\(category\)/);
+  assert.doesNotMatch(selection, /onAdd|forEach/);
+  assert.match(source, /item.category === part && ids.includes\(item.id\)/);
+  assert.match(source, /favorites.map\(exercise/);
+  assert.match(source, /const added = addedIds.includes\(exercise.id\)/);
+  assert.match(source, /disabled=\{added \|\| disabled\}/);
+  assert.match(source, /onPress=\{\(\) => onAdd\(exercise\)\}/);
+  assert.match(source, /この部位のお気に入りはまだありません/);
+  assert.match(source, /!ready && !error/);
+  assert.doesNotMatch(source, /まとめて記録欄に追加/);
 });
 
 test('favorite persistence is account-scoped and blocks mutation until loaded', () => {

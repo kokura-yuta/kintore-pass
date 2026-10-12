@@ -65,28 +65,40 @@ function FavoriteStore({ userId, children }: {
   return <FavoritesContext.Provider value={{ ids, ready, busy, error, toggle }}>{children}</FavoritesContext.Provider>;
 }
 
-export function FavoriteExercises({ onAdd }: { addedIds: string[]; onAdd: (exercise: ExerciseOption) => void }) {
+export function FavoriteExercises({ addedIds, onAdd, disabled = false }: { addedIds: string[]; onAdd: (exercise: ExerciseOption) => void; disabled?: boolean }) {
   const { ids, ready, busy, error } = useFavorites();
   const [part, setPart] = useState<ExerciseCategory | null>(null);
   function selectPart(category: ExerciseCategory) {
-    if (!ready || busy) return;
-    const selectedFavorites = exerciseCatalog.filter(item => item.category === category && ids.includes(item.id));
-    selectedFavorites.forEach(item => onAdd(item));
     setPart(category);
   }
   const favorites = exerciseCatalog.filter(item => item.category === part && ids.includes(item.id));
   return <View style={styles.card}>
     <Text style={styles.title}>部位別お気に入り種目</Text>
-    <Text style={styles.note}>部位を押すと、お気に入り種目をまとめて記録欄に追加</Text>
+    <Text style={styles.note}>部位を選ぶと、種目検索の☆で登録したお気に入りを表示します。</Text>
     <View style={styles.parts}>{parts.map(item => <Pressable key={item} accessibilityRole="button"
       disabled={!ready || busy} accessibilityState={{ selected: part === item, disabled: !ready || busy }} onPress={() => selectPart(item)}
       style={[styles.chip, part === item && styles.selected]}>
-      <Text style={styles.text}>{item === '脚' ? '足' : item}</Text>
+      <Text style={styles.text}>{item}</Text>
     </Pressable>)}</View>
     {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
+    {!ready && !error ? <Text style={styles.note}>お気に入りを確認中…</Text> : null}
     {part && ready ? <View>
-      <Text style={styles.note}>{favorites.length === 0 ? '種目を検索して、お気に入りを登録してください。' : '下の記録欄で重量・回数を入力できます。'}</Text>
-    </View> : part && !error ? <Text style={styles.note}>お気に入りを確認中…</Text> : null}
+      {favorites.map(exercise => {
+        const added = addedIds.includes(exercise.id);
+        return <View key={exercise.id} style={styles.row}>
+          <View style={styles.exercise}>
+            <Text style={styles.text}>{exercise.name}</Text>
+            <Text style={styles.note}>{exercise.category} · {exercise.equipment}</Text>
+          </View>
+          <Pressable accessibilityRole="button" accessibilityLabel={`${exercise.name}を記録に追加`}
+            accessibilityState={{ disabled: added || disabled }} disabled={added || disabled}
+            onPress={() => onAdd(exercise)} style={styles.action}>
+            <Text style={[styles.blue, (added || disabled) && styles.muted]}>{added ? '追加済み' : '＋ 追加'}</Text>
+          </Pressable>
+        </View>;
+      })}
+      {favorites.length === 0 ? <Text style={styles.note}>この部位のお気に入りはまだありません。種目検索の☆から登録できます。</Text> : null}
+    </View> : ready ? <Text style={styles.note}>部位を選んでお気に入りを表示</Text> : null}
   </View>;
 }
 
@@ -99,10 +111,11 @@ const styles = StyleSheet.create({
   selected: { backgroundColor: '#123D50', borderColor: '#00D4FF' },
   text: { color: '#F4F6F3', fontSize: 14, fontWeight: '600' },
   heading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 12 },
-  row: { flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1, borderColor: '#203441' },
-  exercise: { flex: 1, paddingVertical: 13 },
-  action: { minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
+  row: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8, borderBottomWidth: 1, borderColor: '#203441' },
+  exercise: { flexGrow: 1, flexBasis: 150, paddingVertical: 13 },
+  action: { minWidth: 64, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
   blue: { color: '#73E7FF', fontSize: 13 },
+  muted: { color: '#99AAB4' },
   star: { color: '#73E7FF', fontSize: 26 },
   error: { color: '#FF9595', marginTop: 10 },
 });
