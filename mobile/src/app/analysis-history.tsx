@@ -12,6 +12,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ScreenStateCard } from '@/components/ScreenStateCard';
 import { useAccountReadiness } from '@/contexts/AccountReadinessContext';
+import { useVerifiedPlan } from '@/contexts/PlanAccessContext';
+import { averageBodyScore100, remainingBodyAnalyses } from '@/lib/bodyAnalysisPresentation';
 
 import {
   type BodyAnalysisHistoryItem,
@@ -56,6 +58,7 @@ function formatAnalysisDate(
 
 export default function AnalysisHistoryScreen() {
   const router = useRouter();
+  const { data: plan, error: planError } = useVerifiedPlan();
   const { analyses: snapshot, analysisError, refreshAnalyses } = useAccountReadiness();
   const analyses = snapshot ?? [];
   const [selectedId, setSelectedId] =
@@ -79,7 +82,8 @@ export default function AnalysisHistoryScreen() {
         analysis.id === selectedId,
     ) ?? analyses[0] ?? null;
   const latestAverageScore =
-    getAverageScore(analyses[0] ?? null);
+    averageBodyScore100(analyses[0] ?? null);
+  const remaining = analysisError || planError ? null : remainingBodyAnalyses(plan, snapshot);
   const oldestAnalysisId =
     analyses.at(-1)?.id ?? null;
 
@@ -140,7 +144,7 @@ export default function AnalysisHistoryScreen() {
                 <SummaryCard
                   accent
                   label="最新平均"
-                  unit="/10"
+                  unit="/100点"
                   value={
                     latestAverageScore === null
                       ? '—'
@@ -148,6 +152,15 @@ export default function AnalysisHistoryScreen() {
                   }
                 />
               </View>
+
+              <View style={styles.summaryRow}>
+                <SummaryCard accent label={plan?.accessLevel === 'trial' ? '残り利用回数（無料体験中）' : '残り利用回数（今月）'}
+                  unit={remaining === null ? '' : '回'} value={remaining === null ? '—' : String(remaining)} />
+              </View>
+              <Text style={styles.privacyNote}>{remaining === null
+                ? analysisError || planError ? '残り回数を確認できませんでした。' : '残り回数を確認中…'
+                : plan?.accessLevel === 'free' ? '身体分析はPremium・無料体験の対象機能です。'
+                : plan?.accessLevel === 'trial' ? '無料体験期間中の利用可能回数です。' : '日本時間の毎月1日に利用回数が更新されます。'}</Text>
 
               <Text style={styles.sectionTitle}>
                 分析一覧
