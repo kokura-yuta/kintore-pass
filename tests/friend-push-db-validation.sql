@@ -1,0 +1,44 @@
+-- Isolated expiring branch only. Synthetic fixture users; no real push tokens.
+DO $$
+DECLARE a uuid:=gen_random_uuid(); b uuid:=gen_random_uuid(); c uuid:=gen_random_uuid();
+ s uuid:=gen_random_uuid(); n integer;
+BEGIN
+ INSERT INTO users(id,email,clerk_user_id) VALUES(a,a||'@example.invalid','push-test-'||a),(b,b||'@example.invalid','push-test-'||b),(c,c||'@example.invalid','push-test-'||c);
+ INSERT INTO friend_settings(user_id,share_training) VALUES(a,true);
+ INSERT INTO friendships(low_id,high_id,requester_id,status) VALUES(least(a,b),greatest(a,b),a,'pending');
+ INSERT INTO friend_notification_preferences(user_id,enabled) VALUES(b,false);
+ INSERT INTO friend_notification_subscriptions(user_id,friend_id,enabled) VALUES(b,a,true);
+ INSERT INTO friend_push_devices(installation_hash,user_id,clerk_session_id,push_token) VALUES('synthetic-'||b,b,'synthetic-session','ExpoPushToken[synthetic-'||b||']');
+ INSERT INTO training_sessions(id,user_id,performed_at) VALUES(s,a,now());
+ IF EXISTS(SELECT 1 FROM friend_push_outbox WHERE sender_id=a) THEN RAISE EXCEPTION 'pending/default-off leaked'; END IF;
+ UPDATE friendships SET status='accepted' WHERE low_id=least(a,b) AND high_id=greatest(a,b);
+ UPDATE training_sessions SET memo='global-off' WHERE id=s;
+ IF EXISTS(SELECT 1 FROM friend_push_outbox WHERE sender_id=a) THEN RAISE EXCEPTION 'global off leaked'; END IF;
+ UPDATE friend_notification_preferences SET enabled=true WHERE user_id=b;
+ UPDATE friend_notification_subscriptions SET enabled=false WHERE user_id=b;
+ UPDATE training_sessions SET memo='friend-off' WHERE id=s;
+ IF EXISTS(SELECT 1 FROM friend_push_outbox WHERE sender_id=a) THEN RAISE EXCEPTION 'friend off leaked'; END IF;
+ UPDATE friend_notification_subscriptions SET enabled=true WHERE user_id=b;
+ UPDATE friend_settings SET share_training=false WHERE user_id=a;
+ UPDATE training_sessions SET memo='sharing-off' WHERE id=s;
+ IF EXISTS(SELECT 1 FROM friend_push_outbox WHERE sender_id=a) THEN RAISE EXCEPTION 'sharing off leaked'; END IF;
+ UPDATE friend_settings SET share_training=true WHERE user_id=a;
+ INSERT INTO friend_blocks(blocker_id,blocked_id) VALUES(a,b);
+ UPDATE training_sessions SET memo='blocked' WHERE id=s;
+ IF EXISTS(SELECT 1 FROM friend_push_outbox WHERE sender_id=a) THEN RAISE EXCEPTION 'block leaked'; END IF;
+ UPDATE friend_blocks SET blocked_id=c WHERE blocker_id=a AND blocked_id=b;
+ UPDATE friend_settings SET social_suspended=true WHERE user_id=a;
+ UPDATE training_sessions SET memo='suspended' WHERE id=s;
+ IF EXISTS(SELECT 1 FROM friend_push_outbox WHERE sender_id=a) THEN RAISE EXCEPTION 'suspension leaked'; END IF;
+ UPDATE friend_settings SET social_suspended=false WHERE user_id=a;
+ UPDATE training_sessions SET memo='eligible' WHERE id=s;
+ SELECT count(*) INTO n FROM friend_push_outbox WHERE sender_id=a;
+ IF n<>1 THEN RAISE EXCEPTION 'eligible update must enqueue once'; END IF;
+ UPDATE training_sessions SET memo='repeat-update' WHERE id=s;
+ INSERT INTO training_sessions(user_id,performed_at) VALUES(a,now());
+ SELECT count(*) INTO n FROM friend_push_outbox WHERE sender_id=a;
+ IF n<>1 THEN RAISE EXCEPTION 'daily duplicate'; END IF;
+ INSERT INTO training_exercises(session_id,exercise_id,exercise_name,body_part) VALUES(s,'synthetic','synthetic','胸');
+ IF NOT EXISTS(SELECT 1 FROM training_sessions WHERE id=s AND memo='repeat-update') THEN RAISE EXCEPTION 'legacy record update failed'; END IF;
+ IF (SELECT count(*) FROM friend_push_outbox WHERE sender_id=c)<>0 THEN RAISE EXCEPTION 'unrelated account'; END IF;
+END $$;

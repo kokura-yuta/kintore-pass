@@ -104,6 +104,39 @@ export const friendSettings = pgTable('friend_settings', {
   shareTraining: boolean('share_training').notNull().default(false),
   socialSuspended: boolean('social_suspended').notNull().default(false),
 });
+export const friendNotificationPreferences = pgTable('friend_notification_preferences', {
+  userId: uuid('user_id').primaryKey().references(() => users.id, {onDelete:'cascade'}),
+  enabled: boolean('enabled').notNull().default(false),
+});
+export const friendNotificationSubscriptions = pgTable('friend_notification_subscriptions', {
+  userId: uuid('user_id').notNull().references(() => users.id, {onDelete:'cascade'}),
+  friendId: uuid('friend_id').notNull().references(() => users.id, {onDelete:'cascade'}),
+  enabled: boolean('enabled').notNull().default(false),
+},t=>[primaryKey({columns:[t.userId,t.friendId]}),check('friend_notification_subscriptions_self',sql`${t.userId} <> ${t.friendId}`)]);
+export const friendPushDevices = pgTable('friend_push_devices', {
+  installationHash: text('installation_hash').primaryKey(),
+  userId: uuid('user_id').notNull().references(() => users.id, {onDelete:'cascade'}),
+  clerkSessionId: text('clerk_session_id').notNull(),
+  pushToken: text('push_token').notNull().unique(),
+  active: boolean('active').notNull().default(true),
+  updatedAt: timestamp('updated_at',{withTimezone:true}).notNull().defaultNow(),
+},t=>[index('friend_push_devices_user_idx').on(t.userId)]);
+// session/recipient deletion cascades; no body photos, names, sets or chat payloads.
+export const friendPushOutbox = pgTable('friend_push_outbox', {
+  id:uuid('id').defaultRandom().primaryKey(),
+  senderId:uuid('sender_id').notNull().references(()=>users.id,{onDelete:'cascade'}),
+  recipientId:uuid('recipient_id').notNull().references(()=>users.id,{onDelete:'cascade'}),
+  sessionId:uuid('session_id').notNull().references(()=>trainingSessions.id,{onDelete:'cascade'}),
+  performedOn:date('performed_on').notNull(),
+  notificationDay:date('notification_day').notNull().default(sql`(now() AT TIME ZONE 'Asia/Tokyo')::date`),
+  createdAt:timestamp('created_at',{withTimezone:true}).notNull().defaultNow(),
+  claimedAt:timestamp('claimed_at',{withTimezone:true}),finishedAt:timestamp('finished_at',{withTimezone:true}),
+},t=>[uniqueIndex('friend_push_outbox_daily_idx').on(t.senderId,t.recipientId,t.notificationDay),index('friend_push_outbox_pending_idx').on(t.createdAt).where(sql`${t.claimedAt} IS NULL AND ${t.finishedAt} IS NULL`)]);
+export const friendPushReceipts=pgTable('friend_push_receipts',{
+ ticketId:text('ticket_id').primaryKey(),installationHash:text('installation_hash').notNull().references(()=>friendPushDevices.installationHash,{onDelete:'cascade'}),
+ pushToken:text('push_token').notNull(),
+ createdAt:timestamp('created_at',{withTimezone:true}).notNull().defaultNow(),checkedAt:timestamp('checked_at',{withTimezone:true}),
+});
 export const friendships = pgTable('friendships', {
   lowId: uuid('low_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   highId: uuid('high_id').notNull().references(() => users.id, { onDelete: 'cascade' }),

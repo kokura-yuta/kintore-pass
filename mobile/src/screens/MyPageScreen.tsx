@@ -10,6 +10,7 @@ import { ProfileNumberField } from '@/components/ProfileNumberField';
 import { type ProfileDraft, type TrainingLocation, type TrainingStyle, useOnboarding } from '@/contexts/OnboardingContext';
 import { isApiBypassEnabled } from '@/lib/api';
 import { deleteAccount } from '@/lib/account';
+import {unregisterFriendPush} from '@/lib/friendPush';
 import { checkAdminAccess } from '@/lib/admin';
 import { getGoalBodyLabel } from '@/lib/initialAnalysisPreview';
 import {
@@ -218,6 +219,8 @@ export default function MyPageScreen() {
     setIsSigningOut(true);
     setAccountError('');
     try {
+      // Best effort device removal; revoked Clerk sessions are also checked before delivery.
+      if(!isApiBypassEnabled){const token=await getToken();if(token)await unregisterFriendPush(token).catch(()=>{});}
       await signOut();
       router.replace('/sign-in');
     } catch {

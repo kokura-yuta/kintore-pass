@@ -6,17 +6,20 @@ import { Pressable } from '@/components/FeedbackPressable';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { apiRequest } from '@/lib/api';
 import { jstDay, monthCells, shiftMonth } from '@/lib/friend-calendar';
+import {friendNotificationTarget} from '@/lib/friendNotificationTarget';
 
 type Profile = { id: string; name: string; shared: boolean; records: { performedAt: string; exercises: { name: string; bodyPart: string; sets: { setNumber: number; weightKg: number | null; reps: number | null }[] }[] }[] };
 export default function FriendCalendarScreen() {
   const router = useRouter();
-  const { userId: target } = useLocalSearchParams<{ userId: string }>();
+  const { userId: target, date } = useLocalSearchParams<{ userId: string; date?:string }>();
   const { getToken, userId, isLoaded } = useAuth({ treatPendingAsSignedOut: false });
   const tokenRef = useRef(getToken);
   useEffect(() => { tokenRef.current = getToken; }, [getToken]);
   const today = jstDay(new Date().toISOString());
-  const [month, setMonth] = useState(today.slice(0, 7));
-  const [selected, setSelected] = useState(today);
+  const initialDay=friendNotificationTarget({type:'friend-training',recipientId:'calendar',friendId:target,performedOn:date},'calendar')?.day;
+  const firstDay=initialDay&&initialDay<=today?initialDay:today;
+  const [month, setMonth] = useState(firstDay.slice(0, 7));
+  const [selected, setSelected] = useState(firstDay);
   const [data, setData] = useState<{ key: string; profile: Profile } | null>(null);
   const [failure, setFailure] = useState<{key:string;message:string}|null>(null);
   const [revision, setRevision] = useState(0);

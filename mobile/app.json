@@ -71,6 +71,7 @@
       ],
       "@clerk/expo",
       "expo-secure-store",
+      "expo-notifications",
       [
         "expo-image-picker",
         {

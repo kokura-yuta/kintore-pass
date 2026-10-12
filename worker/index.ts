@@ -1,6 +1,7 @@
 /** Cloudflare Worker entry point for the vinext-starter template. */
 import { handleImageOptimization, DEFAULT_DEVICE_SIZES, DEFAULT_IMAGE_SIZES } from "vinext/server/image-optimization";
 import handler from "vinext/server/app-router-entry";
+import {drainFriendPush} from '../app/lib/friends/pushDispatcher';
 import {
   logServerError,
   resolveRequestId,
@@ -70,6 +71,9 @@ function addCorsHeaders(response: Response, request: Request, env: Env): Respons
 // const imageConfig: ImageConfig = { dangerouslyAllowSVG: true };
 
 const worker = {
+  async scheduled(_event:unknown,_env:Env,ctx:ExecutionContext) {
+    ctx.waitUntil(drainFriendPush().catch(error=>logServerError('friend_push_scheduled_failed',error)));
+  },
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
     const isApiRequest =
@@ -151,6 +155,9 @@ const worker = {
         env,
         ctx,
       );
+      if(url.pathname==='/api/training-records' && ['POST','PATCH'].includes(request.method) && response.ok){
+        ctx.waitUntil(drainFriendPush().catch(error=>logServerError('friend_push_background_failed',error)));
+      }
 
       return isApiRequest
         ? finishApiResponse(response)

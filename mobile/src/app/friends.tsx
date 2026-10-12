@@ -6,6 +6,7 @@ import { Pressable } from '@/components/FeedbackPressable';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { apiRequest } from '@/lib/api';
 import { useAccountReadiness } from '@/contexts/AccountReadinessContext';
+import {FriendNotificationSettings} from '@/components/FriendNotificationSettings';
 type Relation={id:string;name:string;status:'pending'|'accepted';outgoing:boolean};
 type Settings={id:string;alias:string|null;emailSearchEnabled:boolean;shareTraining:boolean;socialSuspended?:boolean};
 export default function FriendsScreen() {
@@ -67,6 +68,7 @@ export default function FriendsScreen() {
     </View>}
     <Pressable accessibilityRole="button" accessibilityState={{expanded:showRequests}} onPress={()=>setShowRequests(v=>!v)} style={styles.requestButton}><Text style={styles.requestText}>友達申請 {incoming.length>0?`· 受信${incoming.length}件`:''}{outgoing.length>0?` · 送信${outgoing.length}件`:''}</Text><Text style={styles.chevron}>{showRequests?'⌃':'⌄'}</Text></Pressable>
     {showRequests&&<View style={{gap:12}}><Text style={styles.sectionTitle}>受信した申請</Text>{!incoming.length&&<Text style={styles.caption}>申請はありません。</Text>}{incoming.map(r=><View style={card} key={r.id}><Text style={styles.name}>{r.name}</Text><ActionButton busy={busy} label="承認する" onPress={()=>act({action:'accept',targetId:r.id})}/><ActionButton busy={busy} label="拒否する" onPress={()=>act({action:'reject',targetId:r.id})}/>{safetyActions(r)}</View>)}<Text style={styles.sectionTitle}>送信した申請</Text>{!outgoing.length&&<Text style={styles.caption}>申請はありません。</Text>}{outgoing.map(r=><View style={card} key={r.id}><Text style={styles.name}>{r.name}</Text><ActionButton busy={busy} label="申請を取り消す" onPress={()=>act({action:'cancel',targetId:r.id})}/></View>)}</View>}
+    {showSettings&&<FriendNotificationSettings friends={friends}/>}
     <View style={styles.headingRow}><Text style={styles.sectionTitle}>友達一覧</Text><Text style={styles.count}>{snapshot?`${friends.length}人`:'—'}</Text></View>
     {!snapshot&&!friendError&&<View style={styles.emptyCard}><ActivityIndicator color="#73E7FF"/><Text style={styles.caption}>友達を確認しています…</Text></View>}
     {snapshot&&!friends.length&&<View style={styles.emptyCard}><Text style={styles.emptyTitle}>友達を見つけよう</Text><Text style={styles.caption}>相手のユーザーIDを検索して申請できます。承認されると、ここに表示されます。</Text></View>}

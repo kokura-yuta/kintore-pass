@@ -3,7 +3,7 @@ import { sql } from 'drizzle-orm';
 const sociallyAllowed = (id:string, target:string) => sql`NOT EXISTS(SELECT 1 FROM friend_settings suspended
  WHERE suspended.user_id IN(${id}::uuid,${target}::uuid) AND suspended.social_suspended=true)`;
 
-export const friendQuota = (id: string, kind: 'search' | 'request' | 'report') => sql`
+export const friendQuota = (id: string, kind: 'search' | 'request' | 'report' | 'notification') => sql`
  INSERT INTO friend_action_quotas(user_id,day,kind,used)
  VALUES(${id}::uuid,(now() AT TIME ZONE 'Asia/Tokyo')::date,${kind},1)
  ON CONFLICT(user_id,day,kind) DO UPDATE SET used=friend_action_quotas.used+1

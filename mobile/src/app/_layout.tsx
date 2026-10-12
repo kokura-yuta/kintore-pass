@@ -14,6 +14,7 @@ import { WeightHistoryProvider } from '@/contexts/WeightHistoryContext';
 import { ChatHistoryProvider } from '@/contexts/ChatHistoryContext';
 import { PlanAccessProvider } from '@/contexts/PlanAccessContext';
 import { AccountReadinessProvider } from '@/contexts/AccountReadinessContext';
+import {FriendNotificationCoordinator} from '@/components/FriendNotificationCoordinator';
 
 const publishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY;
 
@@ -68,6 +69,7 @@ function UserDataProviders() {
         <TrainingHistoryProvider>
           <WeightHistoryProvider>
             <ChatHistoryProvider>
+              <FriendNotificationCoordinator />
               <Stack screenOptions={{ headerShown: false, animation: 'none', gestureEnabled: false, contentStyle: { backgroundColor: '#050A0F' } }}>
                 <Stack.Screen name="index" options={{ animation: 'none' }} />
                 <Stack.Screen name="auth-gate" options={{ animation: 'none' }} />
