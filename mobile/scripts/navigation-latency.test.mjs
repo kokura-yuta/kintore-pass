@@ -7,6 +7,28 @@ import { canNavigateTab } from '../src/lib/planPresentation.ts';
 const read = path => readFileSync(new URL(path, import.meta.url), 'utf8');
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve=yes; reject=no; }); return {promise,resolve,reject}; };
 
+test('startup retains the brand during navigation and centers independently of insets',()=>{
+  const auth=read('../src/app/auth-gate.tsx'),brand=read('../src/components/BrandSplash.tsx'),root=read('../src/app/_layout.tsx');
+  assert.doesNotMatch(auth,/<Redirect/);
+  assert.match(auth,/router.replace\(/);
+  assert.match(auth,/return <BrandSplash \/>/);
+  assert.match(auth,/if \(!isLoaded && !isScreenshotMode\) return/);
+  assert.match(brand,/brandBlock: \{ flex: 1, justifyContent: 'center', alignItems: 'center'/);
+  assert.doesNotMatch(brand,/safeArea: \{ flex: 1, justifyContent: 'center'/);
+  assert.match(root,/SafeAreaProvider initialMetrics=\{initialWindowMetrics\}/);
+});
+test('bootstrap token identity cannot trigger repeated fetches; late results and retries stop on unmount',()=>{
+  const source=read('../src/app/bootstrap.tsx');
+  assert.match(source,/tokenRef.current = getToken/);
+  assert.match(source,/loadLock.current\) return/);
+  assert.match(source,/tokenRef.current\(\)/);
+  assert.doesNotMatch(source,/\}, \[\s*getToken,/);
+  assert.match(source,/await fetchBootstrap\(token\);\s*if \(!mounted.current\) return/);
+  assert.match(source,/await fetchUserProfile\(token\);\s*if \(!mounted.current\) return/);
+  assert.match(source,/finally \{\s*loadLock.current = false/);
+  assert.match(source,/clearTimeout\(retryTimer.current\)/);
+});
+
 test('weight graph does not label unknown or failed data empty; own calendar keeps cards during refresh',()=>{
   const weight=read('../src/app/weight-history.tsx'),calendar=read('../src/app/calendar.tsx');
   assert.match(weight,/\) : isLoading \? <ScreenStateCard compact embedded title="体重の推移を確認中" type="loading"/);

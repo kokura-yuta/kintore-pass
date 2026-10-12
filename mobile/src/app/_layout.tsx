@@ -3,7 +3,7 @@ import { tokenCache } from '@clerk/expo/token-cache';
 import { DarkTheme, Stack, ThemeProvider } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { initialWindowMetrics, SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { ConfigurationRequiredScreen } from '@/components/ConfigurationRequiredScreen';
 import { AppActivityTracker } from '@/components/AppActivityTracker';
@@ -36,7 +36,7 @@ const musclePasTheme = {
 export default function RootLayout() {
   if (!publishableKey) {
     return (
-      <SafeAreaProvider>
+      <SafeAreaProvider initialMetrics={initialWindowMetrics}>
         <StatusBar style="light" />
         <ConfigurationRequiredScreen />
       </SafeAreaProvider>
@@ -46,7 +46,7 @@ export default function RootLayout() {
   return (
     <ClerkProvider publishableKey={publishableKey} tokenCache={tokenCache}
       __experimental_disableNativeClientSync={__DEV__ && process.env.EXPO_PUBLIC_SCREENSHOT_MODE === 'true'}>
-      <SafeAreaProvider>
+      <SafeAreaProvider initialMetrics={initialWindowMetrics}>
         <ThemeProvider value={musclePasTheme}>
           <StatusBar style="light" />
           <UserScopedApp />

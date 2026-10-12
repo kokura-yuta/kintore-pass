@@ -1,6 +1,6 @@
 import { useAuth } from '@clerk/expo';
 import { Redirect, useRouter } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Pressable } from '@/components/FeedbackPressable';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -21,6 +21,15 @@ type Status = 'loading' | 'error' | 'onboarding-required';
 export default function BootstrapScreen() {
   const router = useRouter();
   const { isLoaded, isSignedIn, getToken } = useAuth({ treatPendingAsSignedOut: false });
+  const tokenRef = useRef(getToken);
+  const loadLock = useRef(false);
+  const mounted = useRef(true);
+  const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => { tokenRef.current = getToken; }, [getToken]);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; if (retryTimer.current) clearTimeout(retryTimer.current); };
+  }, []);
   const { setGoalBody, setProfile } =
     useOnboarding();
   const [status, setStatus] = useState<Status>('loading');
@@ -28,8 +37,8 @@ export default function BootstrapScreen() {
   const [canUseDevelopmentBypass, setCanUseDevelopmentBypass] = useState(false);
 
   const loadBootstrap = useCallback(async () => {
-    if (!isLoaded || !isSignedIn) return;
-
+    if (!mounted.current || !isLoaded || !isSignedIn || loadLock.current) return;
+    loadLock.current = true;
     try {
       // OAuth直後はClerkのセッション作成とトークン取得にわずかな時間差が
       // 生じることがあるため、セッションを破棄せず短時間だけ再取得する。
@@ -38,7 +47,9 @@ export default function BootstrapScreen() {
         if (waitMs > 0) {
           await new Promise((resolve) => setTimeout(resolve, waitMs));
         }
-        token = await getToken();
+        if (!mounted.current) return;
+        token = await tokenRef.current();
+        if (!mounted.current) return;
         if (token) break;
       }
 
@@ -51,6 +62,7 @@ export default function BootstrapScreen() {
             // Neonに保存された進行状態に応じて、次に必要な画面へ移動する
       const data =
         await fetchBootstrap(token);
+      if (!mounted.current) return;
 
       // 初回だけ、Premium体験を始めるかFreeで進むか本人に選んでもらう。
       if (!data.trialChoiceCompleted) {
@@ -74,6 +86,7 @@ export default function BootstrapScreen() {
       if (data.profileCompleted) {
         const profileResponse =
           await fetchUserProfile(token);
+        if (!mounted.current) return;
 
         if (profileResponse.profile) {
           setProfile(
@@ -105,6 +118,7 @@ export default function BootstrapScreen() {
       // 理想体型と身体情報が保存済みなら初回分析画面へ移動する
       router.replace('/initial-analysis');
     } catch (error) {
+      if (!mounted.current) return;
       if (error instanceof ApiError && error.status === 401) {
         // 一時的なトークン反映遅延や公開API側の設定不一致で、正常なClerk
         // セッションまで終了させない。Clerkが未ログインへ更新した場合だけ、
@@ -124,9 +138,10 @@ export default function BootstrapScreen() {
         isApiBypassEnabled,
       );
       setStatus('error');
+    } finally {
+      loadLock.current = false;
     }
   }, [
-    getToken,
     isLoaded,
     isSignedIn,
     router,
@@ -144,7 +159,8 @@ export default function BootstrapScreen() {
     setErrorMessage('');
     setCanUseDevelopmentBypass(false);
     // 即座に同じエラーへ戻る場合でも、再試行したことが画面で分かるようにする。
-    setTimeout(() => void loadBootstrap(), 350);
+    if (retryTimer.current) clearTimeout(retryTimer.current);
+    retryTimer.current = setTimeout(() => void loadBootstrap(), 350);
   }
 
   if (isLoaded && !isSignedIn && !isApiBypassEnabled) {
