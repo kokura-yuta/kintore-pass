@@ -42,3 +42,10 @@ test('outbox creation and dispatch guard sharing, suspension, blocks, preference
  assert.match(query,/FOR UPDATE SKIP LOCKED/);assert.match(query,/training_exercises/);
  assert.match(migration,/DEFAULT false/);assert.match(migration,/ON DELETE CASCADE/);
 });
+test('unready production notification UI is hidden without hiding ordinary failures',()=>{
+ const source=readFileSync(new URL('../mobile/src/components/FriendNotificationSettings.tsx',import.meta.url),'utf8');
+ assert.match(source,/e instanceof ApiError&&e.status===503&&e.message==='通知機能は配信準備中です。'/);
+ assert.match(source,/if\(unavailable\)return null/);
+ assert.match(source,/else setError\(e instanceof Error/);
+ assert.match(source,/再読み込み/);
+});
