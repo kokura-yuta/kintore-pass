@@ -2,6 +2,9 @@
 
 ## 2026-10-12：Build 26配布準備
 
+- Mac署名済みBuild 26作成成功。作成元a8557b7（4917752のmobileと同一、eas.jsonだけビルドコピーでautoIncrement=false）。com.kintorepas.app／1.0.0／26、本番API・Clerk公開値のバイナリ一致、通知／振動／食事nullable-v1／体重同期／お気に入り／100点、production APNs entitlementを検証。IPA outputs/releases/kintorepas-build26.ipa、SHA256 39b79d7c98909a9acc807375a049453faa37494328fe8a1af6c7d90fe48f77c0。同じIPAをEAS送信30c52e94-b10e-47dc-96f9-ef1637c0fb2aへアップロード、Apple処理・内部グループ確認待ち。
+- 最新型・mobile対象lint、通知6件、起動／遷移／お気に入り27件、単体98件・安全性19件成功。実iPhoneの通知受信・課金購入・ちらつきゼロは未確認。旧6枚／未登録の課金画像を更新するため、別識別子・Debug限定・API接続先なしのシミュレーターを作成中。
+
 - Sites Version 37（26fd4505e6caf88c4331eec7f76dd05667c10c15）を既存URLへ公開成功、environment revision 20でFRIEND_PUSH_ENABLED=falseを明示。既存DB／課金／食事互換設定は変更しない。health200・通知API未認証401を確認。
 - EASに保存済みの署名プロファイル69UKDQU9U8でAPNs権限なしを確認。広範なAll設定は実行せず、既存com.kintorepas.appのPush能力と同一証明書を使うプロファイル更新だけに限定。更新後のproduction APNs entitlementをメモリ解析で確認。証明書／キー削除や再作成なし。Mac再ビルド中。
 
