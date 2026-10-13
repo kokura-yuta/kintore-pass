@@ -10,13 +10,14 @@ import { Pressable } from '@/components/FeedbackPressable';
 import { verifyAppleSubscription } from '@/lib/subscription';
 
 type Props = {
+  allowPurchase?: boolean;
   appAccountToken: string;
   productId: string;
   token: string;
   onVerified: () => Promise<void> | void;
 };
 
-export function SubscriptionPurchasePanel({ appAccountToken, productId, token, onVerified }: Props) {
+export function SubscriptionPurchasePanel({ appAccountToken, productId, token, onVerified, allowPurchase = true }: Props) {
   const processedTransactions = useRef(new Set<string>());
   const [isProcessing, setIsProcessing] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
@@ -67,7 +68,7 @@ export function SubscriptionPurchasePanel({ appAccountToken, productId, token, o
   const product = subscriptions.find((item) => item.id === productId);
 
   async function purchase() {
-    if (!connected || isProcessing) return;
+    if (!allowPurchase || !connected || isProcessing || isRestoring) return;
     setIsProcessing(true);
     setMessage('App Storeを開いています。');
     try {
@@ -99,11 +100,12 @@ export function SubscriptionPurchasePanel({ appAccountToken, productId, token, o
 
   return (
     <View style={styles.card}>
-      <Text style={styles.title}>{product?.displayPrice ? `${product.displayPrice}／月` : '月額1,000円'}</Text>
+      <Text style={styles.title}>{allowPurchase ? (product?.displayPrice ? `${product.displayPrice}／月` : '月額1,000円') : '購入済みプランの復元'}</Text>
+      {allowPurchase ? <Text style={styles.note}>無料体験とは別の月額契約です。購入を確定すると課金が始まり、毎月自動更新されます。</Text> : null}
       <Text style={styles.note}>{connected ? 'App Storeに接続済みです。' : 'App Storeへ接続しています。'}</Text>
-      <Pressable accessibilityRole="button" disabled={!connected || isProcessing || isRestoring} onPress={() => { void purchase(); }} style={[styles.primary, (!connected || isProcessing || isRestoring) && styles.disabled]}>
+      {allowPurchase ? <Pressable accessibilityRole="button" disabled={!connected || !product || isProcessing || isRestoring} onPress={() => { void purchase(); }} style={[styles.primary, (!connected || !product || isProcessing || isRestoring) && styles.disabled]}>
         {isProcessing ? <ActivityIndicator color="#050A0F" /> : <Text style={styles.primaryText}>月額プランを購入する</Text>}
-      </Pressable>
+      </Pressable> : null}
       <Pressable accessibilityRole="button" disabled={!connected || isProcessing || isRestoring} onPress={() => { void restore(); }} style={[styles.secondary, (!connected || isProcessing || isRestoring) && styles.disabled]}>
         {isRestoring ? <ActivityIndicator color="#73E7FF" /> : <Text style={styles.secondaryText}>購入を復元する</Text>}
       </Pressable>

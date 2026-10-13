@@ -1,4 +1,5 @@
 export type SubscriptionPurchasePanelProps = {
+  allowPurchase?: boolean;
   appAccountToken: string;
   productId: string;
   token: string;

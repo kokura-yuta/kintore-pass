@@ -108,10 +108,12 @@ export default function SubscriptionScreen() {
           <View style={styles.activeCard}><Text style={styles.activeTitle}>{subscription.status === 'operator' ? '運営用Premiumを無料で利用中' : 'プレミアムプラン利用中'}</Text><Text style={styles.preparationText}>{subscription.status === 'operator' ? '購入は不要です。通常のPremiumと同じ利用回数で使えます。' : `有効期限：${subscription.expiresAt ? new Date(subscription.expiresAt).toLocaleDateString('ja-JP') : '確認中'}`}</Text></View>
         ) : subscription?.accessLevel === 'trial' && subscription.trial.endsAt ? (
           <View style={styles.activeCard}><Text style={styles.activeTitle}>7日間の無料体験中</Text><Text style={styles.preparationText}>体験終了日：{new Date(subscription.trial.endsAt).toLocaleDateString('ja-JP')}</Text><Text style={styles.preparationText}>終了後はFreeへ戻り、自動課金はされません。記録データはそのまま残ります。</Text></View>
-        ) : subscription?.trial.eligibleToStart ? null : token && subscription && appleProductId ? (
-          <SubscriptionPurchasePanel appAccountToken={subscription.appAccountToken} onVerified={loadSubscription} productId={appleProductId} token={token} />
-        ) : error ? (
+        ) : null}
+
+        {error ? (
           <View style={styles.preparationCard}><Text style={styles.preparationTitle}>プラン情報を読み込めませんでした</Text><Text style={styles.preparationText}>{error}</Text><Pressable accessibilityRole="button" onPress={() => { void loadSubscription(); }} style={styles.retryButton}><Text style={styles.backText}>もう一度試す</Text></Pressable></View>
+        ) : subscription?.status === 'operator' ? null : token && subscription && appleProductId ? (
+          <SubscriptionPurchasePanel appAccountToken={subscription.appAccountToken} onVerified={loadSubscription} productId={appleProductId} token={token} allowPurchase={subscription.plan !== 'premium'} />
         ) : !appleProductId ? (
           <View style={styles.preparationCard}><Text style={styles.preparationTitle}>App Storeの商品設定待ちです</Text><Text style={styles.preparationText}>商品IDを設定すると、この画面から購入・復元できるようになります。</Text></View>
         ) : (

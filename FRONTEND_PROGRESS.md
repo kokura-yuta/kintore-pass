@@ -1,5 +1,15 @@
 # 筋トレPAS フロントエンド進捗
 
+## 2026-10-13：購入・復元ボタンの表示修正
+
+- クラウド配布を実行：yoshida-create（共同チームAdmin）で本番設定・既存署名を確認、ソースアップロード成功。EASがiOS番号を26→27に更新したが、Freeプランの今月iOS枠上限でビルド受付失敗（2026-11-01リセット）。Build 27のIPA・TestFlight配布は未作成。有料プラン契約は実行していない。番号27はローカル準備値で配布完了を意味しない。
+
+- 無料体験の対象者・体験中でも月額購入／購入復元パネルを表示。契約済みPremiumは復元のみ、運営アカウントは購入不要の表示を維持。
+- 無料体験と有料購入を区別し、購入確定後の課金・自動更新を明記。商品取得前は購入を無効化し、復元は独立して利用可能。
+- 検証：型チェック・対象lint・表示条件の回帰テスト2件・git diff --check成功。Apple実購入／復元は未確認。
+- バックエンド依存：既存Apple購入検証API・App Store商品設定を使用（変更なし）。
+- 次：新TestFlightビルドで対象者／体験中／契約済みの表示とSandbox購入・復元を確認し、審査画像を再撮影。Build 26への反映・審査提出は未実施。
+
 ## 2026-10-12：Build 26配布準備
 
 - Mac署名済みBuild 26作成成功。作成元a8557b7（4917752のmobileと同一、eas.jsonだけビルドコピーでautoIncrement=false）。com.kintorepas.app／1.0.0／26、本番API・Clerk公開値のバイナリ一致、通知／振動／食事nullable-v1／体重同期／お気に入り／100点、production APNs entitlementを検証。IPA outputs/releases/kintorepas-build26.ipa、SHA256 39b79d7c98909a9acc807375a049453faa37494328fe8a1af6c7d90fe48f77c0。同じIPAをEAS送信30c52e94-b10e-47dc-96f9-ef1637c0fb2aへアップロード、Apple処理・内部グループ確認待ち。
