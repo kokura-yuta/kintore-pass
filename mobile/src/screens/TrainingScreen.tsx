@@ -1,5 +1,5 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useMemo, useRef, useState } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '@clerk/expo';
 import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Pressable } from '@/components/FeedbackPressable';
@@ -15,6 +15,8 @@ import { exerciseCatalog, type ExerciseOption } from '@/lib/exerciseCatalog';
 import { ApiError, isApiBypassEnabled } from '@/lib/api';
 import type { PreviousSetPreview } from '@/lib/previousRecordPreview';
 import { createTrainingRecord, updateTrainingRecord } from '@/lib/trainingRecords';
+import { parseTrainingDraft, trainingDraftKey } from '@/lib/trainingFormDraft';
+import { readTrainingDraft, writeTrainingDraft } from '@/lib/trainingDraftStorage';
 
 function createRecord(exercise: ExerciseOption): ExerciseRecord {
   return {
@@ -35,13 +37,22 @@ function formatLocalDate(date: Date) {
 }
 
 export default function TrainingScreen() {
-  return <FavoritesProvider><TrainingContent /></FavoritesProvider>;
+  const { userId } = useAuth();
+  const { editId } = useLocalSearchParams<{ editId?: string }>();
+  return <FavoritesProvider><TrainingContent key={`${userId ?? 'guest'}:${editId ?? 'new'}`} /></FavoritesProvider>;
 }
 
 function TrainingContent() {
   const router = useRouter();
   const { editId } = useLocalSearchParams<{ editId?: string }>();
-  const { getToken } = useAuth();
+  const { getToken, userId } = useAuth();
+  const storageKey = userId && !isApiBypassEnabled ? trainingDraftKey(userId, editId) : null;
+  const [restored] = useState(() => {
+    try { return { value: storageKey ? parseTrainingDraft(readTrainingDraft(storageKey)) : null, failed: false }; }
+    catch { return { value: null, failed: true }; }
+  });
+  const [draftError, setDraftError] = useState(restored.failed ? '下書きを読み込めませんでした。上書きを防ぐため、画面を開き直してください。' : '');
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
   const { draft, setDraft } = useTrainingDraft();
   const { addRecord, records, updateRecord } = useTrainingHistory();
   const editingRecord = useMemo(
@@ -49,6 +60,7 @@ function TrainingContent() {
     [editId, records],
   );
   const [exercises, setExercises] = useState<ExerciseRecord[]>(() => {
+    if (restored.value) return restored.value.exercises;
     const recordToEdit = editId ? records.find((record) => record.id === editId) : null;
     if (recordToEdit) {
       return recordToEdit.exercises.flatMap((savedExercise) => {
@@ -85,18 +97,45 @@ function TrainingContent() {
     });
   });
   const [pickerVisible, setPickerVisible] = useState(false);
-  const [trainingMinutes, setTrainingMinutes] = useState(() => editingRecord?.trainingMinutes ? String(editingRecord.trainingMinutes) : '');
-  const [condition, setCondition] = useState<number | null>(() => editingRecord?.condition ?? null);
-  const [memo, setMemo] = useState(() => editingRecord?.memo ?? '');
+  const [trainingMinutes, setTrainingMinutes] = useState(() => restored.value?.trainingMinutes ?? (editingRecord?.trainingMinutes ? String(editingRecord.trainingMinutes) : ''));
+  const [condition, setCondition] = useState<number | null>(() => restored.value ? restored.value.condition : editingRecord?.condition ?? null);
+  const [memo, setMemo] = useState(() => restored.value?.memo ?? editingRecord?.memo ?? '');
+  const [performedAt, setPerformedAt] = useState(() => restored.value?.performedAt ?? editingRecord?.performedAt ?? new Date().toISOString());
   const [errorMessage, setErrorMessage] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const savingLock = useRef(false);
+  const savedEdit = useRef(false);
   const scrollRef = useRef<ScrollView>(null);
-  const trainingDate = editingRecord?.performedOn ?? formatLocalDate(new Date());
+  const trainingDate = formatLocalDate(new Date(performedAt));
+  const hasDraft = exercises.length > 0 || !!trainingMinutes || condition !== null || !!memo;
+  useLayoutEffect(() => {
+    if (!storageKey || restored.failed || savedEdit.current) return;
+    let active = true;
+    let message = '';
+    try {
+      writeTrainingDraft(storageKey, JSON.stringify(hasDraft ? { version: 1, exercises, trainingMinutes, condition, memo, performedAt } : null));
+    } catch {
+      message = '端末への下書き保存に失敗しました。アプリを閉じずに記録を保存してください。';
+    }
+    // Persist synchronously; defer only the status update to avoid nested renders.
+    queueMicrotask(() => { if (active) setDraftError(message); });
+    return () => { active = false; };
+  }, [storageKey, restored.failed, exercises, trainingMinutes, condition, memo, performedAt, hasDraft]);
+
+  function clearForm() {
+    setExercises([]);
+    setTrainingMinutes('');
+    setCondition(null);
+    setMemo('');
+    setPerformedAt(new Date().toISOString());
+    setDraft(null);
+    setPickerVisible(false);
+    setConfirmDiscard(false);
+  }
 
   function addExercise(exercise: ExerciseOption) {
-    if (savingLock.current) return;
+    if (savingLock.current || restored.failed) return;
     setExercises((current) => current.some(item => item.id === exercise.id) ? current : [...current, createRecord(exercise)]);
     setErrorMessage('');
     setSuccessMessage('');
@@ -149,7 +188,7 @@ function TrainingContent() {
   }
 
   async function saveRecord() {
-    if (savingLock.current) return;
+    if (savingLock.current || restored.failed) return;
     setSuccessMessage('');
     if (exercises.length === 0) {
       setErrorMessage('実施した種目を1つ以上追加してください。');
@@ -175,7 +214,7 @@ function TrainingContent() {
     setIsSaving(true);
     try {
       const payload = {
-        performedAt: editingRecord?.performedAt ?? new Date().toISOString(),
+        performedAt,
         durationMinutes: duration,
         conditionScore: condition,
         memo: memo.trim() || null,
@@ -227,14 +266,14 @@ function TrainingContent() {
       };
       if (editingRecord) {
         updateRecord(savedRecord);
+        savedEdit.current = true;
+        if (storageKey) {
+          try { writeTrainingDraft(storageKey, 'null'); }
+          catch { setDraftError('記録は保存済みですが、端末の下書きを消せませんでした。'); }
+        }
       } else {
         addRecord(savedRecord);
-        setExercises([]);
-        setTrainingMinutes('');
-        setCondition(null);
-        setMemo('');
-        setDraft(null);
-        setPickerVisible(false);
+        clearForm();
         scrollRef.current?.scrollTo({ y: 0, animated: false });
       }
       setSuccessMessage(`${response.message} カレンダーへ反映しました。`);
@@ -255,7 +294,7 @@ function TrainingContent() {
     <View style={styles.screen}>
       <SafeAreaView edges={['top']} style={styles.safeArea}>
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : Platform.OS === 'android' ? 'height' : undefined} keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0} style={styles.safeArea}>
-        <ScrollView ref={scrollRef} automaticallyAdjustKeyboardInsets contentContainerStyle={styles.content} keyboardDismissMode="interactive" keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+        <ScrollView pointerEvents={isSaving || restored.failed ? 'none' : 'auto'} ref={scrollRef} automaticallyAdjustKeyboardInsets contentContainerStyle={styles.content} keyboardDismissMode="interactive" keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
           <View style={styles.header}>
             <View>
               <Text style={styles.eyebrow}>TRAINING LOG</Text>
@@ -267,6 +306,15 @@ function TrainingContent() {
             </View>
           </View>
           <Text style={styles.lead}>今日取り組んだ種目を記録します。種目以外の項目は空欄でも保存できます。</Text>
+          {draftError ? <Text accessibilityLiveRegion="polite" style={styles.lead}>{draftError}</Text> : storageKey && hasDraft ? <Text style={styles.lead}>入力途中の記録はこの端末に自動保存されます。</Text> : null}
+          {!editId && hasDraft && !restored.failed ? <View>
+            <Pressable accessibilityRole="button" disabled={isSaving} onPress={() => setConfirmDiscard(true)}><Text style={styles.lead}>下書きを破棄</Text></Pressable>
+            {confirmDiscard ? <View>
+              <Text style={styles.lead}>入力途中の内容を消しますか？保存済みの記録は消えません。</Text>
+              <Pressable accessibilityRole="button" disabled={isSaving} onPress={clearForm}><Text style={styles.lead}>破棄する</Text></Pressable>
+              <Pressable accessibilityRole="button" onPress={() => setConfirmDiscard(false)}><Text style={styles.lead}>キャンセル</Text></Pressable>
+            </View> : null}
+          </View> : null}
           <FavoriteExercises addedIds={exercises.map(exercise => exercise.id)} onAdd={addExercise} disabled={isSaving} />
 
           <View style={styles.sectionHeading}>
