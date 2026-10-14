@@ -10,6 +10,8 @@ import { ProfileNumberField } from '@/components/ProfileNumberField';
 import { type ProfileDraft, type TrainingLocation, type TrainingStyle, useOnboarding } from '@/contexts/OnboardingContext';
 import { isApiBypassEnabled } from '@/lib/api';
 import { deleteAccount } from '@/lib/account';
+import { clearUserDrafts } from '@/lib/trainingDraftStorage';
+import { useTrainingHistory } from '@/contexts/TrainingHistoryContext';
 import {unregisterFriendPush} from '@/lib/friendPush';
 import { checkAdminAccess } from '@/lib/admin';
 import { getGoalBodyLabel } from '@/lib/initialAnalysisPreview';
@@ -41,6 +43,8 @@ export default function MyPageScreen() {
     treatPendingAsSignedOut: false,
   });
   const { user } = useUser();
+  const { records } = useTrainingHistory();
+  const deletedAccount = useRef(false);
   const { signOut } = useClerk();
   const { goalBody, profile, setProfile } = useOnboarding();
   const [form, setForm] = useState<ProfileDraft>(profile);
@@ -250,10 +254,15 @@ export default function MyPageScreen() {
     setAccountError('');
 
     try {
-      const response = await deleteAccountWithReverification();
+      const response = deletedAccount.current ? true : await deleteAccountWithReverification();
 
       // 本人確認画面を閉じた場合は削除せず元の画面へ戻す
       if (!response) return;
+      deletedAccount.current = true;
+      if (user?.id) {
+        try { await clearUserDrafts(user.id, records.map(record => record.id)); }
+        catch { throw new Error('アカウントは削除済みですが、端末の下書き消去に失敗しました。もう一度「アカウントを削除」を押すと消去だけ再試行します。'); }
+      }
 
       await signOut().catch(() => undefined);
       router.replace('/sign-in');

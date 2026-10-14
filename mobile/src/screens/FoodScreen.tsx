@@ -1,7 +1,7 @@
 import { useAuth } from '@clerk/expo';
 import { useFocusEffect } from 'expo-router';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, KeyboardAvoidingView, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Pressable } from '@/components/FeedbackPressable';
 import { feedback } from '@/lib/haptics';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -9,6 +9,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { FoodCalendar } from '@/components/FoodCalendar';
 import { isApiBypassEnabled, isScreenshotMode } from '@/lib/api';
 import { createFoodRecord, deleteFoodRecord, fetchFoodRecords, updateFoodRecord, type FoodRecord, type MealType } from '@/lib/foodRecords';
+import { parseFoodDraft } from '@/lib/foodFormDraft';
+import { trainingDraftKey } from '@/lib/trainingFormDraft';
+import { readTrainingDraft, writeTrainingDraft } from '@/lib/trainingDraftStorage';
 
 const mealTypes: MealType[] = ['朝食', '昼食', '夕食', '間食'];
 
@@ -34,7 +37,18 @@ function isValidDate(value: string) {
 }
 
 export default function FoodScreen() {
-  const { getToken } = useAuth({ treatPendingAsSignedOut: false });
+  const { userId } = useAuth({ treatPendingAsSignedOut: false });
+  return <FoodContent key={userId ?? 'guest'} />;
+}
+function FoodContent() {
+  const { getToken, userId } = useAuth({ treatPendingAsSignedOut: false });
+  const storageKey = userId && !isApiBypassEnabled ? trainingDraftKey(userId, 'food-form') : null;
+  const [restored] = useState(() => {
+    try { return { value: storageKey ? parseFoodDraft(readTrainingDraft(storageKey)) : null, failed: false }; }
+    catch { return { value: null, failed: true }; }
+  });
+  const [draftError, setDraftError] = useState(restored.failed ? '下書きを読み込めませんでした。上書きを防ぐため画面を開き直してください。' : '');
+  const [saveUncertain, setSaveUncertain] = useState(false);
   const getTokenRef = useRef(getToken);
   const scrollRef = useRef<ScrollView>(null);
   const savingLock = useRef(false);
@@ -48,19 +62,37 @@ export default function FoodScreen() {
   const displayedDate = useRef(viewDate);
   const hasFocused = useRef(false);
   const [loadedDate, setLoadedDate] = useState<string | null>(null);
-  const [entryDate, setEntryDate] = useState(today);
-  const [editingId, setEditingId] = useState<string | null>(null);
+  const [entryDate, setEntryDate] = useState(restored.value?.entryDate ?? today());
+  const [editingId, setEditingId] = useState<string | null>(restored.value?.editingId ?? null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
-  const [mealType, setMealType] = useState<MealType>('朝食');
-  const [name, setName] = useState('');
-  const [calories, setCalories] = useState('');
-  const [protein, setProtein] = useState('');
+  const [mealType, setMealType] = useState<MealType>(restored.value?.mealType ?? '朝食');
+  const [name, setName] = useState(restored.value?.name ?? '');
+  const [calories, setCalories] = useState(restored.value?.calories ?? '');
+  const [protein, setProtein] = useState(restored.value?.protein ?? '');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [isLoading, setIsLoading] = useState(!isApiBypassEnabled);
   const [isSaving, setIsSaving] = useState(false);
   const showInitialLoading = isLoading && loadedDate !== viewDate;
+  const hasDraft = !!(editingId || name || calories || protein || entryDate !== today() || mealType !== '朝食');
+  useLayoutEffect(() => {
+    if (!storageKey || restored.failed) return;
+    let active = true;
+    let message = '';
+    try { writeTrainingDraft(storageKey, JSON.stringify(hasDraft ? { entryDate, editingId, mealType, name, calories, protein } : null)); }
+    catch { message = '端末への下書き保存に失敗しました。アプリを閉じずに食事を保存してください。'; }
+    queueMicrotask(() => { if (active) setDraftError(message); });
+    return () => { active = false; };
+  }, [storageKey, restored.failed, hasDraft, entryDate, editingId, mealType, name, calories, protein]);
+
+  function confirmReplace(action: () => void) {
+    if (isSaving || restored.failed) return;
+    if (!hasDraft) { action(); return; }
+    const message = '入力途中の食事を破棄しますか？保存済みの履歴は消えません。';
+    if (Platform.OS === 'web') { if (globalThis.confirm(message)) action(); }
+    else Alert.alert('下書きの破棄', message, [{ text: 'キャンセル', style: 'cancel' }, { text: '破棄する', style: 'destructive', onPress: action }]);
+  }
 
   const totalCalories = entries.reduce((total, entry) => total + (entry.calories ?? 0), 0);
   const totalProtein = entries.reduce((total, entry) => total + (entry.proteinGrams ?? 0), 0);
@@ -117,18 +149,21 @@ export default function FoodScreen() {
   }
 
   function resetForm() {
+    setSaveUncertain(false);
     setEditingId(null); setEntryDate(today()); setMealType('朝食'); setName(''); setCalories(''); setProtein('');
   }
 
   function startEdit(entry: FoodRecord) {
+    confirmReplace(() => {
     setEditingId(entry.id); setEntryDate(entry.recordedDate); setMealType(entry.mealType);
     setName(entry.name); setCalories(entry.calories == null ? '' : String(entry.calories)); setProtein(entry.proteinGrams == null ? '' : String(entry.proteinGrams));
     setError(''); setSuccess('');
     scrollRef.current?.scrollTo({ y: 0, animated: true });
+    });
   }
 
   async function saveEntry() {
-    if (savingLock.current) return;
+    if (savingLock.current || restored.failed) return;
     const normalizedName = name.trim();
     const parsedCalories = calories.trim() ? Number(calories) : null;
     const parsedProtein = protein.trim() ? Number(protein) : null;
@@ -159,6 +194,7 @@ export default function FoodScreen() {
       if (!isApiBypassEnabled && entryDate === viewDate) void loadEntries(viewDate);
       resetForm();
     } catch (saveError) {
+      setSaveUncertain(true);
       setError(saveError instanceof Error ? saveError.message : '食事記録を保存できませんでした。');
     } finally { savingLock.current = false; setIsSaving(false); }
   }
@@ -193,8 +229,10 @@ export default function FoodScreen() {
           <ScrollView ref={scrollRef} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
             <View style={styles.header}><View><Text style={styles.eyebrow}>NUTRITION</Text><Text style={styles.title}>食事管理</Text></View><Text style={styles.date}>{viewDate === today() ? '今日' : viewDate}</Text></View>
             <View style={styles.summaryCard}><Text style={styles.cardLabel}>{viewDate} の合計（入力済み分）</Text><View style={styles.summaryRow}><View style={styles.summaryItem}><Text style={styles.summaryValue}>{showInitialLoading ? '…' : entries.some(entry => entry.calories != null) ? totalCalories.toLocaleString() : '—'}</Text><Text style={styles.summaryUnit}>kcal</Text></View><View style={styles.divider} /><View style={styles.summaryItem}><Text style={styles.summaryValue}>{showInitialLoading ? '…' : entries.some(entry => entry.proteinGrams != null) ? totalProtein.toFixed(1) : '—'}</Text><Text style={styles.summaryUnit}>たんぱく質 g</Text></View></View></View>
-            <View style={styles.formCard}>
+            <View pointerEvents={isSaving || restored.failed ? 'none' : 'auto'} style={styles.formCard}>
               <Text style={styles.sectionTitle}>{editingId ? '食事を編集' : '食事を追加'}</Text>
+              {draftError ? <Text accessibilityRole="alert" style={styles.error}>{draftError}</Text> : storageKey && hasDraft ? <Text style={styles.success}>端末に下書き保存済み・履歴への保存はまだです</Text> : null}
+              {saveUncertain ? <Text accessibilityRole="alert" style={styles.error}>保存完了を確認できませんでした。入力は残しています。通信回復後、下の履歴を再読込して同じ食事がないか確認してから保存を再試行してください。</Text> : null}
               <Text style={styles.formLabel}>記録日</Text>
               <TextInput accessibilityLabel="記録日" keyboardType="numbers-and-punctuation" maxLength={10} onChangeText={(value) => { setEntryDate(value); setError(''); }} placeholder="YYYY-MM-DD" placeholderTextColor="#556772" style={styles.input} value={entryDate} />
               <Text style={styles.formLabel}>食事区分</Text>
@@ -205,11 +243,12 @@ export default function FoodScreen() {
               {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
               {success ? <Text style={styles.success}>{success}</Text> : null}
               <Pressable accessibilityRole="button" disabled={isSaving} onPress={() => { void saveEntry(); }} style={[styles.addButton, isSaving && styles.disabledButton]}>{isSaving ? <ActivityIndicator color="#050A0F" /> : <Text style={styles.addButtonText}>{editingId ? '変更を保存' : 'この食事を追加'}</Text>}</Pressable>
-              {editingId ? <Pressable accessibilityRole="button" onPress={resetForm} style={styles.cancelButton}><Text style={styles.actionText}>編集をやめる</Text></Pressable> : null}
+              {hasDraft ? <Pressable accessibilityRole="button" onPress={() => confirmReplace(resetForm)} style={styles.cancelButton}><Text style={styles.actionText}>{editingId ? '編集をやめる' : '下書きを破棄'}</Text></Pressable> : null}
               {!isScreenshotMode ? <Text style={styles.previewNote}>{isApiBypassEnabled ? '開発用の仮記録です。画面を閉じると消えます。' : '保存した食事はログイン中の本人の記録として残ります。'}</Text> : null}
             </View>
             <View style={styles.listHeading}><Text style={styles.sectionTitle}>日付別の食事履歴</Text><Text style={styles.count}>{entries.length}件</Text></View>
             <FoodCalendar key={viewDate} selectedDate={viewDate} onSelect={selectHistoryDate} />
+            <Pressable accessibilityRole="button" disabled={isLoading || isSaving} onPress={() => { void loadEntries(viewDate); }} style={styles.cancelButton}><Text style={styles.actionText}>この日の履歴を再読込</Text></Pressable>
             <Text style={styles.historyDate}>{viewDate}{viewDate === today() ? '（今日）' : ''}</Text>
             {showInitialLoading ? <View style={styles.emptyCard}><ActivityIndicator color="#00D4FF" /><Text style={styles.emptyText}>食事記録を読み込んでいます。</Text></View> : entries.length === 0 ? <View style={styles.emptyCard}><Text style={styles.emptyTitle}>この日の食事記録はありません</Text><Text style={styles.emptyText}>食べたものを追加すると、この日の合計を確認できます。</Text></View> : <View style={styles.entryList}>{entries.map((entry) => <View key={entry.id} style={styles.entryCard}><View style={styles.entryCopy}><Text style={styles.entryType}>{entry.mealType}</Text><Text style={styles.entryName}>{entry.name}</Text><Text style={styles.entryProtein}>P {entry.proteinGrams == null ? '未入力' : entry.proteinGrams.toFixed(1)} g</Text></View><View style={styles.entryNumbers}><Text style={styles.entryCalories}>{entry.calories == null ? '未入力' : entry.calories.toLocaleString()} kcal</Text><Pressable accessibilityLabel={`${entry.name}を編集`} accessibilityRole="button" onPress={() => startEdit(entry)} style={styles.actionButton}><Text style={styles.actionText}>編集</Text></Pressable><Pressable accessibilityLabel={`${entry.name}を削除`} accessibilityRole="button" onPress={() => setDeletingId(entry.id)} style={styles.actionButton}><Text style={styles.deleteText}>削除</Text></Pressable></View></View>)}</View>}
           </ScrollView>

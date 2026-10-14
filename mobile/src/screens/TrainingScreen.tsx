@@ -283,7 +283,7 @@ function TrainingContent() {
         router.back();
       }
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : '記録の保存に失敗しました。');
+      setErrorMessage(`保存完了を確認できませんでした。入力は残しています。通信回復後、同じ内容で「記録を保存」を押して再試行できます。${error instanceof Error ? ` ${error.message}` : ''}`);
     } finally {
       savingLock.current = false;
       setIsSaving(false);
@@ -306,7 +306,7 @@ function TrainingContent() {
             </View>
           </View>
           <Text style={styles.lead}>今日取り組んだ種目を記録します。種目以外の項目は空欄でも保存できます。</Text>
-          {draftError ? <Text accessibilityLiveRegion="polite" style={styles.lead}>{draftError}</Text> : storageKey && hasDraft ? <Text style={styles.lead}>入力途中の記録はこの端末に自動保存されます。</Text> : null}
+          {draftError ? <Text accessibilityLiveRegion="polite" style={styles.lead}>{draftError}</Text> : storageKey && hasDraft ? <Text style={styles.lead}>端末に下書き保存済み・履歴への保存はまだです</Text> : null}
           {!editId && hasDraft && !restored.failed ? <View>
             <Pressable accessibilityRole="button" disabled={isSaving} onPress={() => setConfirmDiscard(true)}><Text style={styles.lead}>下書きを破棄</Text></Pressable>
             {confirmDiscard ? <View>

@@ -66,7 +66,7 @@ export default function SubscriptionScreen() {
         <Text style={styles.title}>筋トレPAS プレミアム</Text>
         <Text style={styles.price}>{subscription?.status === 'operator' ? '運営アカウント：無料' : '月額 1,000円'}</Text>
         <Text style={styles.description}>記録機能はずっと無料。AIコーチを使いたい場合だけPremiumを選べます。</Text>
-        {subscription?.status !== 'operator' ? <Text style={styles.renewalNote}>1か月ごとに自動更新されます。解約はiPhoneのサブスクリプション管理からいつでも行えます。</Text> : null}
+        {subscription?.status !== 'operator' ? <Text style={styles.renewalNote}>月額契約を購入した場合のみ、1か月ごとに自動更新されます。解約はiPhoneのサブスクリプション管理から行えます。</Text> : null}
         <Text style={styles.trialCapacity}>7日間無料体験は先着20人限定です。</Text>
 
         <View style={styles.card}>
@@ -80,8 +80,8 @@ export default function SubscriptionScreen() {
 
         {subscription?.trial.eligibleToStart ? (
           <View style={styles.choiceCard}>
-            <Text style={styles.activeTitle}>利用方法を選んでください</Text>
-            <Text style={styles.preparationText}>無料体験は任意で、開始しても7日後に自動課金されません。</Text>
+            <Text style={styles.activeTitle}>まずは無料で7日間体験</Text>
+            <Text style={styles.preparationText}>料金は0円。7日後は自動で無料プランへ戻ります。下の月額契約とは別で、購入しない限り課金されません。</Text>
             <Text style={styles.remainingText}>残り {subscription.trial.remainingSlots}枠</Text>
             <Pressable accessibilityRole="button" disabled={isUpdatingTrial} onPress={() => { void chooseTrial('start'); }} style={styles.trialButton}>
               {isUpdatingTrial ? <ActivityIndicator color="#050A0F" /> : <Text style={styles.trialButtonText}>7日間無料でPremiumを試す</Text>}

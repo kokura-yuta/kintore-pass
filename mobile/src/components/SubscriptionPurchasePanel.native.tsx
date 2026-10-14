@@ -1,5 +1,6 @@
 import {
   finishTransaction,
+  getAvailablePurchases,
   type Purchase,
   useIAP,
 } from 'expo-iap';
@@ -8,6 +9,7 @@ import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { Pressable } from '@/components/FeedbackPressable';
 
 import { verifyAppleSubscription } from '@/lib/subscription';
+import { restoreVerifiedPurchases } from '@/lib/restorePurchases';
 
 type Props = {
   allowPurchase?: boolean;
@@ -19,6 +21,7 @@ type Props = {
 
 export function SubscriptionPurchasePanel({ appAccountToken, productId, token, onVerified, allowPurchase = true }: Props) {
   const processedTransactions = useRef(new Set<string>());
+  const operationLock = useRef(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
   const [message, setMessage] = useState('');
@@ -39,14 +42,16 @@ export function SubscriptionPurchasePanel({ appAccountToken, productId, token, o
       processedTransactions.current.delete(transactionKey);
       setMessage(error instanceof Error ? error.message : '購入情報を確認できませんでした。');
     } finally {
+      operationLock.current = false;
       setIsProcessing(false);
       setIsRestoring(false);
     }
   }, [onVerified, productId, token]);
 
-  const { connected, subscriptions, availablePurchases, fetchProducts, getAvailablePurchases, requestPurchase } = useIAP({
+  const { connected, subscriptions, fetchProducts, requestPurchase } = useIAP({
     onPurchaseSuccess: (purchase) => { void processPurchase(purchase); },
     onPurchaseError: (error) => {
+      operationLock.current = false;
       setIsProcessing(false);
       setMessage(error.message || '購入を完了できませんでした。');
     },
@@ -58,17 +63,11 @@ export function SubscriptionPurchasePanel({ appAccountToken, productId, token, o
     void fetchProducts({ skus: [productId], type: 'subs' });
   }, [connected, fetchProducts, productId]);
 
-  useEffect(() => {
-    const timerId = setTimeout(() => {
-      for (const purchase of availablePurchases) void processPurchase(purchase);
-    }, 0);
-    return () => clearTimeout(timerId);
-  }, [availablePurchases, processPurchase]);
-
   const product = subscriptions.find((item) => item.id === productId);
 
   async function purchase() {
-    if (!allowPurchase || !connected || isProcessing || isRestoring) return;
+    if (!allowPurchase || !connected || !product || operationLock.current || isProcessing || isRestoring) return;
+    operationLock.current = true;
     setIsProcessing(true);
     setMessage('App Storeを開いています。');
     try {
@@ -79,27 +78,39 @@ export function SubscriptionPurchasePanel({ appAccountToken, productId, token, o
         type: 'subs',
       });
     } catch (error) {
+      operationLock.current = false;
       setIsProcessing(false);
       setMessage(error instanceof Error ? error.message : '購入を開始できませんでした。');
     }
   }
 
   async function restore() {
-    if (!connected || isRestoring) return;
+    if (!connected || operationLock.current || isRestoring || isProcessing) return;
+    operationLock.current = true;
     setIsRestoring(true);
     setMessage('過去の購入を確認しています。');
     try {
-      await getAvailablePurchases({ onlyIncludeActiveItemsIOS: true });
-      setMessage('購入履歴の確認が完了しました。');
+      const purchases = await getAvailablePurchases({ onlyIncludeActiveItemsIOS: true });
+      const result = await restoreVerifiedPurchases(purchases, productId,
+        purchase => verifyAppleSubscription(token, purchase.purchaseToken!),
+        purchase => finishTransaction({ purchase, isConsumable: false }), onVerified);
+      if (result === 'empty') {
+        setMessage('復元できる有効な購入がありません。購入時と同じApple Accountか確認してください。');
+      } else {
+        setMessage('購入を復元しました。Premiumを利用できます。');
+      }
       setIsRestoring(false);
     } catch (error) {
       setIsRestoring(false);
-      setMessage(error instanceof Error ? error.message : '購入を復元できませんでした。');
+      setMessage(`復元を完了できませんでした。通信を確認して「購入を復元する」から再試行してください。${error instanceof Error ? ` ${error.message}` : ''}`);
+    } finally {
+      operationLock.current = false;
     }
   }
 
   return (
     <View style={styles.card}>
+      <Text style={styles.title}>{allowPurchase ? '月額プランを契約する' : '購入済みの方へ'}</Text>
       <Text style={styles.title}>{allowPurchase ? (product?.displayPrice ? `${product.displayPrice}／月` : '月額1,000円') : '購入済みプランの復元'}</Text>
       {allowPurchase ? <Text style={styles.note}>無料体験とは別の月額契約です。購入を確定すると課金が始まり、毎月自動更新されます。</Text> : null}
       <Text style={styles.note}>{connected ? 'App Storeに接続済みです。' : 'App Storeへ接続しています。'}</Text>

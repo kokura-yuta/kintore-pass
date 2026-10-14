@@ -74,6 +74,7 @@ export function FavoriteExercises({ addedIds, onAdd, disabled = false }: { added
   const favorites = exerciseCatalog.filter(item => item.category === part && ids.includes(item.id));
   return <View style={styles.card}>
     <Text style={styles.title}>部位別お気に入り種目</Text>
+    {ready && ids.length === 0 ? <Text style={styles.note}>はじめての記録：下の「種目を検索して追加」で種目を選び、★でお気に入り登録。次回から部位ボタンでいつもの種目を呼び出せます。</Text> : null}
     <Text style={styles.note}>部位を選ぶと☆登録した種目を表示します。同じ部位をもう一度押すと閉じます。</Text>
     <View style={styles.parts}>{parts.map(item => <Pressable key={item} accessibilityRole="button"
       disabled={!ready || busy} accessibilityState={{ selected: part === item, disabled: !ready || busy }} onPress={() => selectPart(item)}
