@@ -2,6 +2,14 @@
 
 更新日：2026-10-11。これは配布手順であり、配布完了報告ではありません。
 
+### Build 28の更新（TestFlight配布確認済み・審査提出未完了）
+
+- 2026-10-15：共有main e932eb2から、友人の6項目の修正を含めてMacのXcodeで作成。クラウドビルド枠は使用していない。型チェック・対象lint・関連21テスト成功。
+- IPA outputs/releases/kintorepas-build28.ipa、SHA256 9f0661b28d40c1b8df0ff4cf3055b53cdaea1b4178cfd2c5b8994afabb1da335。com.kintorepas.app／1.0.0／28、本番公開設定とproduction APNs entitlementを検証。EAS送信863289f7-b58d-40b3-9005-b84dc8315e75成功。再送信不要。
+- Apple Build 28（8903a82e-6596-45af-a8df-8aee8d943985）の「提出準備完了」と既存「筋トレPAS 開発テスト」割当を確認。証拠app-store-screenshots/build28-ready-2026-10-15.jpg。
+- 購入・復元ボタンが両方見える最新ネイティブPNGをapp-store-screenshots/build28-2026-10-15/premium-purchase-restore.pngへ保存（1320×2868）。撮影専用bundle・API接続なし・サンプル状態であり、購入ボタンはSKU未取得で無効。実機購入・復元成功の証拠ではない。
+- Chrome拡張のファイルURLアクセス権限不足によりApple審査画像登録が失敗。画像未登録、App Review最終提出未完了。通知本番OFFは維持。
+
 ### Build 27の更新（Mac作成・Appleアップロード成功、処理確認待ち）
 
 - 2026-10-14：Apple最新26／27未使用を画面確認。共有main 5989456a4cdc68be8727c7592001d88557ea657eから、購入・復元表示修正10e4530と入力下書き保存5989456を含めて作成。クラウドビルド枠や有料契約は使わず、MacのXcodeでアーカイブ・署名成功。
