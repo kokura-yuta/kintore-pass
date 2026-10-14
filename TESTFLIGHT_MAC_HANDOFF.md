@@ -2,6 +2,15 @@
 
 更新日：2026-10-11。これは配布手順であり、配布完了報告ではありません。
 
+### Build 27の更新（Mac作成・Appleアップロード成功、処理確認待ち）
+
+- 2026-10-14：Apple最新26／27未使用を画面確認。共有main 5989456a4cdc68be8727c7592001d88557ea657eから、購入・復元表示修正10e4530と入力下書き保存5989456を含めて作成。クラウドビルド枠や有料契約は使わず、MacのXcodeでアーカイブ・署名成功。
+- 隔離コピー/private/tmp/kintorepas-build27.XnxtPI/mobileのみautoIncrement=false。com.kintorepas.app／1.0.0／27、本番API・Clerk公開値のバイナリ完全一致、購入・復元パネル、下書きストレージ、通知／振動／食事nullable-v1／体重同期／お気に入りとproduction APNs entitlementを検証。
+- IPA outputs/releases/kintorepas-build27.ipa（Git対象外）、SHA256 97d97a139271c0a3b590de172ac291a9adbe8294939dc15f8482df70f18abd17。同一IPAのEAS送信7389420f-608d-4c56-8d74-650e0fcf51eeが成功、Appleアップロード完了。Apple処理完了・既存内部グループ・審査用27選択は未確認。再送信しない。
+- mobile型・対象lint、購入／下書き7件、mobile API28件、Apple検証モードとWorker14件成功。Sites環境revision20のAPPLE_IAP_ENVIRONMENT=autoと既存鍵／証明書の設定を秘密値を出さず確認。実iPhoneの購入・復元と公開購入の実通信は未検証。通知本番OFFは維持。
+- 撮影専用の別bundle／API接続なしのシミュレーターで購入・復元ボタンの表示を確認。ただしSKU未取得の購入ボタンは無効（本番の購入成功を証明しない）。PNG保存直前にMacがロックされ、保存・画像登録・審査提出は未完了。解除を本人へ依頼。
+- 容量確保のため今回生成した撮影ビルド中間ファイルと旧25／26隔離コピーのnode_modulesだけを削除。原本ソース・配布済みIPA・撮影アプリは保持。依存と中間ファイルは再生成できる。
+
 ### Build 26の更新（TestFlight配布完了）
 
 - 2026-10-13：Appleの処理完了（提出準備完了）と既存「筋トレPAS 開発テスト」割当を確認。審査用バージョンへ26を選択・保存し再読込で保持を確認。最終App Review提出なし。通知本番OFFと実機未検証は継続。
