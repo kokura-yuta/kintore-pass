@@ -16,49 +16,51 @@ function decode(part: string): Uint8Array<ArrayBuffer> {
 
 export async function verifyPushJob(
   request: Request,
-  options: {fetcher?: typeof fetch; now?: number} = {},
+  options: {fetcher?: typeof fetch; now?: number; rejected?: (reason: string) => void} = {},
 ): Promise<boolean> {
+  const reject = (reason: string) => {options.rejected?.(reason);return false;};
   try {
     const auth = request.headers.get('authorization') ?? '';
-    if (!auth.startsWith('Bearer ') || auth.length > 16_384) return false;
+    if (!auth.startsWith('Bearer ') || auth.length > 16_384) return reject('format');
     const parts = auth.slice(7).split('.');
-    if (parts.length !== 3) return false;
+    if (parts.length !== 3) return reject('format');
     const header = JSON.parse(new TextDecoder().decode(decode(parts[0])));
     const claims = JSON.parse(new TextDecoder().decode(decode(parts[1])));
-    if (header.alg !== 'RS256' || header.typ !== 'JWT' || typeof header.kid !== 'string' || header.kid.length > 256 || header.crit) return false;
+    if (header.alg !== 'RS256' || header.typ !== 'JWT' || typeof header.kid !== 'string' || header.kid.length > 256 || header.crit) return reject('header');
     const now = options.now ?? Math.floor(Date.now() / 1000);
     const times = [claims.iat, claims.nbf, claims.exp];
-    if (!times.every(value => typeof value === 'number' && Number.isFinite(value))) return false;
-    if (claims.exp <= now || claims.nbf > now + 30 || claims.iat > now + 30 || claims.iat < now - 900 || claims.exp <= claims.iat || claims.exp - claims.iat > 900) return false;
+    if (!times.every(value => typeof value === 'number' && Number.isFinite(value))) return reject('time-type');
+    if (claims.exp <= now || claims.nbf > now + 30 || claims.iat > now + 30 || claims.iat < now - 900 || claims.exp <= claims.iat || claims.exp - claims.iat > 900) return reject('time');
     // Check immutable IDs as well as names: a renamed/transferred/forked repo is not trusted.
     if (claims.iss !== issuer || claims.aud !== PUSH_JOB_AUDIENCE ||
         claims.repository !== repository || claims.repository_id !== '1325003866' ||
         claims.repository_owner_id !== '289435290' || claims.ref !== 'refs/heads/main' ||
         claims.workflow_ref !== workflow || claims.runner_environment !== 'github-hosted' ||
-        !['schedule', 'workflow_dispatch'].includes(claims.event_name) ||
-        (claims.job_workflow_ref && claims.job_workflow_ref !== workflow)) return false;
+        !['schedule', 'workflow_dispatch'].includes(claims.event_name)) return reject('scope');
+    if (claims.job_workflow_ref && claims.job_workflow_ref !== workflow) return reject('job-workflow');
     // GitHub supports both legacy and immutable subject forms. No environment/PR subjects.
     if (![ `repo:${repository}:ref:refs/heads/main`,
       'repo:kokura-yuta@289435290/kintore-pass@1325003866:ref:refs/heads/main',
-    ].includes(claims.sub)) return false;
+    ].includes(claims.sub)) return reject('subject');
     let keys = options.fetcher ? undefined : cached;
     if (!keys || keys.expires <= now) {
       const response = await (options.fetcher ?? fetch)(jwksUrl, {
         redirect: 'error', signal: AbortSignal.timeout(5000),
       });
-      if (!response.ok) return false;
+      if (!response.ok) return reject('key-fetch');
       const data = await response.json() as {keys?: SigningKey[]};
-      if (!Array.isArray(data.keys) || data.keys.length > 30) return false;
+      if (!Array.isArray(data.keys) || data.keys.length > 30) return reject('key-format');
       keys = {keys: data.keys, expires: now + 300};
       if (!options.fetcher) cached = keys;
     }
     const jwk = keys.keys.find(key => key.kid === header.kid && key.kty === 'RSA' && key.use === 'sig' && key.alg === 'RS256');
-    if (!jwk) return false;
+    if (!jwk) return reject('key-missing');
     const key = await crypto.subtle.importKey('jwk', jwk, {name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256'}, false, ['verify']);
-    return await crypto.subtle.verify('RSASSA-PKCS1-v1_5', key, decode(parts[2]), new TextEncoder().encode(`${parts[0]}.${parts[1]}`));
+    const valid = await crypto.subtle.verify('RSASSA-PKCS1-v1_5', key, decode(parts[2]), new TextEncoder().encode(`${parts[0]}.${parts[1]}`));
+    return valid || reject('signature');
   } catch {
     // Never log bearer tokens, JWT payloads, push tokens, or provider responses.
-    return false;
+    return reject('verification-exception');
   }
 }
 

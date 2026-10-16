@@ -40,7 +40,7 @@ jobs:
             method: 'POST', headers: {Authorization: `Bearer ${value}`},
             redirect: 'error', signal: AbortSignal.timeout(180000),
           });
-          if (!response.ok) throw new Error(`Notification job HTTP ${response.status}`);
+          if (!response.ok) throw new Error(`Notification job HTTP ${response.status} (${response.headers.get('x-push-job-auth') ?? 'job-unavailable'})`);
           const result = await response.json();
           if (result.status !== 'completed') throw new Error('Notification job did not complete');
           console.log('Notification queue processing completed. Device delivery is checked separately.');
