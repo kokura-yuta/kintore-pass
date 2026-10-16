@@ -1,0 +1,47 @@
+name: Friend training notifications
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Five-minute best effort; offset from the busy start of the hour.
+    - cron: '2-57/5 * * * *'
+
+permissions: {}
+
+concurrency:
+  group: friend-push-production
+  cancel-in-progress: false
+
+jobs:
+  drain:
+    if: github.repository == 'kokura-yuta/kintore-pass' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    permissions:
+      id-token: write
+    steps:
+      # No checkout, third-party actions, npm packages, or long-lived credentials.
+      - name: Drain authorized notification queue and check delivery receipts
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          const endpoint = 'https://musclepas-api.y0u2t1a8.chatgpt.site/api/internal/friend-push/drain';
+          const identityUrl = new URL(process.env.ACTIONS_ID_TOKEN_REQUEST_URL);
+          identityUrl.searchParams.set('audience', endpoint);
+          const identity = await fetch(identityUrl, {
+            headers: {Authorization: `Bearer ${process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN}`},
+            redirect: 'error', signal: AbortSignal.timeout(15000),
+          });
+          if (!identity.ok) throw new Error(`GitHub identity unavailable (${identity.status})`);
+          const {value} = await identity.json();
+          if (typeof value !== 'string' || !value) throw new Error('GitHub identity missing');
+          console.log(`::add-mask::${value}`);
+          const response = await fetch(endpoint, {
+            method: 'POST', headers: {Authorization: `Bearer ${value}`},
+            redirect: 'error', signal: AbortSignal.timeout(180000),
+          });
+          if (!response.ok) throw new Error(`Notification job HTTP ${response.status} (${response.headers.get('x-push-job-auth') ?? 'job-unavailable'})`);
+          const result = await response.json();
+          if (result.status !== 'completed') throw new Error('Notification job did not complete');
+          console.log('Notification queue processing completed. Device delivery is checked separately.');
+          NODE
