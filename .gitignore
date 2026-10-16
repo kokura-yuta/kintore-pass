@@ -42,5 +42,7 @@ next-env.d.ts
 /dist/
 /.wrangler/
 /outputs/
+# Local poster build files and linked authoring dependencies
+/tmp/poster-dual-qr/
 /work/
 /*.tar.gz
