@@ -19,7 +19,7 @@ async function token(changes={},headerChanges={}) {
 const request = bearer => new Request(PUSH_JOB_AUDIENCE,{method:'POST',headers:bearer?{Authorization:`Bearer ${bearer}`}:{}});
 const fetcher = async url => {assert.equal(url,'https://token.actions.githubusercontent.com/.well-known/jwks');return Response.json({keys:[jwk]});};
 test('signed main-branch GitHub job passes; immutable subject and manual dispatch pass',async()=>{
-  for(const changes of [{},{event_name:'workflow_dispatch'},{sub:'repo:kokura-yuta@289435290/kintore-pass@1325003866:ref:refs/heads/main'}])
+  for(const changes of [{},{event_name:'workflow_dispatch'},{job_workflow_ref:claims.workflow_ref},{sub:'repo:kokura-yuta@289435290/kintore-pass@1325003866:ref:refs/heads/main'}])
     assert.equal(await verifyPushJob(request(await token(changes)),{fetcher,now}),true);
 });
 test('reject other repositories, owners, workflows, branches, audiences, forks, PRs and stale tokens',async()=>{

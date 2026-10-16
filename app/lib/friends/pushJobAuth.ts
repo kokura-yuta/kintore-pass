@@ -35,7 +35,8 @@ export async function verifyPushJob(
         claims.repository !== repository || claims.repository_id !== '1325003866' ||
         claims.repository_owner_id !== '289435290' || claims.ref !== 'refs/heads/main' ||
         claims.workflow_ref !== workflow || claims.runner_environment !== 'github-hosted' ||
-        !['schedule', 'workflow_dispatch'].includes(claims.event_name) || claims.job_workflow_ref) return false;
+        !['schedule', 'workflow_dispatch'].includes(claims.event_name) ||
+        (claims.job_workflow_ref && claims.job_workflow_ref !== workflow)) return false;
     // GitHub supports both legacy and immutable subject forms. No environment/PR subjects.
     if (![ `repo:${repository}:ref:refs/heads/main`,
       'repo:kokura-yuta@289435290/kintore-pass@1325003866:ref:refs/heads/main',

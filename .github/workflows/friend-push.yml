@@ -36,19 +36,6 @@ jobs:
           const {value} = await identity.json();
           if (typeof value !== 'string' || !value) throw new Error('GitHub identity missing');
           console.log(`::add-mask::${value}`);
-          // Public trust metadata only; never print the token, signature, jti or user data.
-          const [encodedHeader, encodedClaims] = value.split('.');
-          const header = JSON.parse(Buffer.from(encodedHeader, 'base64url').toString());
-          const claims = JSON.parse(Buffer.from(encodedClaims, 'base64url').toString());
-          console.log(JSON.stringify({
-            algorithm: header.alg, type: header.typ ?? null,
-            repositoryId: claims.repository_id, ownerId: claims.repository_owner_id,
-            repository: claims.repository, ref: claims.ref, workflow: claims.workflow_ref,
-            subject: claims.sub, audience: claims.aud, issuer: claims.iss,
-            event: claims.event_name, runner: claims.runner_environment,
-            reusable: Boolean(claims.job_workflow_ref), lifetime: claims.exp - claims.iat,
-            age: Math.floor(Date.now()/1000) - claims.iat,
-          }));
           const response = await fetch(endpoint, {
             method: 'POST', headers: {Authorization: `Bearer ${value}`},
             redirect: 'error', signal: AbortSignal.timeout(180000),
