@@ -13,6 +13,13 @@ export const notificationFriend=(id:string,target:string,enabled:boolean)=>sql`
   ? sql`(${eligiblePair(id,target)} OR EXISTS(SELECT 1 FROM friend_notification_subscriptions WHERE user_id=${id}::uuid AND friend_id=${target}::uuid))`
   : eligiblePair(id,target)}
  ON CONFLICT(user_id,friend_id) DO UPDATE SET enabled=EXCLUDED.enabled RETURNING enabled`;
+// A resume with the same authenticated session/token is a heartbeat, not a new registration.
+// Never reactivate or transfer a device through this quota-free path.
+export const refreshDevice=(id:string,session:string,hash:string,token:string)=>sql`
+ UPDATE friend_push_devices SET updated_at=now()
+ WHERE installation_hash=${hash} AND user_id=${id}::uuid
+ AND clerk_session_id=${session} AND push_token=${token} AND active
+ RETURNING active`;
 export const registerDevice=(id:string,session:string,hash:string,token:string)=>sql`
  INSERT INTO friend_push_devices(installation_hash,user_id,clerk_session_id,push_token,active)
  SELECT ${hash},${id}::uuid,${session},${token},true WHERE

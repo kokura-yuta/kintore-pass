@@ -15,10 +15,11 @@ export function registerFriendPush(token:string,askPermission:boolean,isCurrent=
 async function performRegistration(token:string,askPermission:boolean,isCurrent:()=>boolean){
  if(!isCurrent())return;
  if(Platform.OS==='web')throw new Error('通知の設定はiPhone／Androidアプリから行ってください。');
+ // Android 13+ needs a channel before requesting notification permission.
+ if(Platform.OS==='android')await Notifications.setNotificationChannelAsync('friend-training',{name:'友達のトレーニング',importance:Notifications.AndroidImportance.DEFAULT});
  let permission=await Notifications.getPermissionsAsync();
  if(askPermission&&!permission.granted)permission=await Notifications.requestPermissionsAsync();
  if(!permission.granted)throw new Error('端末の通知が許可されていません。設定アプリで筋トレPASの通知を許可してください。');
- if(Platform.OS==='android')await Notifications.setNotificationChannelAsync('friend-training',{name:'友達のトレーニング',importance:Notifications.AndroidImportance.DEFAULT});
  const projectId=Constants.expoConfig?.extra?.eas?.projectId??Constants.easConfig?.projectId;
  if(!projectId)throw new Error('通知の配布設定がありません。');
  const push=await Notifications.getExpoPushTokenAsync({projectId});

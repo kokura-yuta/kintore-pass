@@ -38,6 +38,22 @@ test('signature, algorithm, key and provider failures fail closed',async()=>{
     assert.equal(await verifyPushJob(request(bearer),{fetcher,now}),false);
   assert.equal(await verifyPushJob(request(valid),{now,fetcher:async()=>new Response(null,{status:503})}),false);
 });
+
+test('key fetch uses Workers-compatible manual redirects and rejects redirects without following',async()=>{
+  const valid=await token();
+  let calls=0;
+  const fetcher=async(url,init)=>{
+    calls++;
+    assert.equal(url,'https://token.actions.githubusercontent.com/.well-known/jwks');
+    assert.equal(init.redirect,'manual');
+    assert.ok(init.signal instanceof AbortSignal);
+    return new Response(null,{status:302,headers:{Location:'https://untrusted.invalid/keys'}});
+  };
+  const reasons=[];
+  assert.equal(await verifyPushJob(request(valid),{now,fetcher,rejected:r=>reasons.push(r)}),false);
+  assert.equal(calls,1);
+  assert.deepEqual(reasons,['key-fetch']);
+});
 test('endpoint authenticates before settings/database; disabled and failed jobs are not success',async()=>{
   let drained=0,checked=0;
   const deps={verify:async()=>false,ready:()=>{checked++;return true;},drain:async()=>{drained++;}};

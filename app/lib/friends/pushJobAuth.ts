@@ -45,7 +45,9 @@ export async function verifyPushJob(
     let keys = options.fetcher ? undefined : cached;
     if (!keys || keys.expires <= now) {
       const response = await (options.fetcher ?? fetch)(jwksUrl, {
-        redirect: 'error', signal: AbortSignal.timeout(5000),
+        // Workers rejects redirect:'error' before sending the request. Manual
+        // still forbids following redirects; the status check below rejects 3xx.
+        redirect: 'manual', signal: AbortSignal.timeout(5000),
       });
       if (!response.ok) return reject('key-fetch');
       const data = await response.json() as {keys?: SigningKey[]};
