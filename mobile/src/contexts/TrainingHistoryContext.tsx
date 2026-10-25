@@ -1,7 +1,7 @@
 import { useAuth } from '@clerk/expo';
 import { createContext, type PropsWithChildren, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 
-import { exerciseCatalog } from '@/lib/exerciseCatalog';
+import { exerciseCatalog, exerciseCategories, type ExerciseCategory } from '@/lib/exerciseCatalog';
 import { isScreenshotMode } from '@/lib/api';
 import { getTrainingRecords } from '@/lib/trainingRecords';
 
@@ -11,6 +11,7 @@ export type SavedTrainingSet = {
 };
 
 export type SavedTrainingExercise = {
+  category?: ExerciseCategory;
   exerciseId: string;
   name: string;
   sets: SavedTrainingSet[];
@@ -92,6 +93,7 @@ export function TrainingHistoryProvider({ children }: PropsWithChildren) {
           exercises: record.exercises.map((exercise, index) => ({
             exerciseId: exercise.exerciseId || (exerciseCatalog.find((item) => item.name === exercise.exerciseName)?.id ?? `${record.id}-exercise-${index}`),
             name: exercise.exerciseName,
+            category: exerciseCategories.slice(1).includes(exercise.bodyPart as ExerciseCategory) ? exercise.bodyPart as ExerciseCategory : undefined,
             sets: [...exercise.sets]
               .sort((a, b) => a.setNumber - b.setNumber)
               .map((set) => ({

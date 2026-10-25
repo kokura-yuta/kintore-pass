@@ -3,11 +3,13 @@ import { createContext, useContext, useEffect, useRef, useState, type ReactNode 
 import { Platform, StyleSheet, Text, View } from 'react-native';
 import { Pressable } from '@/components/FeedbackPressable';
 import * as SecureStore from 'expo-secure-store';
+import { randomUUID } from 'expo-crypto';
+import { makeCustomExercise, parseCustomExercises } from '@/lib/customExercises';
 import { exerciseCatalog, type ExerciseCategory, type ExerciseOption } from '@/lib/exerciseCatalog';
 
 const parts: ExerciseCategory[] = ['胸', '背中', '腕', '肩', '脚', '腹筋'];
 
-const FavoritesContext = createContext<{ ids: string[]; ready: boolean; busy: boolean; error: string; toggle: (id: string) => Promise<void> } | null>(null);
+const FavoritesContext = createContext<{ ids: string[]; catalog: ExerciseOption[]; create: (name: string, part: ExerciseCategory, equipment: string) => Promise<ExerciseOption>; ready: boolean; busy: boolean; error: string; toggle: (id: string) => Promise<void> } | null>(null);
 export function useFavorites() {
   const value = useContext(FavoritesContext);
   if (!value) throw new Error('FavoritesProvider is required');
@@ -24,6 +26,9 @@ function FavoriteStore({ userId, children }: {
 }) {
   const storageKey = userId ? `favorite-exercises-v1-${userId}` : null;
   const [ids, setIds] = useState<string[]>([]);
+  const [custom, setCustom] = useState<ExerciseOption[]>([]);
+  const customKey = userId ? `custom-exercises-v1-${userId}` : null;
+  const catalog = [...exerciseCatalog, ...custom];
   const [ready, setReady] = useState(false);
   const [busy, setBusy] = useState(false);
   const lock = useRef(false);
@@ -36,7 +41,12 @@ function FavoriteStore({ userId, children }: {
           ? localStorage.getItem(storageKey) : await SecureStore.getItemAsync(storageKey) : null;
         const value: unknown = raw ? JSON.parse(raw) : [];
         if (!Array.isArray(value)) throw new Error('Invalid favorites');
-        if (active) setIds(exerciseCatalog.filter(item => value.includes(item.id)).map(item => item.id));
+        const customRaw = customKey ? Platform.OS === 'web' ? localStorage.getItem(customKey) : await SecureStore.getItemAsync(customKey) : null;
+        const loaded = parseCustomExercises(customRaw);
+        if (active) {
+          setCustom(loaded);
+          setIds([...exerciseCatalog, ...loaded].filter(item => value.includes(item.id)).map(item => item.id));
+        }
       } catch {
         if (active) setError('お気に入りを読み込めませんでした。画面を開き直してください。');
         return;
@@ -44,7 +54,24 @@ function FavoriteStore({ userId, children }: {
       if (active) setReady(true);
     })();
     return () => { active = false; };
-  }, [storageKey]);
+  }, [storageKey, customKey]);
+
+  async function create(name: string, part: ExerciseCategory, equipment: string) {
+    if (!ready || lock.current) throw new Error('読み込み・保存が終わってからお試しください。');
+    const exercise = makeCustomExercise(`custom-${randomUUID()}`, name, part, equipment, catalog);
+    lock.current = true;
+    setBusy(true);
+    try {
+      const next = [...custom, exercise];
+      if (customKey) {
+        if (Platform.OS === 'web') localStorage.setItem(customKey, JSON.stringify(next));
+        else await SecureStore.setItemAsync(customKey, JSON.stringify(next));
+      }
+      setCustom(next);
+      return exercise;
+    } catch { throw new Error('種目を保存できませんでした。もう一度お試しください。'); }
+    finally { lock.current = false; setBusy(false); }
+  }
 
   async function toggle(id: string) {
     if (!ready || lock.current) return;
@@ -62,16 +89,16 @@ function FavoriteStore({ userId, children }: {
     finally { lock.current = false; setBusy(false); }
   }
 
-  return <FavoritesContext.Provider value={{ ids, ready, busy, error, toggle }}>{children}</FavoritesContext.Provider>;
+  return <FavoritesContext.Provider value={{ ids, catalog, create, ready, busy, error, toggle }}>{children}</FavoritesContext.Provider>;
 }
 
 export function FavoriteExercises({ addedIds, onAdd, disabled = false }: { addedIds: string[]; onAdd: (exercise: ExerciseOption) => void; disabled?: boolean }) {
-  const { ids, ready, busy, error } = useFavorites();
+  const { ids, catalog, ready, busy, error } = useFavorites();
   const [part, setPart] = useState<ExerciseCategory | null>(null);
   function selectPart(category: ExerciseCategory) {
     setPart(current => current === category ? null : category);
   }
-  const favorites = exerciseCatalog.filter(item => item.category === part && ids.includes(item.id));
+  const favorites = catalog.filter(item => item.category === part && ids.includes(item.id));
   return <View style={styles.card}>
     <Text style={styles.title}>部位別お気に入り種目</Text>
     {ready && ids.length === 0 ? <Text style={styles.note}>はじめての記録：下の「種目を検索して追加」で種目を選び、★でお気に入り登録。次回から部位ボタンでいつもの種目を呼び出せます。</Text> : null}

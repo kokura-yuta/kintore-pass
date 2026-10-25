@@ -1,9 +1,9 @@
-import { useMemo, useState } from 'react';
-import { Modal, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useEffect, useMemo, useState } from 'react';
+import { KeyboardAvoidingView, Platform, Modal, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Pressable } from '@/components/FeedbackPressable';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { exerciseCatalog, exerciseCategories, type ExerciseOption } from '@/lib/exerciseCatalog';
+import { exerciseCategories, type ExerciseCategory, type ExerciseOption } from '@/lib/exerciseCatalog';
 import { useFavorites } from '@/components/FavoriteExercises';
 import { filterPickerExercises } from '@/lib/exercisePickerFilter';
 
@@ -17,15 +17,37 @@ type Props = {
 };
 
 export function ExercisePickerModal({ addedIds, onAdd, onClose, visible }: Props) {
-  const { ids, ready, busy, error, toggle } = useFavorites();
+  const { ids, catalog, create, ready, busy, error, toggle } = useFavorites();
+  const [creating, setCreating] = useState(false);
+  const [name, setName] = useState('');
+  const [part, setPart] = useState<ExerciseCategory>('胸');
+  const [equipment, setEquipment] = useState('');
+  const [createError, setCreateError] = useState('');
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState<(typeof pickerCategories)[number]>('すべて');
-  const filteredExercises = useMemo(() => filterPickerExercises(exerciseCatalog, category, query, ids), [category, query, ids]);
+  useEffect(() => {
+    if (visible) {
+      setQuery('');
+      setCategory('すべて');
+      setCreating(false);
+    }
+  }, [visible]);
+  const filteredExercises = useMemo(() => filterPickerExercises(catalog, category, query, ids), [catalog, category, query, ids]);
+  async function saveCustom() {
+    try {
+      await create(name, part, equipment);
+      setQuery('');
+      setCategory('すべて');
+      setCreating(false);
+      setName(''); setEquipment(''); setCreateError('');
+    } catch (error) { setCreateError(error instanceof Error ? error.message : '保存できませんでした。'); }
+  }
 
   return (
     <Modal animationType="slide" onRequestClose={onClose} presentationStyle="pageSheet" visible={visible}>
       <View style={styles.screen}>
         <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
+        <KeyboardAvoidingView style={styles.safeArea} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <View style={styles.header}>
             <View>
               <Text style={styles.eyebrow}>EXERCISE LIST</Text>
@@ -35,7 +57,21 @@ export function ExercisePickerModal({ addedIds, onAdd, onClose, visible }: Props
               <Text style={styles.closeText}>閉じる</Text>
             </Pressable>
           </View>
-
+          <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 24 }}>
+          {creating ? <View style={styles.form}>
+            <Text style={styles.title}>種目作成</Text>
+            <Text style={styles.exerciseMeta}>自分のアカウント用に、この端末へ保存します。</Text>
+            <TextInput accessibilityLabel="種目名" editable={!busy} maxLength={60} placeholder="種目名（必須）" placeholderTextColor="#657681" value={name} onChangeText={setName} style={styles.formInput} />
+            <Text style={styles.exerciseName}>部位</Text>
+            <View style={styles.parts}>{exerciseCategories.slice(1).map(item => <Pressable key={item} disabled={busy} accessibilityRole="radio" accessibilityState={{ checked: part === item }} onPress={() => setPart(item as ExerciseCategory)} style={[styles.categoryChip, part === item && styles.selectedChip]}><Text style={[styles.categoryText, part === item && styles.selectedChipText]}>{item}</Text></Pressable>)}</View>
+            <TextInput accessibilityLabel="器具（任意）" editable={!busy} maxLength={40} placeholder="器具（任意）例：ケーブル" placeholderTextColor="#657681" value={equipment} onChangeText={setEquipment} style={styles.formInput} />
+            {createError ? <Text accessibilityRole="alert" style={styles.error}>{createError}</Text> : null}
+            <Pressable accessibilityRole="button" disabled={!ready || busy} onPress={() => void saveCustom()} style={styles.categoryChip}><Text style={styles.closeText}>{busy ? '保存中…' : '作成して一覧に表示'}</Text></Pressable>
+            <Pressable accessibilityRole="button" disabled={busy} onPress={() => setCreating(false)} style={styles.action}><Text style={styles.closeText}>キャンセル</Text></Pressable>
+          </View> : null}
+          {!creating ?
+          <Pressable accessibilityRole="button" disabled={!ready || busy} onPress={() => { setName(query); setCreateError(''); setCreating(true); }} style={styles.createButton}><Text style={styles.closeText}>＋ 種目作成</Text></Pressable>
+          : null}
           <TextInput
             autoCorrect={false}
             onChangeText={setQuery}
@@ -58,7 +94,7 @@ export function ExercisePickerModal({ addedIds, onAdd, onClose, visible }: Props
           <Text style={styles.hint}>☆でお気に入り登録・解除 ／ ＋で今回の記録に追加</Text>
           <Text style={styles.hint}>お気に入りはアカウント別にこの端末へ保存されます。</Text>
           {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
-          <ScrollView contentContainerStyle={styles.list} keyboardShouldPersistTaps="handled">
+          <View style={styles.list}>
             {filteredExercises.map((exercise) => {
               const added = addedIds.includes(exercise.id);
               return (
@@ -87,7 +123,9 @@ export function ExercisePickerModal({ addedIds, onAdd, onClose, visible }: Props
             {filteredExercises.length === 0 ? <Text style={styles.emptyText}>{category === 'お気に入り' && !ready
               ? error ? 'お気に入りを確認できませんでした。' : 'お気に入りを読み込み中…'
               : category === 'お気に入り' && !query.trim() ? 'お気に入りはまだありません。「すべて」や部位から☆を押して登録してください。' : '該当する種目がありません。'}</Text> : null}
+          </View>
           </ScrollView>
+        </KeyboardAvoidingView>
         </SafeAreaView>
       </View>
     </Modal>
@@ -95,6 +133,10 @@ export function ExercisePickerModal({ addedIds, onAdd, onClose, visible }: Props
 }
 
 const styles = StyleSheet.create({
+  createButton: { marginHorizontal: 20, marginTop: 16, minHeight: 44, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#294653', borderRadius: 14 },
+  form: { padding: 20, gap: 16, paddingBottom: 40 },
+  formInput: { minHeight: 51, paddingHorizontal: 15, borderWidth: 1, borderColor: '#294653', borderRadius: 14, color: '#F4F6F3', backgroundColor: '#0C151D' },
+  parts: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   hint: { color: '#99AAB4', fontSize: 12, marginHorizontal: 20, marginBottom: 6 },
   error: { color: '#FF9595', marginHorizontal: 20, marginBottom: 8 },
   actions: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 4 },
