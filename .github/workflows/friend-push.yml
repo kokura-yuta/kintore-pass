@@ -40,8 +40,15 @@ jobs:
             method: 'POST', headers: {Authorization: `Bearer ${value}`},
             redirect: 'error', signal: AbortSignal.timeout(180000),
           });
+          const result = await response.json().catch(() => ({}));
+          // Production is intentionally disabled until the database migration,
+          // provider secrets, and real-device checks are complete.  Do not
+          // page on that expected state; real auth/provider failures still fail.
+          if (response.status === 503 && result?.status === 'disabled') {
+            console.log('Notification queue is disabled in production; no delivery attempted.');
+            process.exit(0);
+          }
           if (!response.ok) throw new Error(`Notification job HTTP ${response.status} (${response.headers.get('x-push-job-auth') ?? 'job-unavailable'})`);
-          const result = await response.json();
           if (result.status !== 'completed') throw new Error('Notification job did not complete');
           console.log('Notification queue processing completed. Device delivery is checked separately.');
           NODE

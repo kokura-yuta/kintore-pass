@@ -28,8 +28,24 @@ export default function SubscriptionScreen() {
     try {
       const nextToken = await getTokenRef.current();
       if (!nextToken) throw new Error('ログイン状態を確認できませんでした。');
-      const result = await fetchSubscriptionStatus(nextToken);
+      // StoreKitの商品取得はサーバーの契約状態に依存させない。
+      // 審査端末や一時的なAPI障害でも、購入プランを先に表示できるようにする。
       setToken(nextToken);
+      let result: SubscriptionStatus | null = null;
+      let lastError: unknown;
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        try {
+          result = await fetchSubscriptionStatus(nextToken);
+          break;
+        } catch (caughtError) {
+          lastError = caughtError;
+          const transient = !(caughtError instanceof Error && 'status' in caughtError)
+            || [408, 429, 500, 502, 503, 504].includes(Number((caughtError as { status?: number }).status));
+          if (!transient || attempt === 1) throw caughtError;
+          await new Promise((resolve) => setTimeout(resolve, 650));
+        }
+      }
+      if (!result) throw lastError instanceof Error ? lastError : new Error('プラン情報を取得できませんでした。');
       setSubscription(result);
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : 'プラン情報を取得できませんでした。');
@@ -48,6 +64,15 @@ export default function SubscriptionScreen() {
       }
       await loadSubscription();
     } catch (caughtError) {
+      const statusCode = caughtError instanceof Error && 'status' in caughtError
+        ? Number((caughtError as { status?: number }).status)
+        : undefined;
+      // 体験枠の競合や「体験済み」は失敗ではなく、Freeへ進める状態です。
+      // 最新状態を読み直して、無料プランの導線をそのまま表示します。
+      if (action === 'start' && statusCode === 409) {
+        await loadSubscription();
+        return;
+      }
       setError(caughtError instanceof Error ? caughtError.message : 'プランを変更できませんでした。');
     } finally {
       setIsUpdatingTrial(false);
@@ -86,21 +111,25 @@ export default function SubscriptionScreen() {
             <Pressable accessibilityRole="button" disabled={isUpdatingTrial} onPress={() => { void chooseTrial('start'); }} style={styles.trialButton}>
               {isUpdatingTrial ? <ActivityIndicator color="#050A0F" /> : <Text style={styles.trialButtonText}>7日間無料でPremiumを試す</Text>}
             </Pressable>
-            {onboarding === '1' ? (
-              <Pressable accessibilityRole="button" disabled={isUpdatingTrial} onPress={() => { void chooseTrial('skip'); }} style={styles.freeButton}>
-                <Text style={styles.backText}>無料プランで始める</Text>
-              </Pressable>
-            ) : null}
+            <Pressable accessibilityRole="button" disabled={isUpdatingTrial} onPress={() => { void chooseTrial('skip'); }} style={styles.freeButton}>
+              <Text style={styles.backText}>無料プランで始める</Text>
+            </Pressable>
           </View>
         ) : subscription?.accessLevel === 'free' && !subscription.trial.used && subscription.trial.remainingSlots === 0 ? (
           <View style={styles.preparationCard}>
             <Text style={styles.preparationTitle}>無料体験の受付は終了しました</Text>
             <Text style={styles.preparationText}>先着20人に達したため、Freeプランまたは月額Premiumをご利用ください。</Text>
-            {onboarding === '1' ? (
-              <Pressable accessibilityRole="button" disabled={isUpdatingTrial} onPress={() => { void chooseTrial('skip'); }} style={styles.freeButton}>
-                <Text style={styles.backText}>無料プランで始める</Text>
-              </Pressable>
-            ) : null}
+            <Pressable accessibilityRole="button" disabled={isUpdatingTrial} onPress={() => { void chooseTrial('skip'); }} style={styles.freeButton}>
+              <Text style={styles.backText}>無料プランで始める</Text>
+            </Pressable>
+          </View>
+        ) : subscription?.accessLevel === 'free' ? (
+          <View style={styles.preparationCard}>
+            <Text style={styles.preparationTitle}>無料プランで続ける</Text>
+            <Text style={styles.preparationText}>無料体験を開始せず、記録機能を無料で使い始めます。</Text>
+            <Pressable accessibilityRole="button" disabled={isUpdatingTrial} onPress={() => { void chooseTrial('skip'); }} style={styles.freeButton}>
+              {isUpdatingTrial ? <ActivityIndicator color="#73E7FF" /> : <Text style={styles.backText}>無料プランで始める</Text>}
+            </Pressable>
           </View>
         ) : null}
 
@@ -112,8 +141,9 @@ export default function SubscriptionScreen() {
 
         {error ? (
           <View style={styles.preparationCard}><Text style={styles.preparationTitle}>プラン情報を読み込めませんでした</Text><Text style={styles.preparationText}>{error}</Text><Pressable accessibilityRole="button" onPress={() => { void loadSubscription(); }} style={styles.retryButton}><Text style={styles.backText}>もう一度試す</Text></Pressable></View>
-        ) : subscription?.status === 'operator' ? null : token && subscription && appleProductId ? (
-          <SubscriptionPurchasePanel appAccountToken={subscription.appAccountToken} onVerified={loadSubscription} productId={appleProductId} token={token} allowPurchase={subscription.plan !== 'premium'} />
+        ) : null}
+        {subscription?.status === 'operator' ? null : token && appleProductId ? (
+          <SubscriptionPurchasePanel appAccountToken={subscription?.appAccountToken} onVerified={loadSubscription} productId={appleProductId} token={token} allowPurchase={subscription?.plan !== 'premium'} />
         ) : !appleProductId ? (
           <View style={styles.preparationCard}><Text style={styles.preparationTitle}>App Storeの商品設定待ちです</Text><Text style={styles.preparationText}>商品IDを設定すると、この画面から購入・復元できるようになります。</Text></View>
         ) : (

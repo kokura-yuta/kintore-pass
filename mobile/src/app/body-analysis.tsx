@@ -291,6 +291,12 @@ async function beginAnalysis() {
     return;
   }
 
+  // The guard above establishes these values for this request. Keep the
+  // narrowed references explicit inside the retry closure below.
+  const selectedFront = frontImage;
+  const selectedSide = sideImage;
+  const selectedBack = backImage;
+
   if (
     weightKg &&
     (
@@ -318,33 +324,34 @@ async function beginAnalysis() {
       );
     }
 
-    // TypeScriptバックエンドへ送る3枚入りの荷物を作る
-    const formData = new FormData();
+    async function createAnalysisFormData() {
+      // FormDataはネイティブ実装によっては1回のfetchで消費されるため、
+      // 自動再試行ごとに新しい入れ物を作る。
+      const formData = new FormData();
+      await appendPhotoToFormData(formData, 'front_image', selectedFront);
+      await appendPhotoToFormData(formData, 'side_image', selectedSide);
+      await appendPhotoToFormData(formData, 'back_image', selectedBack);
+      return formData;
+    }
 
-    await appendPhotoToFormData(
-      formData,
-      'front_image',
-      frontImage,
-    );
-
-    await appendPhotoToFormData(
-      formData,
-      'side_image',
-      sideImage,
-    );
-
-    await appendPhotoToFormData(
-      formData,
-      'back_image',
-      backImage,
-    );
-
-    const result =
-      await apiUploadRequest<BodyAnalysisApiResponse>(
-        '/api/body-analysis',
-        token,
-        formData,
-      );
+    let result: BodyAnalysisApiResponse | null = null;
+    let lastError: unknown;
+    // Renderの無料プランは起動直後だけ503/504になることがある。
+    // 同じFormDataを一度だけ自動再送し、ユーザーに手動の「もう一度試す」を
+    // 強制しない。サーバー側の受付ガードで二重保存も防止される。
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        result = await apiUploadRequest<BodyAnalysisApiResponse>('/api/body-analysis', token, await createAnalysisFormData());
+        break;
+      } catch (caughtError) {
+        lastError = caughtError;
+        const statusCode = caughtError instanceof ApiError ? caughtError.status : undefined;
+        const transient = statusCode === undefined || [408, 502, 503, 504].includes(statusCode);
+        if (!transient || attempt === 1) throw caughtError;
+        await new Promise((resolve) => setTimeout(resolve, 700));
+      }
+    }
+    if (!result) throw lastError instanceof Error ? lastError : new ApiError('身体分析に失敗しました。');
 
     setAnalysisResult(result);
     // 分析成功後は、アプリの画面状態に保持していた画像URIを破棄する。
