@@ -44,14 +44,10 @@ export async function verifyPushJob(
     ].includes(claims.sub)) return reject('subject');
     let keys = options.fetcher ? undefined : cached;
     if (!keys || keys.expires <= now) {
-      // GitHub occasionally serves the JWKS endpoint through a same-origin
-      // redirect.  Rejecting every redirect made the verifier report the
-      // opaque `verification-exception` category in production even though
-      // the OIDC token was valid.  Follow only redirects that stay on the
-      // pinned GitHub issuer origin; this keeps the key source bounded while
-      // allowing the normal endpoint response.
+      // Workers rejects redirect:'error' before sending the request. Manual
+      // still forbids following redirects; the status check below rejects 3xx.
       const response = await (options.fetcher ?? fetch)(jwksUrl, {
-        redirect: 'follow', signal: AbortSignal.timeout(5000),
+        redirect: 'manual', signal: AbortSignal.timeout(5000),
       });
       if (new URL(response.url || jwksUrl).origin !== issuer) return reject('key-origin');
       if (!response.ok) return reject('key-fetch');

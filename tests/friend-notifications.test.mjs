@@ -4,9 +4,25 @@ import {notificationEndpoint} from '../app/lib/friends/notificationEndpoint.ts';
 import {deliverFriendPush} from '../app/lib/friends/pushDelivery.ts';
 import {friendNotificationTarget} from '../mobile/src/lib/friendNotificationTarget.ts';
 import {readFileSync} from 'node:fs';
+import {PgDialect} from 'drizzle-orm/pg-core';
+import {refreshDevice} from '../app/lib/friends/notificationQueries.ts';
 const recipient='11111111-1111-4111-8111-111111111111',sender='22222222-2222-4222-8222-222222222222';
 const event={id:'event',recipient_id:recipient,sender_id:sender,performed_on:'2026-10-12'};
 const target={hash:'hash',token:'ExpoPushToken[testtoken123456]',session:'session',clerkUserId:'user'};
+test('device heartbeat is restricted to the active owner/session/token and runs before quota',()=>{
+ const query=new PgDialect().sqlToQuery(refreshDevice(recipient,'session','installation','token'));
+ assert.deepEqual(query.params,['installation',recipient,'session','token']);
+ assert.match(query.sql,/installation_hash=\$1 AND user_id=\$2::uuid/);
+ assert.match(query.sql,/clerk_session_id=\$3 AND push_token=\$4 AND active/);
+ assert.doesNotMatch(query.sql,/SET\s+(?:active|user_id|clerk_session_id|push_token)=/);
+ const route=readFileSync(new URL('../app/api/friend-notifications/route.ts',import.meta.url),'utf8');
+ assert.ok(route.indexOf('db.execute(refreshDevice(')<route.indexOf('db.execute(friendQuota('));
+ assert.match(route,/refreshDevice\(id,session,hash,input.token\)\)\).rows.length\)return true/);
+});
+test('Android channel exists before requesting notification permissions',()=>{
+ const source=readFileSync(new URL('../mobile/src/lib/friendPush.ts',import.meta.url),'utf8');
+ assert.ok(source.indexOf('setNotificationChannelAsync')<source.indexOf('requestPermissionsAsync'));
+});
 test('anonymous is rejected before feature/database checks; feature off cannot mutate',async()=>{
  let touched=0;const deps={identify:async()=>null,ready:()=>{touched++;return true;},read:async()=>{touched++;},write:async()=>{touched++;return true;}};
  assert.equal((await notificationEndpoint(new Request('https://local/api'),deps)).status,401);assert.equal(touched,0);

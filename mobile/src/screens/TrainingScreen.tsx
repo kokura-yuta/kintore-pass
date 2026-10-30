@@ -66,11 +66,10 @@ function TrainingContent() {
       return recordToEdit.exercises.flatMap((savedExercise) => {
         const catalogExercise = exerciseCatalog.find((item) => item.id === savedExercise.exerciseId)
           ?? exerciseCatalog.find((item) => item.name === savedExercise.name);
-        if (!catalogExercise) return [];
         return [{
-          ...catalogExercise,
+          ...(catalogExercise ?? { id: savedExercise.exerciseId, name: savedExercise.name, category: savedExercise.category ?? '胸', equipment: '自作種目' }),
           sets: savedExercise.sets.map((set, index) => ({
-            id: `${catalogExercise.id}-edit-set-${index + 1}`,
+            id: `${savedExercise.exerciseId}-edit-set-${index + 1}`,
             weightKg: set.weightKg ?? '',
             reps: set.reps ?? '',
           })),
@@ -255,6 +254,7 @@ function TrainingContent() {
         exercises: exercises.map((exercise) => ({
           exerciseId: exercise.id,
           name: exercise.name,
+          category: exercise.category,
           sets: exercise.sets.map((set) => ({
             weightKg: set.weightKg || null,
             reps: set.reps || null,
